@@ -57,13 +57,11 @@ function setTheme(theme: Theme) {
   listeners.forEach((listener) => listener());
 }
 
-// Initialize theme from storage
+// Initialize theme from storage (default to light mode)
 if (typeof window !== "undefined") {
   const stored = localStorage.getItem("theme") as Theme | null;
   if (stored) {
     currentTheme = stored;
-  } else if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
-    currentTheme = "dark";
   }
   // Apply initial theme class
   if (currentTheme === "dark") {

@@ -71,24 +71,31 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-amber-50 to-orange-50 py-12 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-[var(--background)] py-12 px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <Link href="/" className="inline-flex items-center gap-2 text-amber-600">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 text-[#7047EB]"
+          >
             <BookOpen className="h-10 w-10" />
             <span className="text-3xl font-bold">Life on Books</span>
           </Link>
-          <p className="mt-2 text-gray-600">Join our community of readers!</p>
+          <p className="mt-2 text-[var(--foreground-secondary)]">
+            Join our community of readers!
+          </p>
         </div>
 
         <Card>
           <CardHeader>
-            <h1 className="text-xl font-semibold text-center">Create Account</h1>
+            <h1 className="text-xl font-semibold text-center text-[var(--foreground)]">
+              Create Account
+            </h1>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
-                <div className="p-3 text-sm text-red-600 bg-red-50 rounded-lg">
+                <div className="p-3 text-sm text-red-500 bg-red-500/10 rounded-lg">
                   {error}
                 </div>
               )}
@@ -129,21 +136,17 @@ export default function RegisterPage() {
                 required
               />
 
-              <Button
-                type="submit"
-                className="w-full"
-                isLoading={isLoading}
-              >
+              <Button type="submit" className="w-full" isLoading={isLoading}>
                 Create Account
               </Button>
             </form>
 
             <div className="mt-6 text-center">
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-[var(--foreground-secondary)]">
                 Already have an account?{" "}
                 <Link
                   href="/login"
-                  className="text-amber-600 hover:text-amber-700 font-medium"
+                  className="text-[#7047EB] hover:text-[#5a35d4] font-medium"
                 >
                   Sign in
                 </Link>

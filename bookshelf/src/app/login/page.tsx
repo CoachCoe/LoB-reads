@@ -6,31 +6,42 @@ import LoginForm from "./LoginForm";
 
 export default function LoginPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#7047EB]/5 to-[#5fbd74]/5 py-12 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-[var(--background)] py-12 px-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <Link href="/" className="inline-flex items-center gap-2 text-amber-600">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 text-[#7047EB]"
+          >
             <BookOpen className="h-10 w-10" />
             <span className="text-3xl font-bold">Life on Books</span>
           </Link>
-          <p className="mt-2 text-gray-600">Welcome back, reader!</p>
+          <p className="mt-2 text-[var(--foreground-secondary)]">
+            Welcome back, reader!
+          </p>
         </div>
 
         <Card>
           <CardHeader>
-            <h1 className="text-xl font-semibold text-center">Sign In</h1>
+            <h1 className="text-xl font-semibold text-center text-[var(--foreground)]">
+              Sign In
+            </h1>
           </CardHeader>
           <CardContent>
-            <Suspense fallback={<div className="h-48 animate-pulse bg-gray-100 rounded" />}>
+            <Suspense
+              fallback={
+                <div className="h-48 animate-pulse bg-[var(--border-light)] rounded" />
+              }
+            >
               <LoginForm />
             </Suspense>
 
             <div className="mt-6 text-center">
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-[var(--foreground-secondary)]">
                 Don&apos;t have an account?{" "}
                 <Link
                   href="/register"
-                  className="text-amber-600 hover:text-amber-700 font-medium"
+                  className="text-[#7047EB] hover:text-[#5a35d4] font-medium"
                 >
                   Sign up
                 </Link>
@@ -39,7 +50,7 @@ export default function LoginPage() {
           </CardContent>
         </Card>
 
-        <p className="mt-4 text-center text-sm text-gray-500">
+        <p className="mt-4 text-center text-sm text-[var(--foreground-secondary)]">
           Demo: alice@example.com / password123
         </p>
       </div>
