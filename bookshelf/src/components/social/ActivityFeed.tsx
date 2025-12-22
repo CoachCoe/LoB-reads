@@ -36,7 +36,7 @@ interface ActivityFeedProps {
 export default function ActivityFeed({ activities }: ActivityFeedProps) {
   if (activities.length === 0) {
     return (
-      <div className="text-center py-8 text-gray-500">
+      <div className="text-center py-8 text-[var(--foreground-secondary)]">
         No activity yet
       </div>
     );
@@ -55,14 +55,14 @@ function ActivityItem({ activity }: { activity: Activity }) {
   const getIcon = () => {
     switch (activity.type) {
       case "shelf_add":
-        return <BookPlus className="h-4 w-4 text-amber-600" />;
+        return <BookPlus className="h-4 w-4 text-[#7047EB]" />;
       case "review":
-        return <Star className="h-4 w-4 text-amber-600" />;
+        return <Star className="h-4 w-4 text-[#7047EB]" />;
       case "progress":
         return activity.finishedAt ? (
-          <Check className="h-4 w-4 text-green-600" />
+          <Check className="h-4 w-4 text-green-500" />
         ) : (
-          <BookOpen className="h-4 w-4 text-blue-600" />
+          <BookOpen className="h-4 w-4 text-blue-500" />
         );
     }
   };
@@ -75,7 +75,7 @@ function ActivityItem({ activity }: { activity: Activity }) {
             added{" "}
             <Link
               href={`/book/${activity.bookId}`}
-              className="font-medium hover:text-amber-600"
+              className="font-medium hover:text-[#7047EB]"
             >
               {activity.book?.title}
             </Link>{" "}
@@ -88,7 +88,7 @@ function ActivityItem({ activity }: { activity: Activity }) {
             reviewed{" "}
             <Link
               href={`/book/${activity.bookId}`}
-              className="font-medium hover:text-amber-600"
+              className="font-medium hover:text-[#7047EB]"
             >
               {activity.book?.title}
             </Link>
@@ -100,7 +100,7 @@ function ActivityItem({ activity }: { activity: Activity }) {
             finished reading{" "}
             <Link
               href={`/book/${activity.bookId}`}
-              className="font-medium hover:text-amber-600"
+              className="font-medium hover:text-[#7047EB]"
             >
               {activity.book?.title}
             </Link>
@@ -110,7 +110,7 @@ function ActivityItem({ activity }: { activity: Activity }) {
             updated progress on{" "}
             <Link
               href={`/book/${activity.bookId}`}
-              className="font-medium hover:text-amber-600"
+              className="font-medium hover:text-[#7047EB]"
             >
               {activity.book?.title}
             </Link>
@@ -120,7 +120,7 @@ function ActivityItem({ activity }: { activity: Activity }) {
   };
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4">
+    <div className="bg-[var(--card-bg)] rounded-lg border border-[var(--card-border)] p-4">
       <div className="flex gap-3">
         <Link href={`/user/${activity.userId}`}>
           <Avatar
@@ -134,13 +134,13 @@ function ActivityItem({ activity }: { activity: Activity }) {
             {getIcon()}
             <Link
               href={`/user/${activity.userId}`}
-              className="font-medium text-gray-900 hover:text-amber-600"
+              className="font-medium text-[var(--foreground)] hover:text-[#7047EB]"
             >
               {activity.user.name}
             </Link>
-            <span className="text-gray-600">{getMessage()}</span>
+            <span className="text-[var(--foreground-secondary)]">{getMessage()}</span>
           </div>
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-[var(--foreground-secondary)] mt-1">
             {formatDistanceToNow(new Date(activity.createdAt), {
               addSuffix: true,
             })}
@@ -151,7 +151,7 @@ function ActivityItem({ activity }: { activity: Activity }) {
             <div className="mt-2">
               <StarRating rating={activity.rating} size="sm" />
               {activity.content && (
-                <p className="mt-1 text-sm text-gray-600 line-clamp-2">
+                <p className="mt-1 text-sm text-[var(--foreground-secondary)] line-clamp-2">
                   {activity.content}
                 </p>
               )}
