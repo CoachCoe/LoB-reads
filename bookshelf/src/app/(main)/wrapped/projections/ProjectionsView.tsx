@@ -28,6 +28,7 @@ const MONTH_NAMES = [
 
 export default function ProjectionsView({ projections, userName }: ProjectionsViewProps) {
   const progressPercentage = (projections.daysElapsed / 365) * 100;
+  const nextYear = projections.year + 1;
 
   return (
     <div className="min-h-screen bg-[var(--background)]">
@@ -42,10 +43,10 @@ export default function ProjectionsView({ projections, userName }: ProjectionsVi
             Back to home
           </Link>
           <h1 className="text-3xl md:text-4xl font-bold mb-2">
-            {projections.year} Reading Projections
+            {nextYear} Reading Projections
           </h1>
           <p className="text-white/80">
-            Hey {userName}, here&apos;s how your year is shaping up
+            Hey {userName}, based on your {projections.year} pace, here&apos;s what {nextYear} could look like
           </p>
         </div>
       </div>

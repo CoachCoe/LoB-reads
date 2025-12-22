@@ -210,17 +210,19 @@ export default function AboutPage() {
         </p>
         <div className="flex flex-wrap justify-center gap-4">
           <Link
-            href="/register"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-[#7047EB] text-white rounded-full font-medium hover:bg-[#5a35d4] transition-colors"
-          >
-            Get Started Free
-          </Link>
-          <Link
             href="/"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-[var(--card-bg)] text-[var(--foreground)] border border-[var(--card-border)] rounded-full font-medium hover:border-[#7047EB]/50 transition-colors"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-[#7047EB] text-white rounded-full font-medium hover:bg-[#5a35d4] transition-colors"
           >
             Explore the App
           </Link>
+          <a
+            href="https://github.com/CoachCoe/LoB-reads"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-[var(--card-bg)] text-[var(--foreground)] border border-[var(--card-border)] rounded-full font-medium hover:border-[#7047EB]/50 transition-colors"
+          >
+            View on GitHub
+          </a>
         </div>
       </div>
     </div>

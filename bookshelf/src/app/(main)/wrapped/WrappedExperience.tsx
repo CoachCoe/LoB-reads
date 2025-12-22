@@ -355,24 +355,26 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
         <div className="w-1/3 cursor-pointer" onClick={nextSlide} />
       </div>
 
-      {/* Close button */}
-      <Link
-        href="/"
-        className="absolute top-4 right-4 p-2 rounded-full bg-white/20 hover:bg-white/30 transition-colors z-20"
-      >
-        <span className="sr-only">Close</span>
-        <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </Link>
-
-      {/* Projections link */}
-      <Link
-        href="/wrapped/projections"
-        className="absolute top-4 left-4 px-4 py-2 rounded-full bg-white/20 hover:bg-white/30 transition-colors z-20 text-sm font-medium"
-      >
-        View Projections
-      </Link>
+      {/* Top right buttons */}
+      <div className="absolute top-4 right-4 flex items-center gap-2 z-20">
+        {/* Projections link */}
+        <Link
+          href="/wrapped/projections"
+          className="px-4 py-2 rounded-full bg-emerald-500 hover:bg-emerald-400 text-white font-medium text-sm transition-colors"
+        >
+          {stats.year + 1} Projections
+        </Link>
+        {/* Close button */}
+        <Link
+          href="/"
+          className="p-2 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
+        >
+          <span className="sr-only">Close</span>
+          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </Link>
+      </div>
     </div>
   );
 }
