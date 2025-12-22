@@ -1,16 +1,44 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f9fafb;
-  --foreground: #111827;
+  /* Light mode colors */
+  --background: #fafafa;
+  --background-secondary: #ffffff;
+  --foreground: #1d1d1f;
+  --foreground-secondary: #86868b;
+  --border: #e5e5e7;
+  --border-light: #f5f5f7;
 
-  /* Life On Books inspired colors */
+  /* Life On Books brand colors */
   --color-primary: #7047EB;
   --color-primary-light: #8b6cf0;
   --color-primary-dark: #5a35d4;
   --color-accent: #5fbd74;
   --color-accent-light: #7dcc8d;
   --color-accent-dark: #4da760;
+
+  /* Card and surface colors */
+  --card-bg: #ffffff;
+  --card-border: #e5e5e7;
+
+  /* Input colors */
+  --input-bg: #f5f5f7;
+  --input-border: #e5e5e7;
+}
+
+.dark {
+  --background: #000000;
+  --background-secondary: #1d1d1f;
+  --foreground: #f5f5f7;
+  --foreground-secondary: #86868b;
+  --border: #424245;
+  --border-light: #2d2d2d;
+
+  --card-bg: #1d1d1f;
+  --card-border: #424245;
+
+  --input-bg: #2d2d2d;
+  --input-border: #424245;
 }
 
 @theme inline {
@@ -19,42 +47,61 @@
   --font-sans: var(--font-roboto);
 }
 
+/* Apple-inspired typography and base styles */
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
-  font-size: 16px;
-  line-height: 1.5;
+  font-family: -apple-system, BlinkMacSystemFont, var(--font-sans), "SF Pro Display", "SF Pro Text", system-ui, sans-serif;
+  font-size: 17px;
+  line-height: 1.47059;
+  letter-spacing: -0.022em;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
-/* Smooth scrolling */
-html {
-  scroll-behavior: smooth;
+/* Headings with Apple-style letter spacing */
+h1, h2, h3, h4, h5, h6 {
+  letter-spacing: -0.025em;
+  font-weight: 600;
 }
 
-/* Better focus styles - purple themed */
+/* Better focus styles */
 *:focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
 
-/* Custom scrollbar */
+/* Custom scrollbar - light mode */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: var(--background-secondary);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--border);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--foreground-secondary);
+}
+
+/* Dark mode scrollbar */
+.dark ::-webkit-scrollbar-track {
+  background: var(--background);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: var(--border);
 }
 
 /* Line clamp utilities */
@@ -90,12 +137,12 @@ html {
 }
 
 .animate-shimmer {
-  background: linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%);
+  background: linear-gradient(90deg, var(--border-light) 25%, var(--border) 50%, var(--border-light) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
 }
 
-/* Fade in animation for wrapped */
+/* Fade in animation */
 @keyframes fade-in {
   0% {
     opacity: 0;
@@ -125,7 +172,7 @@ html {
   animation: pulse-glow 2s ease-in-out infinite;
 }
 
-/* Custom color utilities for the primary/accent colors */
+/* Custom color utilities */
 .bg-primary {
   background-color: var(--color-primary);
 }
@@ -165,4 +212,23 @@ html {
 
 .hover\:text-primary:hover {
   color: var(--color-primary);
+}
+
+/* Smooth transitions for theme changes */
+* {
+  transition-property: background-color, border-color;
+  transition-duration: 0.2s;
+  transition-timing-function: ease;
+}
+
+/* Disable transitions on elements that shouldn't animate */
+button, a, input, textarea, select {
+  transition-property: background-color, border-color, color, box-shadow, transform;
+  transition-duration: 0.2s;
+}
+
+/* Backdrop blur for navbar */
+.backdrop-blur-nav {
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
 }

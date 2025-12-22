@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Roboto } from "next/font/google";
 import "./globals.css";
 import SessionProvider from "@/components/providers/SessionProvider";
+import ThemeProvider from "@/components/providers/ThemeProvider";
 
 const roboto = Roboto({
   subsets: ["latin"],
@@ -11,7 +12,8 @@ const roboto = Roboto({
 
 export const metadata: Metadata = {
   title: "Life on Books - Track Your Reading Journey",
-  description: "A community for book lovers to track reading, write reviews, and discover new books.",
+  description:
+    "A community for book lovers to track reading, write reviews, and discover new books.",
 };
 
 export default function RootLayout({
@@ -20,9 +22,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={`${roboto.variable} font-sans antialiased bg-gray-50 text-gray-900`}>
-        <SessionProvider>{children}</SessionProvider>
+    <html lang="en" suppressHydrationWarning>
+      <body className={`${roboto.variable} font-sans antialiased`}>
+        <SessionProvider>
+          <ThemeProvider>{children}</ThemeProvider>
+        </SessionProvider>
       </body>
     </html>
   );
