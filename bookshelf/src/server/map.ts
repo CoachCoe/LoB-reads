@@ -1,3 +1,4 @@
+// Force cache bust: v2
 import prisma from "@/lib/prisma";
 
 export interface BookLocation {
