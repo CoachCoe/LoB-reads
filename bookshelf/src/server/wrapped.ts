@@ -186,3 +186,186 @@ export async function getWrappedStats(userId: string, year: number = new Date().
     favoriteAuthor: topAuthors[0]?.author || null,
   };
 }
+
+export interface WrappedProjections {
+  year: number;
+  // YTD stats
+  booksReadYTD: number;
+  pagesReadYTD: number;
+  reviewsWrittenYTD: number;
+  daysElapsed: number;
+  daysRemaining: number;
+  // Current pace
+  booksPerMonth: number;
+  pagesPerDay: number;
+  // Projections
+  projectedBooksEndOfYear: number;
+  projectedPagesEndOfYear: number;
+  // Goals helper
+  booksNeededPerMonthFor50: number;
+  booksNeededPerMonthFor100: number;
+  onTrackFor50: boolean;
+  onTrackFor100: boolean;
+  // Previous year comparison (if available)
+  previousYearBooks: number | null;
+  aheadOfLastYear: boolean | null;
+  // Monthly breakdown
+  readingByMonth: { month: number; count: number }[];
+  // Recent activity
+  lastBookFinished: { title: string; author: string; finishedAt: Date } | null;
+  currentlyReading: { title: string; author: string; progress: number }[];
+}
+
+export async function getWrappedProjections(userId: string): Promise<WrappedProjections> {
+  const now = new Date();
+  const year = now.getFullYear();
+  const startOfYear = new Date(year, 0, 1);
+  const endOfYear = new Date(year, 11, 31, 23, 59, 59);
+
+  // Calculate days elapsed and remaining
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const daysElapsed = Math.floor((now.getTime() - startOfYear.getTime()) / msPerDay) + 1;
+  const totalDaysInYear = 365 + (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 1 : 0);
+  const daysRemaining = totalDaysInYear - daysElapsed;
+
+  // Get books finished this year
+  const finishedBooks = await prisma.readingProgress.findMany({
+    where: {
+      userId,
+      finishedAt: {
+        gte: startOfYear,
+        lte: endOfYear,
+      },
+    },
+    include: {
+      book: true,
+    },
+    orderBy: {
+      finishedAt: "desc",
+    },
+  });
+
+  // Get currently reading books (started but not finished)
+  const currentlyReadingProgress = await prisma.readingProgress.findMany({
+    where: {
+      userId,
+      finishedAt: null,
+    },
+    include: {
+      book: true,
+    },
+  });
+
+  // Get reviews this year
+  const reviews = await prisma.review.findMany({
+    where: {
+      userId,
+      createdAt: {
+        gte: startOfYear,
+        lte: endOfYear,
+      },
+    },
+  });
+
+  // Get previous year stats
+  const previousYearStart = new Date(year - 1, 0, 1);
+  const previousYearEnd = new Date(year - 1, 11, 31, 23, 59, 59);
+  const previousYearBooks = await prisma.readingProgress.count({
+    where: {
+      userId,
+      finishedAt: {
+        gte: previousYearStart,
+        lte: previousYearEnd,
+      },
+    },
+  });
+
+  // Calculate YTD stats
+  const booksReadYTD = finishedBooks.length;
+  const pagesReadYTD = finishedBooks.reduce((sum, p) => sum + (p.book.pageCount || 0), 0);
+  const reviewsWrittenYTD = reviews.length;
+
+  // Current pace calculations
+  const monthsElapsed = daysElapsed / 30.44; // Average days per month
+  const booksPerMonth = booksReadYTD / monthsElapsed;
+  const pagesPerDay = pagesReadYTD / daysElapsed;
+
+  // Projections
+  const monthsRemaining = daysRemaining / 30.44;
+  const projectedBooksEndOfYear = Math.round(booksReadYTD + (booksPerMonth * monthsRemaining));
+  const projectedPagesEndOfYear = Math.round(pagesReadYTD + (pagesPerDay * daysRemaining));
+
+  // Goal calculations
+  const booksNeededFor50 = Math.max(0, 50 - booksReadYTD);
+  const booksNeededFor100 = Math.max(0, 100 - booksReadYTD);
+  const booksNeededPerMonthFor50 = monthsRemaining > 0 ? booksNeededFor50 / monthsRemaining : 0;
+  const booksNeededPerMonthFor100 = monthsRemaining > 0 ? booksNeededFor100 / monthsRemaining : 0;
+
+  // Reading by month
+  const monthCounts: Record<number, number> = {};
+  for (let i = 0; i < 12; i++) {
+    monthCounts[i] = 0;
+  }
+  finishedBooks.forEach((p) => {
+    if (p.finishedAt) {
+      const month = p.finishedAt.getMonth();
+      monthCounts[month]++;
+    }
+  });
+  const readingByMonth = Object.entries(monthCounts).map(([month, count]) => ({
+    month: parseInt(month),
+    count,
+  }));
+
+  // Previous year comparison (at same point in year)
+  const sameDateLastYear = new Date(year - 1, now.getMonth(), now.getDate());
+  const booksAtThisPointLastYear = await prisma.readingProgress.count({
+    where: {
+      userId,
+      finishedAt: {
+        gte: previousYearStart,
+        lte: sameDateLastYear,
+      },
+    },
+  });
+
+  // Last book finished
+  const lastBookFinished = finishedBooks[0]
+    ? {
+        title: finishedBooks[0].book.title,
+        author: finishedBooks[0].book.author,
+        finishedAt: finishedBooks[0].finishedAt!,
+      }
+    : null;
+
+  // Currently reading (calculate progress from currentPage / pageCount)
+  const currentlyReading = currentlyReadingProgress.map((p) => ({
+    title: p.book.title,
+    author: p.book.author,
+    progress: p.book.pageCount && p.book.pageCount > 0
+      ? Math.round((p.currentPage / p.book.pageCount) * 100)
+      : 0,
+  }));
+
+  return {
+    year,
+    booksReadYTD,
+    pagesReadYTD,
+    reviewsWrittenYTD,
+    daysElapsed,
+    daysRemaining,
+    booksPerMonth: Math.round(booksPerMonth * 10) / 10,
+    pagesPerDay: Math.round(pagesPerDay),
+    projectedBooksEndOfYear,
+    projectedPagesEndOfYear,
+    booksNeededPerMonthFor50: Math.round(booksNeededPerMonthFor50 * 10) / 10,
+    booksNeededPerMonthFor100: Math.round(booksNeededPerMonthFor100 * 10) / 10,
+    onTrackFor50: projectedBooksEndOfYear >= 50,
+    onTrackFor100: projectedBooksEndOfYear >= 100,
+    previousYearBooks: previousYearBooks > 0 ? previousYearBooks : null,
+    aheadOfLastYear: previousYearBooks > 0 ? booksReadYTD > booksAtThisPointLastYear : null,
+    readingByMonth,
+    lastBookFinished,
+    currentlyReading,
+  };
+}

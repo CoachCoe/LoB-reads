@@ -365,6 +365,14 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
         </svg>
       </Link>
+
+      {/* Projections link */}
+      <Link
+        href="/wrapped/projections"
+        className="absolute top-4 left-4 px-4 py-2 rounded-full bg-white/20 hover:bg-white/30 transition-colors z-20 text-sm font-medium"
+      >
+        View Projections
+      </Link>
     </div>
   );
 }
