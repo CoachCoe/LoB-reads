@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/session";
 import { getBooksWithLocations } from "@/server/map";
+import { getAllFictionalWorlds } from "@/server/fictional-worlds";
 import MapClient from "./MapClient";
 
 export default async function MapPage() {
@@ -10,7 +11,10 @@ export default async function MapPage() {
     redirect("/login?callbackUrl=/map");
   }
 
-  const books = await getBooksWithLocations();
+  const [books, fictionalWorlds] = await Promise.all([
+    getBooksWithLocations(),
+    getAllFictionalWorlds(),
+  ]);
 
-  return <MapClient books={books} />;
+  return <MapClient books={books} initialFictionalWorlds={fictionalWorlds} />;
 }

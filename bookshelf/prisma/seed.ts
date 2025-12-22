@@ -13,7 +13,38 @@ async function main() {
   await prisma.shelfItem.deleteMany();
   await prisma.shelf.deleteMany();
   await prisma.book.deleteMany();
+  await prisma.fictionalWorld.deleteMany();
   await prisma.user.deleteMany();
+
+  console.log("🌍 Creating fictional worlds...");
+
+  // Create fictional worlds
+  const fictionalWorlds = await Promise.all([
+    prisma.fictionalWorld.create({
+      data: {
+        name: "Middle-earth",
+        description: "The fantasy world created by J.R.R. Tolkien, home to hobbits, elves, dwarves, and the epic struggle against Sauron.",
+      },
+    }),
+    prisma.fictionalWorld.create({
+      data: {
+        name: "Arrakis",
+        description: "The desert planet from Frank Herbert's Dune, also known as Dune. The only source of the spice melange.",
+      },
+    }),
+    prisma.fictionalWorld.create({
+      data: {
+        name: "Macondo",
+        description: "The fictional town in Colombia from Gabriel García Márquez's One Hundred Years of Solitude.",
+      },
+    }),
+  ]);
+
+  const middleEarth = fictionalWorlds[0];
+  const arrakis = fictionalWorlds[1];
+  const macondo = fictionalWorlds[2];
+
+  console.log(`✅ Created ${fictionalWorlds.length} fictional worlds`);
 
   console.log("📚 Creating books...");
 
@@ -103,12 +134,11 @@ async function main() {
         publishedDate: "1937",
         genres: ["Fantasy", "Adventure", "Children's Literature"],
         openLibraryId: "/works/OL262758W",
-        settingLocation: "Middle-earth (inspired by English countryside)",
-        settingCoordinates: '{"lat": 52.4862, "lng": -1.8904}',
+        settingLocation: "The Shire, Middle-earth",
         authorOrigin: "Bloemfontein, South Africa",
         authorOriginCoordinates: '{"lat": -29.0852, "lng": 26.1596}',
         isFictional: true,
-        fictionalWorld: "Middle-earth",
+        fictionalWorldId: middleEarth.id,
       },
     }),
     prisma.book.create({
@@ -123,12 +153,11 @@ async function main() {
         publishedDate: "1965",
         genres: ["Science Fiction", "Space Opera", "Political Fiction"],
         openLibraryId: "/works/OL893415W",
-        settingLocation: "Arrakis (inspired by Oregon Dunes)",
-        settingCoordinates: '{"lat": 43.7231, "lng": -124.1011}',
+        settingLocation: "Arrakeen, Arrakis",
         authorOrigin: "Tacoma, Washington",
         authorOriginCoordinates: '{"lat": 47.2529, "lng": -122.4443}',
         isFictional: true,
-        fictionalWorld: "Arrakis",
+        fictionalWorldId: arrakis.id,
       },
     }),
     prisma.book.create({
@@ -161,12 +190,11 @@ async function main() {
         publishedDate: "1967",
         genres: ["Magical Realism", "Literary Fiction", "Family Saga"],
         openLibraryId: "/works/OL59856W",
-        settingLocation: "Macondo (inspired by Aracataca, Colombia)",
-        settingCoordinates: '{"lat": 10.9639, "lng": -74.7964}',
+        settingLocation: "Macondo",
         authorOrigin: "Aracataca, Colombia",
         authorOriginCoordinates: '{"lat": 10.5919, "lng": -74.1897}',
         isFictional: true,
-        fictionalWorld: "Macondo",
+        fictionalWorldId: macondo.id,
       },
     }),
     prisma.book.create({
@@ -199,12 +227,11 @@ async function main() {
         publishedDate: "1954",
         genres: ["Fantasy", "Adventure", "Epic"],
         openLibraryId: "/works/OL27448W",
-        settingLocation: "Middle-earth (inspired by Oxford, England)",
-        settingCoordinates: '{"lat": 51.7520, "lng": -1.2577}',
+        settingLocation: "Middle-earth",
         authorOrigin: "Bloemfontein, South Africa",
         authorOriginCoordinates: '{"lat": -29.0852, "lng": 26.1596}',
         isFictional: true,
-        fictionalWorld: "Middle-earth",
+        fictionalWorldId: middleEarth.id,
       },
     }),
   ]);

@@ -2,16 +2,21 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { MapPin, BookOpen, User, Eye, EyeOff } from "lucide-react";
+import { MapPin, BookOpen, User, Eye, EyeOff, Sparkles } from "lucide-react";
 import { BookLocation } from "@/server/map";
+import { FictionalWorldWithBooks } from "@/server/fictional-worlds";
+import FictionalWorldsPanel from "@/components/map/FictionalWorldsPanel";
 
 interface MapClientProps {
   books: BookLocation[];
+  initialFictionalWorlds: FictionalWorldWithBooks[];
 }
 
-export default function MapClient({ books }: MapClientProps) {
+export default function MapClient({ books, initialFictionalWorlds }: MapClientProps) {
   const [showSettings, setShowSettings] = useState(true);
   const [showAuthors, setShowAuthors] = useState(true);
+  const [showFictionalPanel, setShowFictionalPanel] = useState(false);
+  const [fictionalWorlds, setFictionalWorlds] = useState(initialFictionalWorlds);
   const [MapComponent, setMapComponent] = useState<React.ComponentType<{
     books: BookLocation[];
     showSettings: boolean;
@@ -76,6 +81,15 @@ export default function MapClient({ books }: MapClientProps) {
               <User className="h-4 w-4" />
               Author Origins ({authorsCount})
             </button>
+
+            {/* Fictional Worlds Button */}
+            <button
+              onClick={() => setShowFictionalPanel(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium bg-purple-600 text-white hover:bg-purple-700 transition-all"
+            >
+              <Sparkles className="h-4 w-4" />
+              Fictional Worlds ({fictionalWorlds.length})
+            </button>
           </div>
         </div>
       </div>
@@ -124,18 +138,20 @@ export default function MapClient({ books }: MapClientProps) {
               <span className="text-xs text-gray-600">Book Setting</span>
             </div>
             <div className="flex items-center gap-2">
-              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="#9333EA" stroke="white" strokeWidth="1.5">
-                <path d="M12 2l2.4 7.4h7.6l-6 4.6 2.3 7-6.3-4.6-6.3 4.6 2.3-7-6-4.6h7.6z"/>
-              </svg>
-              <span className="text-xs text-gray-600">Fictional Setting</span>
-            </div>
-            <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-[#5fbd74]" />
               <span className="text-xs text-gray-600">Author Origin</span>
             </div>
           </div>
         </div>
       )}
+
+      {/* Fictional Worlds Panel */}
+      <FictionalWorldsPanel
+        worlds={fictionalWorlds}
+        isOpen={showFictionalPanel}
+        onClose={() => setShowFictionalPanel(false)}
+        onWorldsUpdate={setFictionalWorlds}
+      />
     </div>
   );
 }

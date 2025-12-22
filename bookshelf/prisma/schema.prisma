@@ -48,8 +48,9 @@ model Book {
   authorOriginCoordinates  String? // JSON string: {"lat": number, "lng": number}
 
   // Fictional location support
-  isFictional     Boolean @default(false)
-  fictionalWorld  String? // e.g., "Middle Earth", "Arrakis", "Macondo"
+  isFictional        Boolean          @default(false)
+  fictionalWorldId   String?
+  fictionalWorld     FictionalWorld?  @relation(fields: [fictionalWorldId], references: [id])
 
   // Relations
   reviews         Review[]
@@ -58,7 +59,22 @@ model Book {
 
   @@index([title])
   @@index([author])
+  @@index([fictionalWorldId])
   @@map("books")
+}
+
+model FictionalWorld {
+  id          String   @id @default(cuid())
+  name        String   @unique // e.g., "Middle-earth", "Arrakis", "Macondo"
+  description String?
+  mapImageUrl String?  // URL to uploaded map image (Vercel Blob)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  books Book[]
+
+  @@map("fictional_worlds")
 }
 
 model Shelf {
