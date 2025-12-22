@@ -18,11 +18,13 @@ model User {
   updatedAt    DateTime @updatedAt
 
   // Relations
-  shelves         Shelf[]
-  reviews         Review[]
-  readingProgress ReadingProgress[]
-  followers       Follow[]          @relation("Following")
-  following       Follow[]          @relation("Follower")
+  shelves           Shelf[]
+  reviews           Review[]
+  readingProgress   ReadingProgress[]
+  followers         Follow[]          @relation("Following")
+  following         Follow[]          @relation("Follower")
+  bookLocations     BookLocation[]    // Locations this user contributed
+  authorLocations   AuthorLocation[]  // Author locations this user contributed
 
   @@map("users")
 }
@@ -56,6 +58,7 @@ model Book {
   reviews         Review[]
   shelfItems      ShelfItem[]
   readingProgress ReadingProgress[]
+  locations       BookLocation[]    // Crowdsourced location data
 
   @@index([title])
   @@index([author])
@@ -72,7 +75,8 @@ model FictionalWorld {
   updatedAt   DateTime @updatedAt
 
   // Relations
-  books Book[]
+  books         Book[]
+  bookLocations BookLocation[]  // Fictional locations in this world
 
   @@map("fictional_worlds")
 }
@@ -154,4 +158,68 @@ model Follow {
 
   @@unique([followerId, followingId])
   @@map("follows")
+}
+
+// Crowdsourced location data - Wikipedia-style contributions
+
+model BookLocation {
+  id          String   @id @default(cuid())
+  bookId      String
+  addedById   String
+  name        String   // e.g., "Arrakis", "Paris", "Shire"
+  type        String   // "setting", "mentioned", "inspired_by"
+  description String?  // User's note about this location
+  coordinates String?  // JSON: {"lat": number, "lng": number} - null for fictional
+  isFictional Boolean  @default(false)
+  fictionalWorldId String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  book           Book            @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  addedBy        User            @relation(fields: [addedById], references: [id], onDelete: Cascade)
+  fictionalWorld FictionalWorld? @relation(fields: [fictionalWorldId], references: [id])
+
+  @@index([bookId])
+  @@index([addedById])
+  @@map("book_locations")
+}
+
+model Author {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  bio         String?
+  photoUrl    String?
+  birthYear   Int?
+  deathYear   Int?
+  openLibraryId String? @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  locations AuthorLocation[]
+
+  @@map("authors")
+}
+
+model AuthorLocation {
+  id          String   @id @default(cuid())
+  authorId    String
+  addedById   String
+  name        String   // e.g., "Oxford, UK", "Cartagena, Colombia"
+  type        String   // "birthplace", "residence", "death", "worked"
+  description String?  // User's note about this location
+  coordinates String   // JSON: {"lat": number, "lng": number}
+  yearStart   Int?     // When they were at this location
+  yearEnd     Int?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  author  Author @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  addedBy User   @relation(fields: [addedById], references: [id], onDelete: Cascade)
+
+  @@index([authorId])
+  @@index([addedById])
+  @@map("author_locations")
 }

@@ -2,25 +2,36 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { MapPin, BookOpen, User, Eye, EyeOff, Sparkles } from "lucide-react";
-import { BookLocation } from "@/server/map";
+import { MapPin, BookOpen, User, Eye, EyeOff, Sparkles, Users } from "lucide-react";
+import { BookLocation, CrowdsourcedLocation, AuthorMapLocation } from "@/server/map";
 import { FictionalWorldWithBooks } from "@/server/fictional-worlds";
 import FictionalWorldsPanel from "@/components/map/FictionalWorldsPanel";
 
 interface MapClientProps {
   books: BookLocation[];
+  crowdsourcedBookLocations: CrowdsourcedLocation[];
+  crowdsourcedAuthorLocations: AuthorMapLocation[];
   initialFictionalWorlds: FictionalWorldWithBooks[];
 }
 
-export default function MapClient({ books, initialFictionalWorlds }: MapClientProps) {
+export default function MapClient({
+  books,
+  crowdsourcedBookLocations,
+  crowdsourcedAuthorLocations,
+  initialFictionalWorlds,
+}: MapClientProps) {
   const [showSettings, setShowSettings] = useState(true);
   const [showAuthors, setShowAuthors] = useState(true);
+  const [showCrowdsourced, setShowCrowdsourced] = useState(true);
   const [showFictionalPanel, setShowFictionalPanel] = useState(false);
   const [fictionalWorlds, setFictionalWorlds] = useState(initialFictionalWorlds);
   const [MapComponent, setMapComponent] = useState<React.ComponentType<{
     books: BookLocation[];
+    crowdsourcedBookLocations: CrowdsourcedLocation[];
+    crowdsourcedAuthorLocations: AuthorMapLocation[];
     showSettings: boolean;
     showAuthors: boolean;
+    showCrowdsourced: boolean;
   }> | null>(null);
 
   useEffect(() => {
@@ -32,6 +43,7 @@ export default function MapClient({ books, initialFictionalWorlds }: MapClientPr
 
   const settingsCount = books.filter((b) => b.settingCoordinates).length;
   const authorsCount = books.filter((b) => b.authorOriginCoordinates).length;
+  const crowdsourcedCount = crowdsourcedBookLocations.length + crowdsourcedAuthorLocations.length;
 
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col">
@@ -82,6 +94,26 @@ export default function MapClient({ books, initialFictionalWorlds }: MapClientPr
               Author Origins ({authorsCount})
             </button>
 
+            {/* Toggle for Crowdsourced Locations */}
+            {crowdsourcedCount > 0 && (
+              <button
+                onClick={() => setShowCrowdsourced(!showCrowdsourced)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                  showCrowdsourced
+                    ? "bg-amber-500 text-white"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                {showCrowdsourced ? (
+                  <Eye className="h-4 w-4" />
+                ) : (
+                  <EyeOff className="h-4 w-4" />
+                )}
+                <Users className="h-4 w-4" />
+                Community ({crowdsourcedCount})
+              </button>
+            )}
+
             {/* Fictional Worlds Button */}
             <button
               onClick={() => setShowFictionalPanel(true)}
@@ -118,8 +150,11 @@ export default function MapClient({ books, initialFictionalWorlds }: MapClientPr
         ) : MapComponent ? (
           <MapComponent
             books={books}
+            crowdsourcedBookLocations={crowdsourcedBookLocations}
+            crowdsourcedAuthorLocations={crowdsourcedAuthorLocations}
             showSettings={showSettings}
             showAuthors={showAuthors}
+            showCrowdsourced={showCrowdsourced}
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
@@ -129,7 +164,7 @@ export default function MapClient({ books, initialFictionalWorlds }: MapClientPr
       </div>
 
       {/* Legend */}
-      {books.length > 0 && (
+      {(books.length > 0 || crowdsourcedCount > 0) && (
         <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-lg border border-gray-200 p-3 z-[1000]">
           <p className="text-xs font-semibold text-gray-700 mb-2">Legend</p>
           <div className="space-y-1.5">
@@ -141,6 +176,12 @@ export default function MapClient({ books, initialFictionalWorlds }: MapClientPr
               <div className="w-3 h-3 rounded-full bg-[#5fbd74]" />
               <span className="text-xs text-gray-600">Author Origin</span>
             </div>
+            {crowdsourcedCount > 0 && (
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-amber-500" />
+                <span className="text-xs text-gray-600">Community Added</span>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -1,10 +1,10 @@
 "use client";
 
-// Force cache bust: v2
+// Force cache bust: v3
 import { useEffect } from "react";
 import L from "leaflet";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
-import { BookLocation } from "@/server/map";
+import { BookLocation, CrowdsourcedLocation, AuthorMapLocation } from "@/server/map";
 import "leaflet/dist/leaflet.css";
 
 // Fix for default marker icons in Leaflet with webpack
@@ -49,17 +49,25 @@ const createCustomIcon = (color: string, isFictional: boolean = false) => {
 const settingIcon = createCustomIcon("#7047EB");
 const fictionalSettingIcon = createCustomIcon("#9333EA", true);
 const authorIcon = createCustomIcon("#5fbd74");
+const crowdsourcedBookIcon = createCustomIcon("#f59e0b"); // amber
+const crowdsourcedAuthorIcon = createCustomIcon("#d97706"); // darker amber
 
 interface LeafletMapProps {
   books: BookLocation[];
+  crowdsourcedBookLocations: CrowdsourcedLocation[];
+  crowdsourcedAuthorLocations: AuthorMapLocation[];
   showSettings: boolean;
   showAuthors: boolean;
+  showCrowdsourced: boolean;
 }
 
 export default function LeafletMap({
   books,
+  crowdsourcedBookLocations,
+  crowdsourcedAuthorLocations,
   showSettings,
   showAuthors,
+  showCrowdsourced,
 }: LeafletMapProps) {
   useEffect(() => {
     // Fix Leaflet's default icon issue
@@ -183,6 +191,89 @@ export default function LeafletMap({
               </Popup>
             </Marker>
           ))}
+
+      {/* Crowdsourced Book Location Markers */}
+      {showCrowdsourced &&
+        crowdsourcedBookLocations.map((location) => (
+          <Marker
+            key={`crowdsourced-book-${location.id}`}
+            position={[location.coordinates.lat, location.coordinates.lng]}
+            icon={crowdsourcedBookIcon}
+          >
+            <Popup>
+              <div className="min-w-[200px]">
+                <div className="flex gap-3">
+                  {location.book.coverUrl && (
+                    <img
+                      src={location.book.coverUrl}
+                      alt={location.book.title}
+                      className="w-12 h-16 object-cover rounded"
+                    />
+                  )}
+                  <div className="flex-1">
+                    <p className="font-semibold text-gray-900 text-sm">
+                      {location.book.title}
+                    </p>
+                    <p className="text-xs text-gray-500">{location.book.author}</p>
+                  </div>
+                </div>
+                <div className="mt-2 pt-2 border-t border-gray-100">
+                  <p className="text-xs text-amber-600 font-medium">
+                    {location.type === "setting" ? "Story set in:" : location.type === "mentioned" ? "Mentioned:" : "Inspired by:"}
+                  </p>
+                  <p className="text-xs text-gray-600">{location.name}</p>
+                  <p className="text-xs text-gray-400 mt-1">Added by {location.addedBy}</p>
+                </div>
+                <a
+                  href={`/book/${location.book.id}`}
+                  className="mt-2 block text-center text-xs bg-amber-500 text-white py-1.5 rounded-full hover:bg-amber-600 transition-colors"
+                >
+                  View Book
+                </a>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
+
+      {/* Crowdsourced Author Location Markers */}
+      {showCrowdsourced &&
+        crowdsourcedAuthorLocations.map((location) => (
+          <Marker
+            key={`crowdsourced-author-${location.id}`}
+            position={[location.coordinates.lat, location.coordinates.lng]}
+            icon={crowdsourcedAuthorIcon}
+          >
+            <Popup>
+              <div className="min-w-[200px]">
+                <div className="flex gap-3">
+                  <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center text-2xl">
+                    👤
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-semibold text-gray-900 text-sm">
+                      {location.author.name}
+                    </p>
+                    <p className="text-xs text-amber-600">
+                      {location.type === "birthplace" ? "Birthplace" :
+                       location.type === "residence" ? "Residence" :
+                       location.type === "worked" ? "Worked" : "Passed away"}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-2 pt-2 border-t border-gray-100">
+                  <p className="text-xs text-gray-600">{location.name}</p>
+                  <p className="text-xs text-gray-400 mt-1">Added by {location.addedBy}</p>
+                </div>
+                <a
+                  href={`/author/${encodeURIComponent(location.author.name)}`}
+                  className="mt-2 block text-center text-xs bg-amber-600 text-white py-1.5 rounded-full hover:bg-amber-700 transition-colors"
+                >
+                  View Author
+                </a>
+              </div>
+            </Popup>
+          </Marker>
+        ))}
     </MapContainer>
   );
 }

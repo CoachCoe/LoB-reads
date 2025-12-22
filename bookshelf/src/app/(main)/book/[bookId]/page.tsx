@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getBookById } from "@/server/books";
 import { getCurrentUser } from "@/lib/session";
@@ -9,6 +10,7 @@ import AddToShelfButton from "@/components/books/AddToShelfButton";
 import ReadingProgressSection from "@/components/books/ReadingProgressSection";
 import ReviewCard from "@/components/reviews/ReviewCard";
 import BookReviewSection from "./BookReviewSection";
+import BookLocationsSection from "@/components/books/BookLocationsSection";
 
 interface Props {
   params: Promise<{ bookId: string }>;
@@ -63,7 +65,15 @@ export default async function BookDetailPage({ params }: Props) {
           <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">
             {book.title}
           </h1>
-          <p className="text-xl text-gray-600 mb-4">by {book.author}</p>
+          <p className="text-xl text-gray-600 mb-4">
+            by{" "}
+            <Link
+              href={`/author/${encodeURIComponent(book.author)}`}
+              className="text-[#7047EB] hover:text-[#5a35d4] hover:underline"
+            >
+              {book.author}
+            </Link>
+          </p>
 
           {/* Rating */}
           <div className="flex items-center gap-3 mb-4">
@@ -120,6 +130,11 @@ export default async function BookDetailPage({ params }: Props) {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Locations section - Wikipedia-style crowdsourced */}
+      <div className="mb-8">
+        <BookLocationsSection bookId={book.id} currentUserId={user?.id} />
       </div>
 
       {/* Reviews section */}
