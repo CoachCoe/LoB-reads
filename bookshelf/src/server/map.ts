@@ -1,4 +1,3 @@
-// Force cache bust: v2
 import prisma from "@/lib/prisma";
 
 export interface BookLocation {
@@ -11,7 +10,7 @@ export interface BookLocation {
   authorOrigin: string | null;
   authorOriginCoordinates: { lat: number; lng: number } | null;
   isFictional: boolean;
-  fictionalWorld: string | null;
+  fictionalWorldName: string | null;
 }
 
 export async function getBooksWithLocations(): Promise<BookLocation[]> {
@@ -32,17 +31,28 @@ export async function getBooksWithLocations(): Promise<BookLocation[]> {
       authorOrigin: true,
       authorOriginCoordinates: true,
       isFictional: true,
-      fictionalWorld: true,
+      fictionalWorld: {
+        select: {
+          name: true,
+        },
+      },
     },
   });
 
   return books.map((book) => ({
-    ...book,
+    id: book.id,
+    title: book.title,
+    author: book.author,
+    coverUrl: book.coverUrl,
+    settingLocation: book.settingLocation,
     settingCoordinates: book.settingCoordinates
       ? JSON.parse(book.settingCoordinates)
       : null,
+    authorOrigin: book.authorOrigin,
     authorOriginCoordinates: book.authorOriginCoordinates
       ? JSON.parse(book.authorOriginCoordinates)
       : null,
+    isFictional: book.isFictional,
+    fictionalWorldName: book.fictionalWorld?.name ?? null,
   }));
 }

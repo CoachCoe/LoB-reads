@@ -106,10 +106,10 @@ export default function LeafletMap({
                         {book.title}
                       </p>
                       <p className="text-xs text-gray-500">{book.author}</p>
-                      {book.isFictional && book.fictionalWorld && (
+                      {book.isFictional && book.fictionalWorldName && (
                         <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 bg-purple-100 text-purple-700 text-xs rounded-full">
                           <span>✨</span>
-                          {book.fictionalWorld}
+                          {book.fictionalWorldName}
                         </span>
                       )}
                     </div>
