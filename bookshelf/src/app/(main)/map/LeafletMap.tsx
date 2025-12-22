@@ -1,6 +1,9 @@
 "use client";
 
-// Force cache bust: v3
+/* eslint-disable @next/next/no-img-element */
+// Note: We use <img> instead of <Image> inside Leaflet popups because
+// Next.js Image component doesn't work correctly within Leaflet's DOM manipulation
+
 import { useEffect } from "react";
 import L from "leaflet";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";

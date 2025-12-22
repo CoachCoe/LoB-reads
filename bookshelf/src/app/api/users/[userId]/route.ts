@@ -15,8 +15,9 @@ export async function GET(
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Don't expose password hash
-    const { passwordHash: _, ...safeUser } = user;
+    // Don't expose password hash - destructure to omit it from response
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { passwordHash, ...safeUser } = user;
     return NextResponse.json(safeUser);
   } catch (error) {
     console.error("Get user error:", error);
@@ -45,7 +46,9 @@ export async function PATCH(
 
     const user = await updateUserProfile(userId, { name, bio, avatarUrl });
 
-    const { passwordHash: _, ...safeUser } = user;
+    // Don't expose password hash - destructure to omit it from response
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { passwordHash, ...safeUser } = user;
     return NextResponse.json(safeUser);
   } catch (error) {
     console.error("Update user error:", error);

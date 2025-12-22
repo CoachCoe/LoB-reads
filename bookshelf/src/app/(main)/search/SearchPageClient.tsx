@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Image from "next/image";
 import { Search, Plus, Loader2 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { Book } from "@prisma/client";
@@ -228,10 +229,13 @@ function OpenLibraryBookCard({
     <div className="bg-white rounded-lg border border-gray-200 p-4">
       <div className="flex gap-4">
         {book.coverUrl ? (
-          <img
+          <Image
             src={book.coverUrl}
             alt={book.title}
+            width={80}
+            height={112}
             className="w-20 h-28 object-cover rounded"
+            unoptimized
           />
         ) : (
           <div className="w-20 h-28 bg-gradient-to-br from-amber-100 to-orange-100 rounded flex items-center justify-center">

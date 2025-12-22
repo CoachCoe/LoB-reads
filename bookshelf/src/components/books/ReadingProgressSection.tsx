@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { BookOpen, Check } from "lucide-react";
 import Button from "@/components/ui/Button";
@@ -27,13 +27,7 @@ export default function ReadingProgressSection({
   const [pageInput, setPageInput] = useState("");
   const [isEditing, setIsEditing] = useState(false);
 
-  useEffect(() => {
-    if (session?.user) {
-      fetchProgress();
-    }
-  }, [session, bookId]);
-
-  const fetchProgress = async () => {
+  const fetchProgress = useCallback(async () => {
     try {
       const response = await fetch(`/api/progress?bookId=${bookId}`);
       if (response.ok) {
@@ -49,7 +43,13 @@ export default function ReadingProgressSection({
     } catch (error) {
       console.error("Failed to fetch progress:", error);
     }
-  };
+  }, [bookId]);
+
+  useEffect(() => {
+    if (session?.user) {
+      fetchProgress();
+    }
+  }, [session, fetchProgress]);
 
   const handleStartReading = async () => {
     setIsLoading(true);

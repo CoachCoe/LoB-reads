@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { MapPin, Plus, X, Sparkles, Globe, Trash2 } from "lucide-react";
 import { BookLocationData } from "@/server/book-locations";
 import { FictionalWorldWithBooks } from "@/server/fictional-worlds";
@@ -32,12 +32,7 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
 
-  useEffect(() => {
-    fetchLocations();
-    fetchFictionalWorlds();
-  }, [bookId]);
-
-  const fetchLocations = async () => {
+  const fetchLocations = useCallback(async () => {
     try {
       const res = await fetch(`/api/books/${bookId}/locations`);
       if (res.ok) {
@@ -49,9 +44,9 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
     } finally {
       setLoading(false);
     }
-  };
+  }, [bookId]);
 
-  const fetchFictionalWorlds = async () => {
+  const fetchFictionalWorlds = useCallback(async () => {
     try {
       const res = await fetch("/api/fictional-worlds");
       if (res.ok) {
@@ -61,7 +56,12 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
     } catch (error) {
       console.error("Failed to fetch fictional worlds:", error);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchLocations();
+    fetchFictionalWorlds();
+  }, [fetchLocations, fetchFictionalWorlds]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

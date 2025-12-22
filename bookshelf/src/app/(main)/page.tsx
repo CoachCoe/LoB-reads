@@ -3,7 +3,6 @@ import { getCurrentUser } from "@/lib/session";
 import { getPopularBooks, searchLocalBooks } from "@/server/books";
 import { getActivityFeed } from "@/server/users";
 import { getUserCurrentlyReading } from "@/server/progress";
-import BookGrid from "@/components/books/BookGrid";
 import ActivityFeed from "@/components/social/ActivityFeed";
 import CurrentlyReadingCard from "@/components/books/CurrentlyReadingCard";
 import Button from "@/components/ui/Button";

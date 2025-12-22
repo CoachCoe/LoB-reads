@@ -66,10 +66,7 @@ export async function POST(
   }
 }
 
-export async function DELETE(
-  request: NextRequest,
-  { params }: { params: Promise<{ bookId: string }> }
-) {
+export async function DELETE(request: NextRequest) {
   try {
     const user = await getCurrentUser();
     if (!user?.id) {

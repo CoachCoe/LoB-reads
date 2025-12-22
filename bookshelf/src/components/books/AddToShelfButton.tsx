@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { ChevronDown, Check, BookPlus, Loader2 } from "lucide-react";
 import Button from "@/components/ui/Button";
@@ -27,17 +27,9 @@ export default function AddToShelfButton({ bookId, onAdd }: AddToShelfButtonProp
   const [shelves, setShelves] = useState<Shelf[]>([]);
   const [currentShelves, setCurrentShelves] = useState<ShelfStatus[]>([]);
   const [isOpen, setIsOpen] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
   const [loadingShelf, setLoadingShelf] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (session?.user) {
-      fetchShelves();
-      fetchBookStatus();
-    }
-  }, [session, bookId]);
-
-  const fetchShelves = async () => {
+  const fetchShelves = useCallback(async () => {
     try {
       const response = await fetch("/api/shelves");
       if (response.ok) {
@@ -47,9 +39,9 @@ export default function AddToShelfButton({ bookId, onAdd }: AddToShelfButtonProp
     } catch (error) {
       console.error("Failed to fetch shelves:", error);
     }
-  };
+  }, []);
 
-  const fetchBookStatus = async () => {
+  const fetchBookStatus = useCallback(async () => {
     try {
       const response = await fetch(`/api/books/${bookId}/shelves`);
       if (response.ok) {
@@ -59,7 +51,14 @@ export default function AddToShelfButton({ bookId, onAdd }: AddToShelfButtonProp
     } catch {
       // Book might not be on any shelf yet
     }
-  };
+  }, [bookId]);
+
+  useEffect(() => {
+    if (session?.user) {
+      fetchShelves();
+      fetchBookStatus();
+    }
+  }, [session, fetchShelves, fetchBookStatus]);
 
   const handleAddToShelf = async (shelfId: string) => {
     setLoadingShelf(shelfId);
@@ -114,7 +113,7 @@ export default function AddToShelfButton({ bookId, onAdd }: AddToShelfButtonProp
         onClick={() => setIsOpen(!isOpen)}
         variant={defaultShelf ? "secondary" : "primary"}
         className="flex items-center gap-2"
-        disabled={isLoading}
+        disabled={loadingShelf !== null}
       >
         {defaultShelf ? (
           <Check className="h-4 w-4" />

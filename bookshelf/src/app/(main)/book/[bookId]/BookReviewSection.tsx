@@ -44,7 +44,6 @@ export default function BookReviewSection({
 
   return (
     <ReviewForm
-      bookId={bookId}
       existingReview={existingReview || undefined}
       onSubmit={handleSubmit}
       onDelete={existingReview ? handleDelete : undefined}

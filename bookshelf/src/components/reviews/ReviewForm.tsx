@@ -6,7 +6,6 @@ import Textarea from "@/components/ui/Textarea";
 import Button from "@/components/ui/Button";
 
 interface ReviewFormProps {
-  bookId: string;
   existingReview?: {
     rating: number;
     content: string | null;
@@ -16,7 +15,6 @@ interface ReviewFormProps {
 }
 
 export default function ReviewForm({
-  bookId,
   existingReview,
   onSubmit,
   onDelete,

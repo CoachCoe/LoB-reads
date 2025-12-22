@@ -5,7 +5,6 @@ import Link from "next/link";
 import Image from "next/image";
 import { ChevronRight, X } from "lucide-react";
 import { ShelfWithBooks } from "@/types";
-import Button from "@/components/ui/Button";
 
 interface ShelfSectionProps {
   shelf: ShelfWithBooks;

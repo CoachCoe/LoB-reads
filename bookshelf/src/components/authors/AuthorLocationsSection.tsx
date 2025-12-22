@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { MapPin, Plus, X, Globe, Trash2, Home, Briefcase, Heart } from "lucide-react";
 import { AuthorLocationData } from "@/server/authors";
 
@@ -34,11 +34,7 @@ export default function AuthorLocationsSection({
   const [yearStart, setYearStart] = useState("");
   const [yearEnd, setYearEnd] = useState("");
 
-  useEffect(() => {
-    fetchLocations();
-  }, [authorName]);
-
-  const fetchLocations = async () => {
+  const fetchLocations = useCallback(async () => {
     try {
       const res = await fetch(`/api/authors/${encodeURIComponent(authorName)}/locations`);
       if (res.ok) {
@@ -50,7 +46,11 @@ export default function AuthorLocationsSection({
     } finally {
       setLoading(false);
     }
-  };
+  }, [authorName]);
+
+  useEffect(() => {
+    fetchLocations();
+  }, [fetchLocations]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
