@@ -124,6 +124,12 @@ export default function MapClient({ books }: MapClientProps) {
               <span className="text-xs text-gray-600">Book Setting</span>
             </div>
             <div className="flex items-center gap-2">
+              <svg viewBox="0 0 24 24" className="w-4 h-4" fill="#9333EA" stroke="white" strokeWidth="1.5">
+                <path d="M12 2l2.4 7.4h7.6l-6 4.6 2.3 7-6.3-4.6-6.3 4.6 2.3-7-6-4.6h7.6z"/>
+              </svg>
+              <span className="text-xs text-gray-600">Fictional Setting</span>
+            </div>
+            <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-[#5fbd74]" />
               <span className="text-xs text-gray-600">Author Origin</span>
             </div>

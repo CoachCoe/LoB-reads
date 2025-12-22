@@ -9,6 +9,8 @@ export interface BookLocation {
   settingCoordinates: { lat: number; lng: number } | null;
   authorOrigin: string | null;
   authorOriginCoordinates: { lat: number; lng: number } | null;
+  isFictional: boolean;
+  fictionalWorld: string | null;
 }
 
 export async function getBooksWithLocations(): Promise<BookLocation[]> {
@@ -28,6 +30,8 @@ export async function getBooksWithLocations(): Promise<BookLocation[]> {
       settingCoordinates: true,
       authorOrigin: true,
       authorOriginCoordinates: true,
+      isFictional: true,
+      fictionalWorld: true,
     },
   });
 

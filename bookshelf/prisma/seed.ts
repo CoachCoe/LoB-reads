@@ -107,6 +107,8 @@ async function main() {
         settingCoordinates: '{"lat": 52.4862, "lng": -1.8904}',
         authorOrigin: "Bloemfontein, South Africa",
         authorOriginCoordinates: '{"lat": -29.0852, "lng": 26.1596}',
+        isFictional: true,
+        fictionalWorld: "Middle-earth",
       },
     }),
     prisma.book.create({
@@ -125,6 +127,8 @@ async function main() {
         settingCoordinates: '{"lat": 43.7231, "lng": -124.1011}',
         authorOrigin: "Tacoma, Washington",
         authorOriginCoordinates: '{"lat": 47.2529, "lng": -122.4443}',
+        isFictional: true,
+        fictionalWorld: "Arrakis",
       },
     }),
     prisma.book.create({
@@ -157,10 +161,12 @@ async function main() {
         publishedDate: "1967",
         genres: ["Magical Realism", "Literary Fiction", "Family Saga"],
         openLibraryId: "/works/OL59856W",
-        settingLocation: "Macondo, Colombia (fictional)",
+        settingLocation: "Macondo (inspired by Aracataca, Colombia)",
         settingCoordinates: '{"lat": 10.9639, "lng": -74.7964}',
         authorOrigin: "Aracataca, Colombia",
         authorOriginCoordinates: '{"lat": 10.5919, "lng": -74.1897}',
+        isFictional: true,
+        fictionalWorld: "Macondo",
       },
     }),
     prisma.book.create({
@@ -197,6 +203,8 @@ async function main() {
         settingCoordinates: '{"lat": 51.7520, "lng": -1.2577}',
         authorOrigin: "Bloemfontein, South Africa",
         authorOriginCoordinates: '{"lat": -29.0852, "lng": 26.1596}',
+        isFictional: true,
+        fictionalWorld: "Middle-earth",
       },
     }),
   ]);

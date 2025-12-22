@@ -7,7 +7,28 @@ import { BookLocation } from "@/server/map";
 import "leaflet/dist/leaflet.css";
 
 // Fix for default marker icons in Leaflet with webpack
-const createCustomIcon = (color: string) => {
+const createCustomIcon = (color: string, isFictional: boolean = false) => {
+  if (isFictional) {
+    // Star/sparkle icon for fictional locations
+    return L.divIcon({
+      className: "custom-marker",
+      html: `<div style="
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+      ">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="${color}" stroke="white" stroke-width="1.5">
+          <path d="M12 2l2.4 7.4h7.6l-6 4.6 2.3 7-6.3-4.6-6.3 4.6 2.3-7-6-4.6h7.6z"/>
+        </svg>
+      </div>`,
+      iconSize: [28, 28],
+      iconAnchor: [14, 14],
+      popupAnchor: [0, -14],
+    });
+  }
   return L.divIcon({
     className: "custom-marker",
     html: `<div style="
@@ -25,6 +46,7 @@ const createCustomIcon = (color: string) => {
 };
 
 const settingIcon = createCustomIcon("#7047EB");
+const fictionalSettingIcon = createCustomIcon("#9333EA", true);
 const authorIcon = createCustomIcon("#5fbd74");
 
 interface LeafletMapProps {
@@ -66,7 +88,7 @@ export default function LeafletMap({
                 book.settingCoordinates!.lat,
                 book.settingCoordinates!.lng,
               ]}
-              icon={settingIcon}
+              icon={book.isFictional ? fictionalSettingIcon : settingIcon}
             >
               <Popup>
                 <div className="min-w-[200px]">
@@ -83,11 +105,17 @@ export default function LeafletMap({
                         {book.title}
                       </p>
                       <p className="text-xs text-gray-500">{book.author}</p>
+                      {book.isFictional && book.fictionalWorld && (
+                        <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 bg-purple-100 text-purple-700 text-xs rounded-full">
+                          <span>✨</span>
+                          {book.fictionalWorld}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="mt-2 pt-2 border-t border-gray-100">
-                    <p className="text-xs text-[#7047EB] font-medium">
-                      Story set in:
+                    <p className={`text-xs font-medium ${book.isFictional ? "text-purple-600" : "text-[#7047EB]"}`}>
+                      {book.isFictional ? "Fictional setting:" : "Story set in:"}
                     </p>
                     <p className="text-xs text-gray-600">
                       {book.settingLocation}
@@ -95,7 +123,11 @@ export default function LeafletMap({
                   </div>
                   <a
                     href={`/book/${book.id}`}
-                    className="mt-2 block text-center text-xs bg-[#7047EB] text-white py-1.5 rounded-full hover:bg-[#5a35d4] transition-colors"
+                    className={`mt-2 block text-center text-xs text-white py-1.5 rounded-full transition-colors ${
+                      book.isFictional
+                        ? "bg-purple-600 hover:bg-purple-700"
+                        : "bg-[#7047EB] hover:bg-[#5a35d4]"
+                    }`}
                   >
                     View Book
                   </a>
