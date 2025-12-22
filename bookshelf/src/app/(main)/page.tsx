@@ -128,12 +128,12 @@ function LandingPage() {
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link href="/register">
-              <Button size="lg" className="w-full sm:w-auto bg-white text-purple-600 hover:bg-white/90">
+              <Button size="lg" className="w-full sm:w-auto !bg-white !text-purple-600 hover:!bg-white/90">
                 Get Started Free
               </Button>
             </Link>
             <Link href="/login">
-              <Button variant="outline" size="lg" className="w-full sm:w-auto border-white text-white hover:bg-white/10">
+              <Button variant="outline" size="lg" className="w-full sm:w-auto !border-white !text-white hover:!bg-white/10">
                 Sign In
               </Button>
             </Link>
