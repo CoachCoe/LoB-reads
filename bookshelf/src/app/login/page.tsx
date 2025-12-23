@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { BookOpen } from "lucide-react";
+import Image from "next/image";
 import Card, { CardContent, CardHeader } from "@/components/ui/Card";
 import LoginForm from "./LoginForm";
 
@@ -11,10 +11,16 @@ export default function LoginPage() {
         <div className="text-center mb-8">
           <Link
             href="/"
-            className="inline-flex items-center gap-2 text-[#D4A017]"
+            className="inline-flex items-center gap-3 justify-center"
           >
-            <BookOpen className="h-10 w-10" />
-            <span className="text-3xl font-bold">Life on Books</span>
+            <Image
+              src="/logo.png"
+              alt="Life on Books"
+              width={120}
+              height={48}
+              className="h-12 w-auto logo-themed"
+            />
+            <span className="text-3xl font-bold text-[var(--foreground)]">Life on Books</span>
           </Link>
           <p className="mt-2 text-[var(--foreground-secondary)]">
             Welcome back, reader!
