@@ -26,13 +26,13 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       "inline-flex items-center justify-center font-medium rounded-full transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed";
 
     const variants = {
-      primary: "bg-[#7047EB] text-white hover:bg-[#5a35d4] focus:ring-[#7047EB] shadow-sm hover:shadow-md",
+      primary: "bg-[#D4A017] text-white hover:bg-[#B8860B] focus:ring-[#D4A017] shadow-sm hover:shadow-md",
       secondary: "bg-gray-100 text-gray-900 hover:bg-gray-200 focus:ring-gray-400",
       outline:
-        "border-2 border-[#7047EB] bg-transparent text-[#7047EB] hover:bg-[#7047EB] hover:text-white focus:ring-[#7047EB]",
-      ghost: "bg-transparent text-gray-700 hover:bg-gray-100 focus:ring-gray-400",
+        "border-2 border-[#D4A017] bg-transparent text-[#D4A017] hover:bg-[#D4A017] hover:text-white focus:ring-[#D4A017]",
+      ghost: "bg-transparent text-gray-700 dark:text-white hover:bg-gray-100 dark:hover:bg-white/10 focus:ring-gray-400",
       danger: "bg-red-600 text-white hover:bg-red-700 focus:ring-red-500 shadow-sm",
-      success: "bg-[#5fbd74] text-white hover:bg-[#4da760] focus:ring-[#5fbd74] shadow-sm hover:shadow-md",
+      success: "bg-[#D4A017] text-white hover:bg-[#B8860B] focus:ring-[#D4A017] shadow-sm hover:shadow-md",
     };
 
     const sizes = {

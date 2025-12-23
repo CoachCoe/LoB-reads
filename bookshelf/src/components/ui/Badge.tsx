@@ -11,8 +11,8 @@ export default function Badge({
 }: BadgeProps) {
   const variants = {
     default: "bg-gray-100 text-gray-700",
-    primary: "bg-[#7047EB]/10 text-[#7047EB]",
-    success: "bg-[#5fbd74]/10 text-[#5fbd74]",
+    primary: "bg-[#D4A017]/10 text-[#D4A017]",
+    success: "bg-[#D4A017]/10 text-[#D4A017]",
     warning: "bg-yellow-100 text-yellow-700",
     danger: "bg-red-100 text-red-700",
   };

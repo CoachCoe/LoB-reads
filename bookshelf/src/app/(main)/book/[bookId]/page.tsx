@@ -69,7 +69,7 @@ export default async function BookDetailPage({ params }: Props) {
             by{" "}
             <Link
               href={`/author/${encodeURIComponent(book.author)}`}
-              className="text-[#7047EB] hover:text-[#5a35d4] hover:underline"
+              className="text-[#D4A017] hover:text-[#B8860B] hover:underline"
             >
               {book.author}
             </Link>

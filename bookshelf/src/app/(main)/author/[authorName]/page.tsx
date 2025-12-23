@@ -83,7 +83,7 @@ export default async function AuthorPage({ params }: Props) {
         {/* Books by this author */}
         <div className="bg-[var(--card-bg)] rounded-lg border border-[var(--card-border)] p-6">
           <h3 className="text-lg font-semibold text-[var(--foreground)] mb-4 flex items-center gap-2">
-            <BookOpen className="h-5 w-5 text-[#7047EB]" />
+            <BookOpen className="h-5 w-5 text-[#D4A017]" />
             Books in Your Library
           </h3>
 
@@ -130,7 +130,7 @@ export default async function AuthorPage({ params }: Props) {
               <p className="text-sm">No books by this author in your library</p>
               <Link
                 href="/search"
-                className="text-sm text-[#7047EB] hover:text-[#5a35d4] font-medium mt-2 inline-block"
+                className="text-sm text-[#D4A017] hover:text-[#B8860B] font-medium mt-2 inline-block"
               >
                 Search for books
               </Link>

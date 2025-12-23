@@ -128,11 +128,11 @@ export default function AboutPage() {
           {features.map((feature) => (
             <div
               key={feature.title}
-              className="p-5 bg-[var(--card-bg)] rounded-xl border border-[var(--card-border)] hover:border-[#7047EB]/30 transition-colors"
+              className="p-5 bg-[var(--card-bg)] rounded-xl border border-[var(--card-border)] hover:border-[#D4A017]/30 transition-colors"
             >
               <div className="flex items-start gap-3">
-                <div className="p-2 bg-[#7047EB]/10 rounded-lg shrink-0">
-                  <feature.icon className="h-5 w-5 text-[#7047EB]" />
+                <div className="p-2 bg-[#D4A017]/10 rounded-lg shrink-0">
+                  <feature.icon className="h-5 w-5 text-[#D4A017]" />
                 </div>
                 <div>
                   <h3 className="text-base font-semibold text-[var(--foreground)] mb-1">
@@ -211,7 +211,7 @@ export default function AboutPage() {
         <div className="flex flex-wrap justify-center gap-4">
           <Link
             href="/"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-[#7047EB] text-white rounded-full font-medium hover:bg-[#5a35d4] transition-colors"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-[#D4A017] text-white rounded-full font-medium hover:bg-[#B8860B] transition-colors"
           >
             Explore the App
           </Link>
@@ -219,7 +219,7 @@ export default function AboutPage() {
             href="https://github.com/CoachCoe/LoB-reads"
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-[var(--card-bg)] text-[var(--foreground)] border border-[var(--card-border)] rounded-full font-medium hover:border-[#7047EB]/50 transition-colors"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-[var(--card-bg)] text-[var(--foreground)] border border-[var(--card-border)] rounded-full font-medium hover:border-[#D4A017]/50 transition-colors"
           >
             View on GitHub
           </a>

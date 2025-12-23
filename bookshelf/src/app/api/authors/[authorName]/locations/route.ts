@@ -54,9 +54,17 @@ export async function POST(
       );
     }
 
-    if (!coordinates || typeof coordinates.lat !== "number" || typeof coordinates.lng !== "number") {
+    if (
+      !coordinates ||
+      typeof coordinates.lat !== "number" ||
+      typeof coordinates.lng !== "number" ||
+      coordinates.lat < -90 ||
+      coordinates.lat > 90 ||
+      coordinates.lng < -180 ||
+      coordinates.lng > 180
+    ) {
       return NextResponse.json(
-        { error: "Valid coordinates are required" },
+        { error: "Valid coordinates are required (lat: -90 to 90, lng: -180 to 180)" },
         { status: 400 }
       );
     }

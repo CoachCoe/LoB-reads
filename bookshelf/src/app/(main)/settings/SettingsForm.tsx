@@ -157,7 +157,7 @@ export default function SettingsForm({ user }: SettingsFormProps) {
                 />
                 <div className="space-y-2">
                   {/* Upload Button */}
-                  <label className="flex items-center gap-2 px-4 py-2 bg-[#7047EB] text-white rounded-full hover:bg-[#5a35d4] transition-colors cursor-pointer text-sm font-medium">
+                  <label className="flex items-center gap-2 px-4 py-2 bg-[#D4A017] text-white rounded-full hover:bg-[#B8860B] transition-colors cursor-pointer text-sm font-medium">
                     <Upload className="h-4 w-4" />
                     {isUploadingAvatar ? "Uploading..." : "Upload Photo"}
                     <input
@@ -247,7 +247,7 @@ export default function SettingsForm({ user }: SettingsFormProps) {
           </p>
 
           <div className="space-y-2">
-            <label className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-[#7047EB] transition-colors cursor-pointer">
+            <label className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-[#D4A017] transition-colors cursor-pointer">
               <FileUp className="h-5 w-5 text-gray-400" />
               <span className="text-sm text-gray-600">
                 {isImporting ? "Importing..." : "Choose CSV file"}

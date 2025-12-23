@@ -47,6 +47,23 @@ export async function POST(
       );
     }
 
+    // Validate coordinates if provided
+    if (coordinates) {
+      if (
+        typeof coordinates.lat !== "number" ||
+        typeof coordinates.lng !== "number" ||
+        coordinates.lat < -90 ||
+        coordinates.lat > 90 ||
+        coordinates.lng < -180 ||
+        coordinates.lng > 180
+      ) {
+        return NextResponse.json(
+          { error: "Invalid coordinates (lat: -90 to 90, lng: -180 to 180)" },
+          { status: 400 }
+        );
+      }
+    }
+
     const location = await addBookLocation(bookId, user.id, {
       name,
       type,

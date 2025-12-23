@@ -1,5 +1,17 @@
 import prisma from "@/lib/prisma";
 
+function safeParseCoordinates(json: string): { lat: number; lng: number } {
+  try {
+    const parsed = JSON.parse(json);
+    if (typeof parsed.lat === "number" && typeof parsed.lng === "number") {
+      return parsed;
+    }
+    return { lat: 0, lng: 0 };
+  } catch {
+    return { lat: 0, lng: 0 };
+  }
+}
+
 export interface AuthorWithLocations {
   id: string;
   name: string;
@@ -70,7 +82,7 @@ export async function getOrCreateAuthor(name: string): Promise<AuthorWithLocatio
       name: loc.name,
       type: loc.type,
       description: loc.description,
-      coordinates: JSON.parse(loc.coordinates),
+      coordinates: safeParseCoordinates(loc.coordinates),
       yearStart: loc.yearStart,
       yearEnd: loc.yearEnd,
       addedBy: loc.addedBy,
@@ -109,7 +121,7 @@ export async function getAuthorByName(name: string): Promise<AuthorWithLocations
       name: loc.name,
       type: loc.type,
       description: loc.description,
-      coordinates: JSON.parse(loc.coordinates),
+      coordinates: safeParseCoordinates(loc.coordinates),
       yearStart: loc.yearStart,
       yearEnd: loc.yearEnd,
       addedBy: loc.addedBy,
@@ -184,7 +196,7 @@ export async function getAllAuthorLocationsForMap() {
     id: loc.id,
     name: loc.name,
     type: loc.type,
-    coordinates: JSON.parse(loc.coordinates),
+    coordinates: safeParseCoordinates(loc.coordinates),
     author: loc.author,
   }));
 }

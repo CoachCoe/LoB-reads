@@ -1,5 +1,17 @@
 import prisma from "@/lib/prisma";
 
+function safeParseCoordinates(json: string): { lat: number; lng: number } {
+  try {
+    const parsed = JSON.parse(json);
+    if (typeof parsed.lat === "number" && typeof parsed.lng === "number") {
+      return parsed;
+    }
+    return { lat: 0, lng: 0 };
+  } catch {
+    return { lat: 0, lng: 0 };
+  }
+}
+
 export interface BookLocationData {
   id: string;
   name: string;
@@ -35,7 +47,7 @@ export async function getBookLocations(bookId: string): Promise<BookLocationData
     name: loc.name,
     type: loc.type,
     description: loc.description,
-    coordinates: loc.coordinates ? JSON.parse(loc.coordinates) : null,
+    coordinates: loc.coordinates ? safeParseCoordinates(loc.coordinates) : null,
     isFictional: loc.isFictional,
     fictionalWorldId: loc.fictionalWorldId,
     fictionalWorldName: loc.fictionalWorld?.name ?? null,
@@ -119,7 +131,7 @@ export async function getAllBookLocationsForMap() {
     id: loc.id,
     name: loc.name,
     type: loc.type,
-    coordinates: JSON.parse(loc.coordinates!),
+    coordinates: safeParseCoordinates(loc.coordinates!),
     book: loc.book,
     fictionalWorldName: loc.fictionalWorld?.name ?? null,
   }));

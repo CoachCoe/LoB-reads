@@ -52,7 +52,7 @@ export default function StarRating({
             <Star
               className={`${sizes[size]} ${
                 isFilled
-                  ? "fill-[#7047EB] text-[#7047EB]"
+                  ? "fill-[#D4A017] text-[#D4A017]"
                   : "fill-gray-200 text-gray-200"
               } transition-colors`}
             />

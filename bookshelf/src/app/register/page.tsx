@@ -76,7 +76,7 @@ export default function RegisterPage() {
         <div className="text-center mb-8">
           <Link
             href="/"
-            className="inline-flex items-center gap-2 text-[#7047EB]"
+            className="inline-flex items-center gap-2 text-[#D4A017]"
           >
             <BookOpen className="h-10 w-10" />
             <span className="text-3xl font-bold">Life on Books</span>
@@ -146,7 +146,7 @@ export default function RegisterPage() {
                 Already have an account?{" "}
                 <Link
                   href="/login"
-                  className="text-[#7047EB] hover:text-[#5a35d4] font-medium"
+                  className="text-[#D4A017] hover:text-[#B8860B] font-medium"
                 >
                   Sign in
                 </Link>

@@ -10,12 +10,12 @@
   --border-light: #f5f5f7;
 
   /* Life On Books brand colors */
-  --color-primary: #7047EB;
-  --color-primary-light: #8b6cf0;
-  --color-primary-dark: #5a35d4;
-  --color-accent: #5fbd74;
-  --color-accent-light: #7dcc8d;
-  --color-accent-dark: #4da760;
+  --color-primary: #D4A017;
+  --color-primary-light: #E6B800;
+  --color-primary-dark: #B8860B;
+  --color-accent: #D4A017;
+  --color-accent-light: #E6B800;
+  --color-accent-dark: #B8860B;
 
   /* Card and surface colors */
   --card-bg: #ffffff;

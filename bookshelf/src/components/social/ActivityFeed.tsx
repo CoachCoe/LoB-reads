@@ -55,9 +55,9 @@ function ActivityItem({ activity }: { activity: Activity }) {
   const getIcon = () => {
     switch (activity.type) {
       case "shelf_add":
-        return <BookPlus className="h-4 w-4 text-[#7047EB]" />;
+        return <BookPlus className="h-4 w-4 text-[#D4A017]" />;
       case "review":
-        return <Star className="h-4 w-4 text-[#7047EB]" />;
+        return <Star className="h-4 w-4 text-[#D4A017]" />;
       case "progress":
         return activity.finishedAt ? (
           <Check className="h-4 w-4 text-green-500" />
@@ -75,7 +75,7 @@ function ActivityItem({ activity }: { activity: Activity }) {
             added{" "}
             <Link
               href={`/book/${activity.bookId}`}
-              className="font-medium hover:text-[#7047EB]"
+              className="font-medium hover:text-[#D4A017]"
             >
               {activity.book?.title}
             </Link>{" "}
@@ -88,7 +88,7 @@ function ActivityItem({ activity }: { activity: Activity }) {
             reviewed{" "}
             <Link
               href={`/book/${activity.bookId}`}
-              className="font-medium hover:text-[#7047EB]"
+              className="font-medium hover:text-[#D4A017]"
             >
               {activity.book?.title}
             </Link>
@@ -100,7 +100,7 @@ function ActivityItem({ activity }: { activity: Activity }) {
             finished reading{" "}
             <Link
               href={`/book/${activity.bookId}`}
-              className="font-medium hover:text-[#7047EB]"
+              className="font-medium hover:text-[#D4A017]"
             >
               {activity.book?.title}
             </Link>
@@ -110,7 +110,7 @@ function ActivityItem({ activity }: { activity: Activity }) {
             updated progress on{" "}
             <Link
               href={`/book/${activity.bookId}`}
-              className="font-medium hover:text-[#7047EB]"
+              className="font-medium hover:text-[#D4A017]"
             >
               {activity.book?.title}
             </Link>
@@ -134,7 +134,7 @@ function ActivityItem({ activity }: { activity: Activity }) {
             {getIcon()}
             <Link
               href={`/user/${activity.userId}`}
-              className="font-medium text-[var(--foreground)] hover:text-[#7047EB]"
+              className="font-medium text-[var(--foreground)] hover:text-[#D4A017]"
             >
               {activity.user.name}
             </Link>

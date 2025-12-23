@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { BookOpen } from "lucide-react";
+import Image from "next/image";
 
 const socialLinks = [
   {
@@ -86,10 +86,15 @@ export default function Footer() {
           <div className="space-y-4">
             <Link
               href="/"
-              className="flex items-center gap-2 text-[#7047EB] hover:opacity-80 transition-opacity"
+              className="flex items-center hover:opacity-80 transition-opacity"
             >
-              <BookOpen className="h-7 w-7" />
-              <span className="text-lg font-semibold">Life on Books</span>
+              <Image
+                src="/logo.png"
+                alt="Life on Books"
+                width={100}
+                height={40}
+                className="h-8 w-auto dark:invert"
+              />
             </Link>
             <p className="text-[var(--foreground-secondary)] text-sm max-w-xs">
               Track your reading journey, discover new books, and connect with

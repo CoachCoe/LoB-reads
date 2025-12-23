@@ -38,7 +38,7 @@ export default function ReviewCard({ review, showBook = false }: ReviewCardProps
           <div className="flex items-center gap-2 flex-wrap">
             <Link
               href={`/user/${review.user.id}`}
-              className="font-medium text-[var(--foreground)] hover:text-[#7047EB]"
+              className="font-medium text-[var(--foreground)] hover:text-[#D4A017]"
             >
               {review.user.name}
             </Link>
@@ -47,7 +47,7 @@ export default function ReviewCard({ review, showBook = false }: ReviewCardProps
                 <span className="text-[var(--foreground-secondary)]">reviewed</span>
                 <Link
                   href={`/book/${review.book.id}`}
-                  className="font-medium text-[var(--foreground)] hover:text-[#7047EB]"
+                  className="font-medium text-[var(--foreground)] hover:text-[#D4A017]"
                 >
                   {review.book.title}
                 </Link>

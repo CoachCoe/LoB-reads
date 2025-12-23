@@ -49,9 +49,9 @@ const createCustomIcon = (color: string, isFictional: boolean = false) => {
   });
 };
 
-const settingIcon = createCustomIcon("#7047EB");
+const settingIcon = createCustomIcon("#3B82F6");
 const fictionalSettingIcon = createCustomIcon("#9333EA", true);
-const authorIcon = createCustomIcon("#5fbd74");
+const authorIcon = createCustomIcon("#22C55E");
 const crowdsourcedBookIcon = createCustomIcon("#f59e0b"); // amber
 const crowdsourcedAuthorIcon = createCustomIcon("#d97706"); // darker amber
 
@@ -126,7 +126,7 @@ export default function LeafletMap({
                     </div>
                   </div>
                   <div className="mt-2 pt-2 border-t border-gray-100">
-                    <p className={`text-xs font-medium ${book.isFictional ? "text-purple-600" : "text-[#7047EB]"}`}>
+                    <p className={`text-xs font-medium ${book.isFictional ? "text-purple-600" : "text-[#D4A017]"}`}>
                       {book.isFictional ? "Fictional setting:" : "Story set in:"}
                     </p>
                     <p className="text-xs text-gray-600">
@@ -138,7 +138,7 @@ export default function LeafletMap({
                     className={`mt-2 block text-center text-xs text-white py-1.5 rounded-full transition-colors ${
                       book.isFictional
                         ? "bg-purple-600 hover:bg-purple-700"
-                        : "bg-[#7047EB] hover:bg-[#5a35d4]"
+                        : "bg-[#D4A017] hover:bg-[#B8860B]"
                     }`}
                   >
                     View Book
@@ -179,14 +179,14 @@ export default function LeafletMap({
                     </div>
                   </div>
                   <div className="mt-2 pt-2 border-t border-gray-100">
-                    <p className="text-xs text-[#5fbd74] font-medium">
+                    <p className="text-xs text-[#D4A017] font-medium">
                       Author&apos;s origin:
                     </p>
                     <p className="text-xs text-gray-600">{book.authorOrigin}</p>
                   </div>
                   <a
                     href={`/book/${book.id}`}
-                    className="mt-2 block text-center text-xs bg-[#5fbd74] text-white py-1.5 rounded-full hover:bg-[#4da760] transition-colors"
+                    className="mt-2 block text-center text-xs bg-[#D4A017] text-white py-1.5 rounded-full hover:bg-[#B8860B] transition-colors"
                   >
                     View Book
                   </a>

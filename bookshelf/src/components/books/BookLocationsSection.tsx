@@ -138,13 +138,13 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
     <div className="bg-[var(--card-bg)] rounded-lg border border-[var(--card-border)] p-6">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-[var(--foreground)] flex items-center gap-2">
-          <MapPin className="h-5 w-5 text-[#7047EB]" />
+          <MapPin className="h-5 w-5 text-[#D4A017]" />
           Locations
         </h3>
         {currentUserId && !showAddForm && (
           <button
             onClick={() => setShowAddForm(true)}
-            className="flex items-center gap-1 text-sm text-[#7047EB] hover:text-[#5a35d4] font-medium"
+            className="flex items-center gap-1 text-sm text-[#D4A017] hover:text-[#B8860B] font-medium"
           >
             <Plus className="h-4 w-4" />
             Add Location
@@ -177,7 +177,7 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., Paris, Middle-earth, The Shire"
-                className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#7047EB] focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#D4A017] focus:border-transparent text-sm"
                 required
               />
             </div>
@@ -190,7 +190,7 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value)}
-                className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#7047EB] focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#D4A017] focus:border-transparent text-sm"
               >
                 {LOCATION_TYPES.map((t) => (
                   <option key={t.value} value={t.value}>
@@ -245,7 +245,7 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
                     value={lat}
                     onChange={(e) => setLat(e.target.value)}
                     placeholder="e.g., 48.8566"
-                    className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#7047EB] focus:border-transparent text-sm"
+                    className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#D4A017] focus:border-transparent text-sm"
                   />
                 </div>
                 <div>
@@ -258,7 +258,7 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
                     value={lng}
                     onChange={(e) => setLng(e.target.value)}
                     placeholder="e.g., 2.3522"
-                    className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#7047EB] focus:border-transparent text-sm"
+                    className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#D4A017] focus:border-transparent text-sm"
                   />
                 </div>
               </div>
@@ -274,14 +274,14 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Add any context about this location..."
                 rows={2}
-                className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#7047EB] focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#D4A017] focus:border-transparent text-sm"
               />
             </div>
 
             <button
               type="submit"
               disabled={!name.trim() || submitting}
-              className="w-full py-2 bg-[#7047EB] text-white rounded-lg hover:bg-[#5a35d4] disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+              className="w-full py-2 bg-[#D4A017] text-white rounded-lg hover:bg-[#B8860B] disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
             >
               {submitting ? "Adding..." : "Add Location"}
             </button>
@@ -299,7 +299,7 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
                 location.isFictional ? "bg-purple-500/10" : "bg-[var(--border-light)]"
               }`}
             >
-              <div className={`mt-0.5 ${location.isFictional ? "text-purple-500" : "text-[#7047EB]"}`}>
+              <div className={`mt-0.5 ${location.isFictional ? "text-purple-500" : "text-[#D4A017]"}`}>
                 {location.isFictional ? (
                   <Sparkles className="h-4 w-4" />
                 ) : (
@@ -311,7 +311,7 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
                   <span className="font-medium text-[var(--foreground)]">{location.name}</span>
                   <span className={`text-xs px-2 py-0.5 rounded-full ${
                     location.type === "setting"
-                      ? "bg-[#7047EB]/10 text-[#7047EB]"
+                      ? "bg-[#D4A017]/10 text-[#D4A017]"
                       : location.type === "mentioned"
                       ? "bg-blue-500/10 text-blue-400"
                       : "bg-amber-500/10 text-amber-400"
@@ -350,7 +350,7 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
           {currentUserId && !showAddForm && (
             <button
               onClick={() => setShowAddForm(true)}
-              className="text-sm text-[#7047EB] hover:text-[#5a35d4] font-medium mt-2"
+              className="text-sm text-[#D4A017] hover:text-[#B8860B] font-medium mt-2"
             >
               Be the first to add one
             </button>

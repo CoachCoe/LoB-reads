@@ -28,7 +28,7 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
             w-full px-4 py-2.5 border rounded-xl shadow-sm
             bg-[var(--input-bg)] text-[var(--foreground)]
             placeholder-[var(--foreground-secondary)]
-            focus:outline-none focus:ring-2 focus:ring-[#7047EB] focus:border-[#7047EB]
+            focus:outline-none focus:ring-2 focus:ring-[#D4A017] focus:border-[#D4A017]
             disabled:opacity-50 disabled:cursor-not-allowed
             transition-all duration-200
             ${error ? "border-red-500" : "border-[var(--input-border)]"}

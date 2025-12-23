@@ -148,7 +148,10 @@ src/
 - `GET /api/books` - Search books
 - `GET /api/books/[bookId]` - Get book details
 - `POST /api/books/[bookId]/shelves` - Add book to shelf
-- `GET/POST /api/books/[bookId]/locations` - Crowdsourced locations
+- `GET/POST/DELETE /api/books/[bookId]/locations` - Crowdsourced book locations
+
+### Authors
+- `GET/POST/DELETE /api/authors/[authorName]/locations` - Crowdsourced author locations
 
 ### Shelves
 - `GET/POST /api/shelves` - List/create shelves

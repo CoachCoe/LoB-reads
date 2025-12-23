@@ -80,7 +80,7 @@ export default async function HomePage() {
               </h2>
               <Link
                 href="/search"
-                className="text-sm text-[#7047EB] hover:text-[#5a35d4]"
+                className="text-sm text-[#D4A017] hover:text-[#B8860B]"
               >
                 See all
               </Link>
@@ -117,23 +117,23 @@ function LandingPage() {
   return (
     <div className="min-h-[calc(100vh-4rem)]">
       {/* Hero section */}
-      <section className="bg-gradient-to-br from-purple-600 via-pink-600 to-red-500 py-20">
+      <section className="bg-[var(--card-bg)] py-20 border-b border-[var(--border)]">
         <div className="max-w-4xl mx-auto px-4 text-center">
-          <h1 className="text-4xl md:text-5xl font-bold text-white mb-6">
+          <h1 className="text-4xl md:text-5xl font-bold text-[var(--foreground)] mb-6">
             Track Your Reading Journey
           </h1>
-          <p className="text-xl text-white/80 mb-8 max-w-2xl mx-auto">
+          <p className="text-xl text-[var(--foreground-secondary)] mb-8 max-w-2xl mx-auto">
             Discover new books, track your reading progress, and connect with
             other readers. Your personal library, organized beautifully.
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link href="/register">
-              <Button size="lg" className="w-full sm:w-auto !bg-white !text-purple-600 hover:!bg-white/90">
+              <Button size="lg" className="w-full sm:w-auto">
                 Get Started Free
               </Button>
             </Link>
             <Link href="/login">
-              <Button variant="outline" size="lg" className="w-full sm:w-auto !border-white !text-white hover:!bg-white/10">
+              <Button variant="outline" size="lg" className="w-full sm:w-auto">
                 Sign In
               </Button>
             </Link>
@@ -149,8 +149,8 @@ function LandingPage() {
           </h2>
           <div className="grid md:grid-cols-3 gap-8">
             <div className="text-center">
-              <div className="w-16 h-16 bg-[#7047EB]/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                <BookOpen className="h-8 w-8 text-[#7047EB]" />
+              <div className="w-16 h-16 bg-[#D4A017]/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                <BookOpen className="h-8 w-8 text-[#D4A017]" />
               </div>
               <h3 className="text-xl font-semibold text-[var(--foreground)] mb-2">
                 Track Your Books
@@ -161,8 +161,8 @@ function LandingPage() {
               </p>
             </div>
             <div className="text-center">
-              <div className="w-16 h-16 bg-[#7047EB]/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Search className="h-8 w-8 text-[#7047EB]" />
+              <div className="w-16 h-16 bg-[#D4A017]/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Search className="h-8 w-8 text-[#D4A017]" />
               </div>
               <h3 className="text-xl font-semibold text-[var(--foreground)] mb-2">
                 Discover New Books
@@ -173,8 +173,8 @@ function LandingPage() {
               </p>
             </div>
             <div className="text-center">
-              <div className="w-16 h-16 bg-[#7047EB]/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Users className="h-8 w-8 text-[#7047EB]" />
+              <div className="w-16 h-16 bg-[#D4A017]/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Users className="h-8 w-8 text-[#D4A017]" />
               </div>
               <h3 className="text-xl font-semibold text-[var(--foreground)] mb-2">
                 Connect with Readers

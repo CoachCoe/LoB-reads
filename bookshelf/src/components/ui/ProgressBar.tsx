@@ -21,7 +21,7 @@ export default function ProgressBar({
             <span className="text-sm text-gray-600">
               {value} / {max} pages
             </span>
-            <span className="text-sm font-medium text-[#7047EB]">
+            <span className="text-sm font-medium text-[#D4A017]">
               {percentage}%
             </span>
           </>
@@ -29,7 +29,7 @@ export default function ProgressBar({
       </div>
       <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
         <div
-          className="bg-gradient-to-r from-[#7047EB] to-[#5fbd74] h-2.5 rounded-full transition-all duration-500"
+          className="bg-gradient-to-r from-[#D4A017] to-[#D4A017] h-2.5 rounded-full transition-all duration-500"
           style={{ width: `${percentage}%` }}
         />
       </div>

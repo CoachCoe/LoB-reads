@@ -127,13 +127,13 @@ export default function AuthorLocationsSection({
     <div className="bg-[var(--card-bg)] rounded-lg border border-[var(--card-border)] p-6">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold text-[var(--foreground)] flex items-center gap-2">
-          <Globe className="h-5 w-5 text-[#5fbd74]" />
+          <Globe className="h-5 w-5 text-[#D4A017]" />
           Author Locations
         </h3>
         {currentUserId && !showAddForm && (
           <button
             onClick={() => setShowAddForm(true)}
-            className="flex items-center gap-1 text-sm text-[#5fbd74] hover:text-[#4da760] font-medium"
+            className="flex items-center gap-1 text-sm text-[#D4A017] hover:text-[#B8860B] font-medium"
           >
             <Plus className="h-4 w-4" />
             Add Location
@@ -166,7 +166,7 @@ export default function AuthorLocationsSection({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., Oxford, England"
-                className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#5fbd74] focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#D4A017] focus:border-transparent text-sm"
                 required
               />
             </div>
@@ -179,7 +179,7 @@ export default function AuthorLocationsSection({
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value)}
-                className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#5fbd74] focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#D4A017] focus:border-transparent text-sm"
               >
                 {LOCATION_TYPES.map((t) => (
                   <option key={t.value} value={t.value}>
@@ -201,7 +201,7 @@ export default function AuthorLocationsSection({
                   value={lat}
                   onChange={(e) => setLat(e.target.value)}
                   placeholder="e.g., 51.7520"
-                  className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#5fbd74] focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#D4A017] focus:border-transparent text-sm"
                   required
                 />
               </div>
@@ -215,7 +215,7 @@ export default function AuthorLocationsSection({
                   value={lng}
                   onChange={(e) => setLng(e.target.value)}
                   placeholder="e.g., -1.2577"
-                  className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#5fbd74] focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#D4A017] focus:border-transparent text-sm"
                   required
                 />
               </div>
@@ -232,7 +232,7 @@ export default function AuthorLocationsSection({
                   value={yearStart}
                   onChange={(e) => setYearStart(e.target.value)}
                   placeholder="e.g., 1925"
-                  className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#5fbd74] focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#D4A017] focus:border-transparent text-sm"
                 />
               </div>
               <div>
@@ -244,7 +244,7 @@ export default function AuthorLocationsSection({
                   value={yearEnd}
                   onChange={(e) => setYearEnd(e.target.value)}
                   placeholder="e.g., 1973"
-                  className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#5fbd74] focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#D4A017] focus:border-transparent text-sm"
                 />
               </div>
             </div>
@@ -259,14 +259,14 @@ export default function AuthorLocationsSection({
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Add any context about this location..."
                 rows={2}
-                className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#5fbd74] focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#D4A017] focus:border-transparent text-sm"
               />
             </div>
 
             <button
               type="submit"
               disabled={!name.trim() || !lat || !lng || submitting}
-              className="w-full py-2 bg-[#5fbd74] text-white rounded-lg hover:bg-[#4da760] disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
+              className="w-full py-2 bg-[#D4A017] text-white rounded-lg hover:bg-[#B8860B] disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
             >
               {submitting ? "Adding..." : "Add Location"}
             </button>
@@ -294,7 +294,7 @@ export default function AuthorLocationsSection({
                     <span className="font-medium text-[var(--foreground)]">
                       {location.name}
                     </span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-[#5fbd74]/10 text-[#5fbd74]">
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-[#D4A017]/10 text-[#D4A017]">
                       {typeInfo.label}
                     </span>
                     {(location.yearStart || location.yearEnd) && (
@@ -332,7 +332,7 @@ export default function AuthorLocationsSection({
           {currentUserId && !showAddForm && (
             <button
               onClick={() => setShowAddForm(true)}
-              className="text-sm text-[#5fbd74] hover:text-[#4da760] font-medium mt-2"
+              className="text-sm text-[#D4A017] hover:text-[#B8860B] font-medium mt-2"
             >
               Be the first to add one
             </button>

@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useSession, signOut } from "next-auth/react";
 import {
-  BookOpen,
   Search,
   Menu,
   X,
@@ -39,12 +39,16 @@ export default function Navbar() {
           <div className="flex items-center">
             <Link
               href="/"
-              className="flex items-center gap-2 text-[#7047EB] hover:opacity-80 transition-opacity"
+              className="flex items-center hover:opacity-80 transition-opacity"
             >
-              <BookOpen className="h-7 w-7" />
-              <span className="text-lg font-semibold hidden sm:block">
-                Life on Books
-              </span>
+              <Image
+                src="/logo.png"
+                alt="Life on Books"
+                width={120}
+                height={48}
+                className="h-10 w-auto dark:invert"
+                priority
+              />
             </Link>
 
             {/* Desktop nav links */}
@@ -80,7 +84,7 @@ export default function Navbar() {
                 </Link>
                 <Link
                   href="/wrapped"
-                  className="flex items-center gap-1.5 px-4 py-2 text-[#7047EB] hover:bg-[#7047EB]/10 rounded-full transition-all text-sm font-medium"
+                  className="flex items-center gap-1.5 px-4 py-2 text-[#D4A017] hover:bg-[#D4A017]/10 rounded-full transition-all text-sm font-medium"
                 >
                   <Sparkles className="h-4 w-4" />
                   Wrapped
@@ -98,7 +102,7 @@ export default function Navbar() {
                   type="search"
                   name="q"
                   placeholder="Search books, authors..."
-                  className="w-full pl-10 pr-4 py-2 bg-[var(--input-bg)] border border-[var(--input-border)] rounded-full text-[var(--foreground)] placeholder-[var(--foreground-secondary)] focus:outline-none focus:ring-2 focus:ring-[#7047EB] focus:border-transparent transition-all text-sm"
+                  className="w-full pl-10 pr-4 py-2 bg-[var(--input-bg)] border border-[var(--input-border)] rounded-full text-[var(--foreground)] placeholder-[var(--foreground-secondary)] focus:outline-none focus:ring-2 focus:ring-[#D4A017] focus:border-transparent transition-all text-sm"
                 />
               </div>
             </form>
@@ -127,7 +131,7 @@ export default function Navbar() {
                 <div className="relative">
                   <button
                     onClick={() => setIsProfileOpen(!isProfileOpen)}
-                    className="flex items-center gap-2 p-1 rounded-full hover:ring-2 hover:ring-[#7047EB]/20 transition-all"
+                    className="flex items-center gap-2 p-1 rounded-full hover:ring-2 hover:ring-[#D4A017]/20 transition-all"
                   >
                     <Avatar
                       src={session.user.image}
@@ -170,7 +174,7 @@ export default function Navbar() {
                           </Link>
                           <Link
                             href="/wrapped"
-                            className="flex items-center gap-3 px-4 py-2.5 text-[#7047EB] hover:bg-[#7047EB]/5 transition-colors"
+                            className="flex items-center gap-3 px-4 py-2.5 text-[#D4A017] hover:bg-[#D4A017]/5 transition-colors"
                             onClick={() => setIsProfileOpen(false)}
                           >
                             <Sparkles className="h-4 w-4" />
@@ -230,7 +234,7 @@ export default function Navbar() {
                   type="search"
                   name="q"
                   placeholder="Search books..."
-                  className="w-full pl-10 pr-4 py-2.5 bg-[var(--input-bg)] border border-[var(--input-border)] rounded-full text-[var(--foreground)] placeholder-[var(--foreground-secondary)] focus:outline-none focus:ring-2 focus:ring-[#7047EB]"
+                  className="w-full pl-10 pr-4 py-2.5 bg-[var(--input-bg)] border border-[var(--input-border)] rounded-full text-[var(--foreground)] placeholder-[var(--foreground-secondary)] focus:outline-none focus:ring-2 focus:ring-[#D4A017]"
                 />
               </div>
             </form>
@@ -269,7 +273,7 @@ export default function Navbar() {
               </Link>
               <Link
                 href="/wrapped"
-                className="flex items-center gap-3 px-4 py-3 text-[#7047EB] hover:bg-[#7047EB]/5 rounded-xl transition-all"
+                className="flex items-center gap-3 px-4 py-3 text-[#D4A017] hover:bg-[#D4A017]/5 rounded-xl transition-all"
                 onClick={() => setIsMenuOpen(false)}
               >
                 <Sparkles className="h-5 w-5" />

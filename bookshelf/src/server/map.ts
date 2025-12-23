@@ -1,5 +1,17 @@
 import prisma from "@/lib/prisma";
 
+function safeParseCoordinates(json: string): { lat: number; lng: number } {
+  try {
+    const parsed = JSON.parse(json);
+    if (typeof parsed.lat === "number" && typeof parsed.lng === "number") {
+      return parsed;
+    }
+    return { lat: 0, lng: 0 };
+  } catch {
+    return { lat: 0, lng: 0 };
+  }
+}
+
 export interface BookLocation {
   id: string;
   title: string;
@@ -77,11 +89,11 @@ export async function getBooksWithLocations(): Promise<BookLocation[]> {
     coverUrl: book.coverUrl,
     settingLocation: book.settingLocation,
     settingCoordinates: book.settingCoordinates
-      ? JSON.parse(book.settingCoordinates)
+      ? safeParseCoordinates(book.settingCoordinates)
       : null,
     authorOrigin: book.authorOrigin,
     authorOriginCoordinates: book.authorOriginCoordinates
-      ? JSON.parse(book.authorOriginCoordinates)
+      ? safeParseCoordinates(book.authorOriginCoordinates)
       : null,
     isFictional: book.isFictional,
     fictionalWorldName: book.fictionalWorld?.name ?? null,
@@ -117,7 +129,7 @@ export async function getCrowdsourcedBookLocations(): Promise<CrowdsourcedLocati
     id: loc.id,
     name: loc.name,
     type: loc.type,
-    coordinates: JSON.parse(loc.coordinates!),
+    coordinates: safeParseCoordinates(loc.coordinates!),
     book: loc.book,
     isFictional: loc.isFictional,
     fictionalWorldName: loc.fictionalWorld?.name ?? null,
@@ -146,7 +158,7 @@ export async function getCrowdsourcedAuthorLocations(): Promise<AuthorMapLocatio
     id: loc.id,
     name: loc.name,
     type: loc.type,
-    coordinates: JSON.parse(loc.coordinates),
+    coordinates: safeParseCoordinates(loc.coordinates),
     author: loc.author,
     addedBy: loc.addedBy.name,
   }));

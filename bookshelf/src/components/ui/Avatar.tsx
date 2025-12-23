@@ -47,7 +47,7 @@ export default function Avatar({
 
   return (
     <div
-      className={`${sizes[size]} rounded-full bg-gradient-to-br from-[#7047EB] to-[#5fbd74] text-white flex items-center justify-center font-semibold shadow-sm ${className}`}
+      className={`${sizes[size]} rounded-full bg-gradient-to-br from-[#D4A017] to-[#D4A017] text-white flex items-center justify-center font-semibold shadow-sm ${className}`}
     >
       {getInitials(name)}
     </div>

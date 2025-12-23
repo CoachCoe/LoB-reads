@@ -31,7 +31,7 @@ describe("Button component", () => {
   it("applies variant styles correctly", () => {
     const { rerender } = render(<Button variant="primary">Primary</Button>);
     let button = screen.getByRole("button");
-    expect(button).toHaveClass("bg-[#7047EB]");
+    expect(button).toHaveClass("bg-[#D4A017]");
 
     rerender(<Button variant="danger">Danger</Button>);
     button = screen.getByRole("button");
