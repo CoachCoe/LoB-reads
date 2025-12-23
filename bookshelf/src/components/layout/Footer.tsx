@@ -1,8 +1,5 @@
 "use client";
 
-import Link from "next/link";
-import Image from "next/image";
-
 const socialLinks = [
   {
     name: "YouTube",
@@ -69,87 +66,22 @@ const socialLinks = [
   },
 ];
 
-const quickLinks = [
-  { name: "Home", href: "/" },
-  { name: "About", href: "/about" },
-  { name: "My Books", href: "/my-books" },
-  { name: "Discover", href: "/search" },
-  { name: "Map", href: "/map" },
-];
-
 export default function Footer() {
   return (
-    <footer className="bg-[var(--card-bg)] border-t border-[var(--border)]">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {/* Logo and tagline */}
-          <div className="space-y-4">
-            <Link
-              href="/"
-              className="flex items-center hover:opacity-80 transition-opacity"
-            >
-              <Image
-                src="/logo.png"
-                alt="Life on Books"
-                width={100}
-                height={40}
-                className="h-8 w-auto dark:invert"
-              />
-            </Link>
-            <p className="text-[var(--foreground-secondary)] text-sm max-w-xs">
-              Track your reading journey, discover new books, and connect with
-              fellow readers.
-            </p>
-          </div>
-
-          {/* Quick Links */}
-          <div>
-            <h3 className="font-semibold text-[var(--foreground)] mb-4">
-              Quick Links
-            </h3>
-            <ul className="space-y-2">
-              {quickLinks.map((link) => (
-                <li key={link.name}>
-                  <Link
-                    href={link.href}
-                    className="text-[var(--foreground-secondary)] hover:text-[var(--foreground)] transition-colors text-sm"
-                  >
-                    {link.name}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Social Links */}
-          <div>
-            <h3 className="font-semibold text-[var(--foreground)] mb-4">
-              Follow Us
-            </h3>
-            <div className="flex flex-wrap gap-3">
-              {socialLinks.map((social) => (
-                <a
-                  key={social.name}
-                  href={social.href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-2 rounded-full bg-[var(--border-light)] hover:bg-[var(--border)] text-[var(--foreground-secondary)] hover:text-[var(--foreground)] transition-all"
-                  aria-label={social.name}
-                >
-                  {social.icon}
-                </a>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom bar */}
-        <div className="mt-12 pt-8 border-t border-[var(--border)]">
-          <p className="text-center text-[var(--foreground-secondary)] text-sm">
-            &copy; {new Date().getFullYear()} Life on Books. All rights
-            reserved.
-          </p>
-        </div>
+    <footer className="border-t border-[var(--border)] py-4">
+      <div className="max-w-7xl mx-auto px-4 flex items-center justify-center gap-4">
+        {socialLinks.map((social) => (
+          <a
+            key={social.name}
+            href={social.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-2 rounded-full hover:bg-[var(--border-light)] text-[var(--foreground-secondary)] hover:text-[var(--foreground)] transition-all"
+            aria-label={social.name}
+          >
+            {social.icon}
+          </a>
+        ))}
       </div>
     </footer>
   );
