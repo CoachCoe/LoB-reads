@@ -26,6 +26,15 @@
   --input-border: #e5e5e7;
 }
 
+/* Logo theming - explicit dark class targeting */
+.logo-themed {
+  filter: brightness(0) !important;
+}
+
+html.dark .logo-themed {
+  filter: brightness(0) invert(1) !important;
+}
+
 .dark {
   --background: #0a0a0a;
   --background-secondary: #0a0a0a;

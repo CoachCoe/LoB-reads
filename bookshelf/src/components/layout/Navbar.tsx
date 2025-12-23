@@ -46,7 +46,7 @@ export default function Navbar() {
                 alt="Life on Books"
                 width={120}
                 height={48}
-                className="h-10 w-auto dark:invert"
+                className="h-10 w-auto logo-themed"
                 priority
               />
             </Link>
