@@ -130,14 +130,14 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
 
   if (loading) {
     return (
-      <div className="animate-pulse bg-gray-100 rounded-lg p-4 h-32" />
+      <div className="animate-pulse bg-[var(--border-light)] rounded-lg p-4 h-32" />
     );
   }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6">
+    <div className="bg-[var(--card-bg)] rounded-lg border border-[var(--card-border)] p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+        <h3 className="text-lg font-semibold text-[var(--foreground)] flex items-center gap-2">
           <MapPin className="h-5 w-5 text-[#7047EB]" />
           Locations
         </h3>
@@ -154,13 +154,13 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
 
       {/* Add Location Form */}
       {showAddForm && (
-        <form onSubmit={handleSubmit} className="bg-gray-50 rounded-lg p-4 mb-4">
+        <form onSubmit={handleSubmit} className="bg-[var(--border-light)] rounded-lg p-4 mb-4">
           <div className="flex items-center justify-between mb-3">
-            <h4 className="font-medium text-gray-900">Add a Location</h4>
+            <h4 className="font-medium text-[var(--foreground)]">Add a Location</h4>
             <button
               type="button"
               onClick={resetForm}
-              className="text-gray-400 hover:text-gray-600"
+              className="text-[var(--foreground-secondary)] hover:text-[var(--foreground)]"
             >
               <X className="h-5 w-5" />
             </button>
@@ -169,7 +169,7 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
           <div className="space-y-3">
             {/* Location Name */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-[var(--foreground-secondary)] mb-1">
                 Location Name
               </label>
               <input
@@ -177,20 +177,20 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., Paris, Middle-earth, The Shire"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#7047EB] focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#7047EB] focus:border-transparent text-sm"
                 required
               />
             </div>
 
             {/* Location Type */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-[var(--foreground-secondary)] mb-1">
                 Type
               </label>
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#7047EB] focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#7047EB] focus:border-transparent text-sm"
               >
                 {LOCATION_TYPES.map((t) => (
                   <option key={t.value} value={t.value}>
@@ -209,21 +209,21 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
                   onChange={(e) => setIsFictional(e.target.checked)}
                   className="sr-only peer"
                 />
-                <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                <div className="w-9 h-5 bg-[var(--border)] peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-[var(--border)] after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
               </label>
-              <span className="text-sm text-gray-700">This is a fictional location</span>
+              <span className="text-sm text-[var(--foreground-secondary)]">This is a fictional location</span>
             </div>
 
             {/* Conditional: Fictional World or Coordinates */}
             {isFictional ? (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-[var(--foreground-secondary)] mb-1">
                   Fictional World (optional)
                 </label>
                 <select
                   value={fictionalWorldId}
                   onChange={(e) => setFictionalWorldId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
                 >
                   <option value="">Select a world...</option>
                   {fictionalWorlds.map((world) => (
@@ -236,7 +236,7 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
             ) : (
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-[var(--foreground-secondary)] mb-1">
                     Latitude (optional)
                   </label>
                   <input
@@ -245,11 +245,11 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
                     value={lat}
                     onChange={(e) => setLat(e.target.value)}
                     placeholder="e.g., 48.8566"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#7047EB] focus:border-transparent text-sm"
+                    className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#7047EB] focus:border-transparent text-sm"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-[var(--foreground-secondary)] mb-1">
                     Longitude (optional)
                   </label>
                   <input
@@ -258,7 +258,7 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
                     value={lng}
                     onChange={(e) => setLng(e.target.value)}
                     placeholder="e.g., 2.3522"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#7047EB] focus:border-transparent text-sm"
+                    className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#7047EB] focus:border-transparent text-sm"
                   />
                 </div>
               </div>
@@ -266,7 +266,7 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
 
             {/* Description */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-[var(--foreground-secondary)] mb-1">
                 Notes (optional)
               </label>
               <textarea
@@ -274,7 +274,7 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Add any context about this location..."
                 rows={2}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#7047EB] focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#7047EB] focus:border-transparent text-sm"
               />
             </div>
 
@@ -296,7 +296,7 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
             <div
               key={location.id}
               className={`flex items-start gap-3 p-3 rounded-lg ${
-                location.isFictional ? "bg-purple-50" : "bg-gray-50"
+                location.isFictional ? "bg-purple-500/10" : "bg-[var(--border-light)]"
               }`}
             >
               <div className={`mt-0.5 ${location.isFictional ? "text-purple-500" : "text-[#7047EB]"}`}>
@@ -308,33 +308,33 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-medium text-gray-900">{location.name}</span>
+                  <span className="font-medium text-[var(--foreground)]">{location.name}</span>
                   <span className={`text-xs px-2 py-0.5 rounded-full ${
                     location.type === "setting"
                       ? "bg-[#7047EB]/10 text-[#7047EB]"
                       : location.type === "mentioned"
-                      ? "bg-blue-100 text-blue-700"
-                      : "bg-amber-100 text-amber-700"
+                      ? "bg-blue-500/10 text-blue-400"
+                      : "bg-amber-500/10 text-amber-400"
                   }`}>
                     {LOCATION_TYPES.find((t) => t.value === location.type)?.label || location.type}
                   </span>
                   {location.fictionalWorldName && (
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-400">
                       {location.fictionalWorldName}
                     </span>
                   )}
                 </div>
                 {location.description && (
-                  <p className="text-sm text-gray-600 mt-1">{location.description}</p>
+                  <p className="text-sm text-[var(--foreground-secondary)] mt-1">{location.description}</p>
                 )}
-                <p className="text-xs text-gray-400 mt-1">
+                <p className="text-xs text-[var(--foreground-secondary)] mt-1">
                   Added by {location.addedBy.name}
                 </p>
               </div>
               {currentUserId === location.addedBy.id && (
                 <button
                   onClick={() => handleDelete(location.id)}
-                  className="text-gray-400 hover:text-red-500 p-1"
+                  className="text-[var(--foreground-secondary)] hover:text-red-500 p-1"
                   title="Remove location"
                 >
                   <Trash2 className="h-4 w-4" />
@@ -344,8 +344,8 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
           ))}
         </div>
       ) : (
-        <div className="text-center py-6 text-gray-500">
-          <MapPin className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+        <div className="text-center py-6 text-[var(--foreground-secondary)]">
+          <MapPin className="h-8 w-8 mx-auto mb-2 text-[var(--foreground-secondary)]" />
           <p className="text-sm">No locations added yet</p>
           {currentUserId && !showAddForm && (
             <button

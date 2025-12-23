@@ -25,7 +25,7 @@ export default async function AuthorPage({ params }: Props) {
       <div className="flex flex-col md:flex-row gap-6 mb-8">
         {/* Photo */}
         <div className="flex-shrink-0">
-          <div className="w-32 h-32 md:w-40 md:h-40 rounded-full overflow-hidden bg-gray-100 mx-auto md:mx-0 flex items-center justify-center">
+          <div className="w-32 h-32 md:w-40 md:h-40 rounded-full overflow-hidden bg-[var(--border-light)] mx-auto md:mx-0 flex items-center justify-center">
             {author?.photoUrl ? (
               <Image
                 src={author.photoUrl}
@@ -35,29 +35,29 @@ export default async function AuthorPage({ params }: Props) {
                 className="object-cover"
               />
             ) : (
-              <User className="w-16 h-16 text-gray-300" />
+              <User className="w-16 h-16 text-[var(--foreground-secondary)]" />
             )}
           </div>
         </div>
 
         {/* Info */}
         <div className="flex-1 text-center md:text-left">
-          <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">
+          <h1 className="text-3xl md:text-4xl font-bold text-[var(--foreground)] mb-2">
             {decodedName}
           </h1>
 
           {author?.birthYear && (
-            <p className="text-gray-500 mb-4">
+            <p className="text-[var(--foreground-secondary)] mb-4">
               {author.birthYear}
               {author.deathYear ? ` - ${author.deathYear}` : " - Present"}
             </p>
           )}
 
           {author?.bio && (
-            <p className="text-gray-600 max-w-2xl">{author.bio}</p>
+            <p className="text-[var(--foreground-secondary)] max-w-2xl">{author.bio}</p>
           )}
 
-          <div className="mt-4 flex flex-wrap gap-4 justify-center md:justify-start text-sm text-gray-500">
+          <div className="mt-4 flex flex-wrap gap-4 justify-center md:justify-start text-sm text-[var(--foreground-secondary)]">
             <span className="flex items-center gap-1">
               <BookOpen className="h-4 w-4" />
               {books.length} book{books.length !== 1 ? "s" : ""} in library
@@ -81,8 +81,8 @@ export default async function AuthorPage({ params }: Props) {
         </div>
 
         {/* Books by this author */}
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+        <div className="bg-[var(--card-bg)] rounded-lg border border-[var(--card-border)] p-6">
+          <h3 className="text-lg font-semibold text-[var(--foreground)] mb-4 flex items-center gap-2">
             <BookOpen className="h-5 w-5 text-[#7047EB]" />
             Books in Your Library
           </h3>
@@ -93,9 +93,9 @@ export default async function AuthorPage({ params }: Props) {
                 <Link
                   key={book.id}
                   href={`/book/${book.id}`}
-                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 transition-colors"
+                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-[var(--border-light)] transition-colors"
                 >
-                  <div className="w-12 h-16 flex-shrink-0 rounded overflow-hidden bg-gray-100">
+                  <div className="w-12 h-16 flex-shrink-0 rounded overflow-hidden bg-[var(--border-light)]">
                     {book.coverUrl ? (
                       <Image
                         src={book.coverUrl}
@@ -112,11 +112,11 @@ export default async function AuthorPage({ params }: Props) {
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900 truncate">
+                    <p className="font-medium text-[var(--foreground)] truncate">
                       {book.title}
                     </p>
                     {book.publishedDate && (
-                      <p className="text-sm text-gray-500">
+                      <p className="text-sm text-[var(--foreground-secondary)]">
                         {book.publishedDate}
                       </p>
                     )}
@@ -125,8 +125,8 @@ export default async function AuthorPage({ params }: Props) {
               ))}
             </div>
           ) : (
-            <div className="text-center py-8 text-gray-500">
-              <BookOpen className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+            <div className="text-center py-8 text-[var(--foreground-secondary)]">
+              <BookOpen className="h-8 w-8 mx-auto mb-2 text-[var(--foreground-secondary)]" />
               <p className="text-sm">No books by this author in your library</p>
               <Link
                 href="/search"

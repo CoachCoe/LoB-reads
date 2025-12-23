@@ -48,10 +48,10 @@ export default async function BookDetailPage({ params }: Props) {
                 unoptimized
               />
             ) : (
-              <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-amber-100 to-orange-100">
+              <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-purple-500/20 to-pink-500/20">
                 <div className="text-center p-4">
                   <span className="text-6xl mb-2 block">📚</span>
-                  <span className="text-sm text-amber-700 font-medium">
+                  <span className="text-sm text-[var(--foreground-secondary)] font-medium">
                     {book.title}
                   </span>
                 </div>
@@ -62,10 +62,10 @@ export default async function BookDetailPage({ params }: Props) {
 
         {/* Details */}
         <div className="flex-1">
-          <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">
+          <h1 className="text-3xl md:text-4xl font-bold text-[var(--foreground)] mb-2">
             {book.title}
           </h1>
-          <p className="text-xl text-gray-600 mb-4">
+          <p className="text-xl text-[var(--foreground-secondary)] mb-4">
             by{" "}
             <Link
               href={`/author/${encodeURIComponent(book.author)}`}
@@ -81,10 +81,10 @@ export default async function BookDetailPage({ params }: Props) {
               rating={Math.round(book.averageRating || 0)}
               size="lg"
             />
-            <span className="text-lg font-medium text-gray-700">
+            <span className="text-lg font-medium text-[var(--foreground)]">
               {book.averageRating?.toFixed(1) || "—"}
             </span>
-            <span className="text-gray-500">
+            <span className="text-[var(--foreground-secondary)]">
               ({book._count?.reviews || 0} reviews)
             </span>
           </div>
@@ -101,7 +101,7 @@ export default async function BookDetailPage({ params }: Props) {
           )}
 
           {/* Meta info */}
-          <div className="text-sm text-gray-500 space-y-1 mb-6">
+          <div className="text-sm text-[var(--foreground-secondary)] space-y-1 mb-6">
             {book.pageCount && <p>{book.pageCount} pages</p>}
             {book.publishedDate && <p>First published: {book.publishedDate}</p>}
             {book.isbn && <p>ISBN: {book.isbn}</p>}
@@ -120,11 +120,11 @@ export default async function BookDetailPage({ params }: Props) {
 
           {/* Description */}
           {book.description && (
-            <div className="prose prose-gray max-w-none">
-              <h2 className="text-lg font-semibold text-gray-900 mb-2">
+            <div className="max-w-none">
+              <h2 className="text-lg font-semibold text-[var(--foreground)] mb-2">
                 About this book
               </h2>
-              <p className="text-gray-600 whitespace-pre-wrap">
+              <p className="text-[var(--foreground-secondary)] whitespace-pre-wrap">
                 {book.description}
               </p>
             </div>
@@ -138,14 +138,14 @@ export default async function BookDetailPage({ params }: Props) {
       </div>
 
       {/* Reviews section */}
-      <div className="border-t border-gray-200 pt-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">
+      <div className="border-t border-[var(--border)] pt-8">
+        <h2 className="text-2xl font-bold text-[var(--foreground)] mb-6">
           Reviews
         </h2>
 
         {user && (
-          <div className="bg-gray-50 rounded-lg p-6 mb-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+          <div className="bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg p-6 mb-6">
+            <h3 className="text-lg font-semibold text-[var(--foreground)] mb-4">
               {userReview ? "Your Review" : "Write a Review"}
             </h3>
             <BookReviewSection
@@ -164,7 +164,7 @@ export default async function BookDetailPage({ params }: Props) {
             ))}
 
           {(!book.reviews || book.reviews.length === 0) && (
-            <p className="text-center text-gray-500 py-8">
+            <p className="text-center text-[var(--foreground-secondary)] py-8">
               No reviews yet. Be the first to review this book!
             </p>
           )}

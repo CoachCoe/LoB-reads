@@ -120,13 +120,13 @@ export default function AuthorLocationsSection({
   };
 
   if (loading) {
-    return <div className="animate-pulse bg-gray-100 rounded-lg p-4 h-48" />;
+    return <div className="animate-pulse bg-[var(--border-light)] rounded-lg p-4 h-48" />;
   }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-6">
+    <div className="bg-[var(--card-bg)] rounded-lg border border-[var(--card-border)] p-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+        <h3 className="text-lg font-semibold text-[var(--foreground)] flex items-center gap-2">
           <Globe className="h-5 w-5 text-[#5fbd74]" />
           Author Locations
         </h3>
@@ -143,13 +143,13 @@ export default function AuthorLocationsSection({
 
       {/* Add Location Form */}
       {showAddForm && (
-        <form onSubmit={handleSubmit} className="bg-gray-50 rounded-lg p-4 mb-4">
+        <form onSubmit={handleSubmit} className="bg-[var(--border-light)] rounded-lg p-4 mb-4">
           <div className="flex items-center justify-between mb-3">
-            <h4 className="font-medium text-gray-900">Add a Location</h4>
+            <h4 className="font-medium text-[var(--foreground)]">Add a Location</h4>
             <button
               type="button"
               onClick={resetForm}
-              className="text-gray-400 hover:text-gray-600"
+              className="text-[var(--foreground-secondary)] hover:text-[var(--foreground)]"
             >
               <X className="h-5 w-5" />
             </button>
@@ -158,7 +158,7 @@ export default function AuthorLocationsSection({
           <div className="space-y-3">
             {/* Location Name */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-[var(--foreground-secondary)] mb-1">
                 Location Name
               </label>
               <input
@@ -166,20 +166,20 @@ export default function AuthorLocationsSection({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g., Oxford, England"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#5fbd74] focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#5fbd74] focus:border-transparent text-sm"
                 required
               />
             </div>
 
             {/* Location Type */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-[var(--foreground-secondary)] mb-1">
                 Type
               </label>
               <select
                 value={type}
                 onChange={(e) => setType(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#5fbd74] focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#5fbd74] focus:border-transparent text-sm"
               >
                 {LOCATION_TYPES.map((t) => (
                   <option key={t.value} value={t.value}>
@@ -192,7 +192,7 @@ export default function AuthorLocationsSection({
             {/* Coordinates */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-[var(--foreground-secondary)] mb-1">
                   Latitude *
                 </label>
                 <input
@@ -201,12 +201,12 @@ export default function AuthorLocationsSection({
                   value={lat}
                   onChange={(e) => setLat(e.target.value)}
                   placeholder="e.g., 51.7520"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#5fbd74] focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#5fbd74] focus:border-transparent text-sm"
                   required
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-[var(--foreground-secondary)] mb-1">
                   Longitude *
                 </label>
                 <input
@@ -215,7 +215,7 @@ export default function AuthorLocationsSection({
                   value={lng}
                   onChange={(e) => setLng(e.target.value)}
                   placeholder="e.g., -1.2577"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#5fbd74] focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#5fbd74] focus:border-transparent text-sm"
                   required
                 />
               </div>
@@ -224,7 +224,7 @@ export default function AuthorLocationsSection({
             {/* Years */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-[var(--foreground-secondary)] mb-1">
                   Year Start (optional)
                 </label>
                 <input
@@ -232,11 +232,11 @@ export default function AuthorLocationsSection({
                   value={yearStart}
                   onChange={(e) => setYearStart(e.target.value)}
                   placeholder="e.g., 1925"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#5fbd74] focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#5fbd74] focus:border-transparent text-sm"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium text-[var(--foreground-secondary)] mb-1">
                   Year End (optional)
                 </label>
                 <input
@@ -244,14 +244,14 @@ export default function AuthorLocationsSection({
                   value={yearEnd}
                   onChange={(e) => setYearEnd(e.target.value)}
                   placeholder="e.g., 1973"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#5fbd74] focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#5fbd74] focus:border-transparent text-sm"
                 />
               </div>
             </div>
 
             {/* Description */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-[var(--foreground-secondary)] mb-1">
                 Notes (optional)
               </label>
               <textarea
@@ -259,7 +259,7 @@ export default function AuthorLocationsSection({
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Add any context about this location..."
                 rows={2}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#5fbd74] focus:border-transparent text-sm"
+                className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#5fbd74] focus:border-transparent text-sm"
               />
             </div>
 
@@ -284,38 +284,38 @@ export default function AuthorLocationsSection({
             return (
               <div
                 key={location.id}
-                className="flex items-start gap-3 p-3 rounded-lg bg-gray-50"
+                className="flex items-start gap-3 p-3 rounded-lg bg-[var(--border-light)]"
               >
                 <div className={`mt-0.5 ${typeInfo.color}`}>
                   <TypeIcon className="h-4 w-4" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-medium text-gray-900">
+                    <span className="font-medium text-[var(--foreground)]">
                       {location.name}
                     </span>
                     <span className="text-xs px-2 py-0.5 rounded-full bg-[#5fbd74]/10 text-[#5fbd74]">
                       {typeInfo.label}
                     </span>
                     {(location.yearStart || location.yearEnd) && (
-                      <span className="text-xs text-gray-500">
+                      <span className="text-xs text-[var(--foreground-secondary)]">
                         {location.yearStart || "?"} - {location.yearEnd || "?"}
                       </span>
                     )}
                   </div>
                   {location.description && (
-                    <p className="text-sm text-gray-600 mt-1">
+                    <p className="text-sm text-[var(--foreground-secondary)] mt-1">
                       {location.description}
                     </p>
                   )}
-                  <p className="text-xs text-gray-400 mt-1">
+                  <p className="text-xs text-[var(--foreground-secondary)] mt-1">
                     Added by {location.addedBy.name}
                   </p>
                 </div>
                 {currentUserId === location.addedBy.id && (
                   <button
                     onClick={() => handleDelete(location.id)}
-                    className="text-gray-400 hover:text-red-500 p-1"
+                    className="text-[var(--foreground-secondary)] hover:text-red-500 p-1"
                     title="Remove location"
                   >
                     <Trash2 className="h-4 w-4" />
@@ -326,8 +326,8 @@ export default function AuthorLocationsSection({
           })}
         </div>
       ) : (
-        <div className="text-center py-6 text-gray-500">
-          <Globe className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+        <div className="text-center py-6 text-[var(--foreground-secondary)]">
+          <Globe className="h-8 w-8 mx-auto mb-2 text-[var(--foreground-secondary)]" />
           <p className="text-sm">No locations added yet</p>
           {currentUserId && !showAddForm && (
             <button

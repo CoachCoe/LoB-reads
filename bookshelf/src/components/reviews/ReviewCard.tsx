@@ -25,7 +25,7 @@ interface ReviewCardProps {
 
 export default function ReviewCard({ review, showBook = false }: ReviewCardProps) {
   return (
-    <div className="bg-white rounded-lg border border-gray-100 p-4">
+    <div className="bg-[var(--card-bg)] rounded-lg border border-[var(--card-border)] p-4">
       <div className="flex items-start gap-3">
         <Link href={`/user/${review.user.id}`}>
           <Avatar
@@ -38,16 +38,16 @@ export default function ReviewCard({ review, showBook = false }: ReviewCardProps
           <div className="flex items-center gap-2 flex-wrap">
             <Link
               href={`/user/${review.user.id}`}
-              className="font-medium text-gray-900 hover:text-amber-600"
+              className="font-medium text-[var(--foreground)] hover:text-[#7047EB]"
             >
               {review.user.name}
             </Link>
             {showBook && review.book && (
               <>
-                <span className="text-gray-400">reviewed</span>
+                <span className="text-[var(--foreground-secondary)]">reviewed</span>
                 <Link
                   href={`/book/${review.book.id}`}
-                  className="font-medium text-gray-900 hover:text-amber-600"
+                  className="font-medium text-[var(--foreground)] hover:text-[#7047EB]"
                 >
                   {review.book.title}
                 </Link>
@@ -56,14 +56,14 @@ export default function ReviewCard({ review, showBook = false }: ReviewCardProps
           </div>
           <div className="flex items-center gap-2 mt-1">
             <StarRating rating={review.rating} size="sm" />
-            <span className="text-xs text-gray-500">
+            <span className="text-xs text-[var(--foreground-secondary)]">
               {formatDistanceToNow(new Date(review.createdAt), {
                 addSuffix: true,
               })}
             </span>
           </div>
           {review.content && (
-            <p className="mt-2 text-gray-600 text-sm whitespace-pre-wrap">
+            <p className="mt-2 text-[var(--foreground-secondary)] text-sm whitespace-pre-wrap">
               {review.content}
             </p>
           )}
