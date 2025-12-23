@@ -17,6 +17,7 @@ import {
   MapPin,
   Sun,
   Moon,
+  Info,
 } from "lucide-react";
 import Avatar from "@/components/ui/Avatar";
 import Button from "@/components/ui/Button";
@@ -88,6 +89,13 @@ export default function Navbar() {
                 >
                   <Sparkles className="h-4 w-4" />
                   Wrapped
+                </Link>
+                <Link
+                  href="/about"
+                  className="flex items-center gap-1.5 px-4 py-2 text-[var(--foreground-secondary)] hover:text-[var(--foreground)] rounded-full hover:bg-[var(--border-light)] transition-all text-sm font-medium"
+                >
+                  <Info className="h-4 w-4" />
+                  About
                 </Link>
               </div>
             )}
@@ -278,6 +286,14 @@ export default function Navbar() {
               >
                 <Sparkles className="h-5 w-5" />
                 Your Wrapped
+              </Link>
+              <Link
+                href="/about"
+                className="flex items-center gap-3 px-4 py-3 text-[var(--foreground)] hover:bg-[var(--border-light)] rounded-xl transition-all"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                <Info className="h-5 w-5" />
+                About
               </Link>
             </div>
           </div>
