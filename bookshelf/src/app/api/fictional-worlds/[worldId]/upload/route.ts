@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { put } from "@vercel/blob";
 import { getCurrentUser } from "@/lib/session";
-import { updateFictionalWorldMapImage, getFictionalWorldById } from "@/server/fictional-worlds";
+import { getFictionalWorldById, addMapToWorld } from "@/server/fictional-worlds";
+import { validateImageFile, sanitizeFilename } from "@/lib/file-validation";
 
 interface RouteParams {
   params: Promise<{ worldId: string }>;
@@ -27,6 +28,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
+    const title = formData.get("title") as string | null;
+    const description = formData.get("description") as string | null;
 
     if (!file) {
       return NextResponse.json(
@@ -35,37 +38,35 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Validate file type
-    const validTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-    if (!validTypes.includes(file.type)) {
+    if (!title || title.trim().length === 0) {
       return NextResponse.json(
-        { error: "Invalid file type. Please upload a JPEG, PNG, GIF, or WebP image." },
+        { error: "Title is required" },
         { status: 400 }
       );
     }
 
-    // Validate file size (max 5MB)
-    const maxSize = 5 * 1024 * 1024;
-    if (file.size > maxSize) {
-      return NextResponse.json(
-        { error: "File too large. Maximum size is 5MB." },
-        { status: 400 }
-      );
+    // Validate file with magic byte checking
+    const validation = await validateImageFile(file);
+    if (!validation.valid) {
+      return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
-    // Upload to Vercel Blob
-    const filename = `fictional-worlds/${worldId}/${Date.now()}-${file.name}`;
+    // Upload to Vercel Blob with sanitized filename
+    const safeName = sanitizeFilename(file.name);
+    const filename = `fictional-worlds/${worldId}/${Date.now()}-${safeName}`;
     const blob = await put(filename, file, {
       access: "public",
     });
 
-    // Update the fictional world with the new map image URL
-    const updatedWorld = await updateFictionalWorldMapImage(worldId, blob.url);
+    // Create the map entry in the database
+    const map = await addMapToWorld(
+      worldId,
+      blob.url,
+      title.trim(),
+      description?.trim() || undefined
+    );
 
-    return NextResponse.json({
-      url: blob.url,
-      world: updatedWorld,
-    });
+    return NextResponse.json({ map });
   } catch (error) {
     console.error("Error uploading map image:", error);
     return NextResponse.json(

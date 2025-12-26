@@ -5,6 +5,20 @@ import prisma from "@/lib/prisma";
 // Simple email validation regex
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Password must be at least 8 characters with at least one letter and one number
+function validatePassword(password: string): { valid: boolean; error?: string } {
+  if (password.length < 8) {
+    return { valid: false, error: "Password must be at least 8 characters" };
+  }
+  if (!/[a-zA-Z]/.test(password)) {
+    return { valid: false, error: "Password must contain at least one letter" };
+  }
+  if (!/[0-9]/.test(password)) {
+    return { valid: false, error: "Password must contain at least one number" };
+  }
+  return { valid: true };
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -33,9 +47,10 @@ export async function POST(request: Request) {
       );
     }
 
-    if (password.length < 6) {
+    const passwordValidation = validatePassword(password);
+    if (!passwordValidation.valid) {
       return NextResponse.json(
-        { error: "Password must be at least 6 characters" },
+        { error: passwordValidation.error },
         { status: 400 }
       );
     }

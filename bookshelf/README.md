@@ -22,7 +22,7 @@ A modern reading tracker for book lovers. Track your library, discover new stori
 
 ### Discovery & Exploration
 - **Interactive Map** - Explore where books are set on a world map with crowdsourced location data
-- **Fictional Worlds** - Dedicated pages for fantasy/sci-fi universes with custom map uploads (Middle-earth, Westeros, etc.)
+- **Fictional Worlds** - Dedicated pages for fantasy/sci-fi universes with multiple map uploads (Middle-earth, Westeros, etc.), each with title and description
 
 ### Import & Settings
 - **Goodreads Import** - Import your library via CSV export
@@ -177,7 +177,8 @@ src/
 ### Fictional Worlds
 - `GET/POST /api/fictional-worlds` - List/create worlds
 - `GET /api/fictional-worlds/[worldId]` - Get world details
-- `POST /api/fictional-worlds/[worldId]/upload` - Upload world map
+- `POST /api/fictional-worlds/[worldId]/upload` - Upload world map (with title and description)
+- `DELETE/PATCH /api/fictional-worlds/maps/[mapId]` - Delete or update map details
 
 ## Data Models
 
@@ -188,10 +189,11 @@ src/
 - **Review** - Ratings and text reviews
 - **ReadingProgress** - Page tracking, start/finish dates
 - **Follow** - User relationships
-- **BookLocation** - Crowdsourced book setting locations
+- **BookLocation** - Crowdsourced book setting locations (supports both real and fictional locations)
 - **AuthorLocation** - Crowdsourced author birthplace/residence data
-- **FictionalWorld** - Custom maps for fictional universes
-- **FictionalWorldLocation** - Location markers within fictional worlds
+- **Author** - Author metadata and Open Library integration
+- **FictionalWorld** - Fictional universes (Middle-earth, Westeros, etc.)
+- **FictionalWorldMap** - Map images for fictional worlds with title and description
 
 ## Social Links
 
