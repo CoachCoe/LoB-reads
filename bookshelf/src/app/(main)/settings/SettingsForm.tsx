@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import Card, { CardContent, CardHeader } from "@/components/ui/Card";
 import Input from "@/components/ui/Input";
 import Textarea from "@/components/ui/Textarea";
@@ -22,9 +23,13 @@ interface SettingsFormProps {
 }
 
 interface ImportResultState {
-  imported: number;
-  skipped: number;
-  errors: string[];
+  sessionId: string;
+  totalRows: number;
+  matched: number;
+  needsReview: number;
+  matchRate: number;
+  notProcessed: number;
+  maxRows: number;
 }
 
 export default function SettingsForm({ user }: SettingsFormProps) {
@@ -119,11 +124,15 @@ export default function SettingsForm({ user }: SettingsFormProps) {
 
       if (response.ok) {
         setImportResult({
-          imported: data.imported,
-          skipped: data.skipped,
-          errors: data.errors,
+          sessionId: data.sessionId,
+          totalRows: data.summary.totalRows,
+          matched: data.summary.matched,
+          needsReview: data.summary.needsReview,
+          matchRate: data.summary.matchRate,
+          notProcessed: data.notProcessed,
+          maxRows: data.maxRows,
         });
-        setMessage(`Successfully imported ${data.imported} books!`);
+        setMessage(`Imported ${data.summary.matched} books.`);
         router.refresh();
       } else {
         setMessage(data.error || "Failed to import Goodreads library");
@@ -273,32 +282,43 @@ export default function SettingsForm({ user }: SettingsFormProps) {
           </div>
 
           {importResult && (
-            <div className="p-4 bg-gray-50 rounded-lg space-y-2">
-              <div className="flex items-center gap-4 text-sm">
-                <span className="text-green-600 flex items-center gap-1">
-                  <CheckCircle className="h-4 w-4" />
-                  {importResult.imported} imported
+            <div className="space-y-3 rounded-lg bg-gray-50 p-4 dark:bg-gray-800">
+              <div className="flex flex-wrap items-center gap-4 text-sm">
+                <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                  <CheckCircle className="h-4 w-4" aria-hidden="true" />
+                  {importResult.matched} of {importResult.totalRows} matched (
+                  {importResult.matchRate}%)
                 </span>
-                {importResult.skipped > 0 && (
-                  <span className="text-amber-600 flex items-center gap-1">
-                    <AlertCircle className="h-4 w-4" />
-                    {importResult.skipped} skipped
+                {importResult.needsReview > 0 && (
+                  <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                    <AlertCircle className="h-4 w-4" aria-hidden="true" />
+                    {importResult.needsReview} need a look
                   </span>
                 )}
               </div>
 
-              {importResult.errors.length > 0 && (
-                <details className="text-xs text-gray-500">
-                  <summary className="cursor-pointer">View errors</summary>
-                  <ul className="mt-2 space-y-1 max-h-32 overflow-y-auto">
-                    {importResult.errors.slice(0, 10).map((error, i) => (
-                      <li key={i}>{error}</li>
-                    ))}
-                    {importResult.errors.length > 10 && (
-                      <li>...and {importResult.errors.length - 10} more</li>
-                    )}
-                  </ul>
-                </details>
+              {importResult.needsReview > 0 && (
+                <>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    These are kept, not discarded — most are a spelling
+                    difference between your export and our catalog.
+                  </p>
+                  <Link
+                    href={`/import/${importResult.sessionId}`}
+                    className="inline-block rounded-lg bg-[#D4A017] px-4 py-2 text-sm font-medium text-white hover:bg-[#B8860B]"
+                  >
+                    Review {importResult.needsReview}{" "}
+                    {importResult.needsReview === 1 ? "book" : "books"}
+                  </Link>
+                </>
+              )}
+
+              {importResult.notProcessed > 0 && (
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  The first {importResult.maxRows} rows were read.{" "}
+                  {importResult.notProcessed} more are still in the file —
+                  upload it again to continue where this left off.
+                </p>
               )}
             </div>
           )}

@@ -20,6 +20,8 @@ export { prisma };
  * isolation is a visible omission instead of a silent one.
  */
 const APP_TABLES = [
+  "import_rows",
+  "import_sessions",
   "follows",
   "reading_sessions",
   "reviews",

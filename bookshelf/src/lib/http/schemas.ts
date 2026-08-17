@@ -131,3 +131,6 @@ export const createAuthorLocationSchema = z.object({
   yearStart: z.int().min(-3000).max(3000).optional().nullable(),
   yearEnd: z.int().min(-3000).max(3000).optional().nullable(),
 });
+
+/** Confirming a fuzzy import match: the reader picked one of the candidates. */
+export const confirmImportRowSchema = z.object({ workKey });

@@ -23,7 +23,7 @@ ingest must not cascade into user data. Two consequences follow.
    rather than vanishing, and `getWorksByKeys` returns a map with the key
    simply missing.
 
-## Schemas## Schemas
+## Schemas
 
 Three, and the separation is a licensing and lifecycle control rather than an
 aesthetic one.
@@ -262,6 +262,22 @@ answered. Raw files are gitignored.
 - **Postgres 14 locally, 16 in CI and on RDS.** Nothing currently depends on
   15+ features, but the versions should be aligned.
 
+## Import
+
+`src/server/imports.ts`. A Goodreads export becomes a session with a row per
+line, persisted before anything is applied.
+
+Rows matching by ISBN or exact title and author are applied straight away;
+asking someone to confirm 640 certain matches is data entry, not review.
+Everything else is kept with its trigram candidates and waits at
+`/import/[sessionId]`. A fuzzy match is never applied on its own however well
+it scores — "The Hobbit" and "The Hobbits" are one edit apart and different
+books.
+
+The reported match rate deliberately counts only automatic matches. Folding in
+confirmations would measure the reader's patience rather than the catalog's
+coverage, and would reach 100% for any import someone finished.
+
 ## Milestones
 
 | | | Status |
@@ -271,4 +287,4 @@ answered. Raw files are gitignored.
 | M3 | Users, shelves, ratings repointed at `work_key` | Done |
 | M4 | Enrichment worker and covers | Done |
 | M5 | Social layer, seeded rating graph | Done |
-| M6 | Goodreads import against the catalog | Next |
+| M6 | Goodreads import against the catalog | Done |
