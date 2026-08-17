@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  getAuthorByName,
+  findAuthorKeyByName,
+  getAuthorLocations,
   addAuthorLocation,
   deleteAuthorLocation,
 } from "@/server/authors";
 import { getCurrentUser } from "@/lib/auth/session";
 import { errorResponse, parseBody, unauthorized } from "@/lib/http/api";
 import { createAuthorLocationSchema } from "@/lib/http/schemas";
-import { ValidationError } from "@/lib/http/errors";
+import { NotFoundError, ValidationError } from "@/lib/http/errors";
 
 export async function GET(
   request: NextRequest,
@@ -15,10 +16,12 @@ export async function GET(
 ) {
   try {
     const { authorName } = await params;
-    const author = await getAuthorByName(decodeURIComponent(authorName));
+    const authorKey = await findAuthorKeyByName(decodeURIComponent(authorName));
 
-    // An author with no page yet simply has no locations.
-    return NextResponse.json({ locations: author?.locations ?? [] });
+    // An author absent from the catalog simply has no locations.
+    return NextResponse.json({
+      locations: authorKey ? await getAuthorLocations(authorKey) : [],
+    });
   } catch (error) {
     return errorResponse("Error fetching author locations", error);
   }
@@ -45,18 +48,19 @@ export async function POST(
       throw new ValidationError("End year cannot be before start year");
     }
 
-    const location = await addAuthorLocation(
-      decodeURIComponent(authorName),
-      user.id,
-      {
-        name: data.name,
-        type: data.type,
-        description: data.description ?? undefined,
-        coordinates: data.coordinates,
-        yearStart: data.yearStart ?? undefined,
-        yearEnd: data.yearEnd ?? undefined,
-      }
-    );
+    const authorKey = await findAuthorKeyByName(decodeURIComponent(authorName));
+    if (!authorKey) {
+      throw new NotFoundError("That author is not in the catalog");
+    }
+
+    const location = await addAuthorLocation(authorKey, user.id, {
+      name: data.name,
+      type: data.type,
+      description: data.description ?? undefined,
+      coordinates: data.coordinates,
+      yearStart: data.yearStart ?? undefined,
+      yearEnd: data.yearEnd ?? undefined,
+    });
 
     return NextResponse.json(location, { status: 201 });
   } catch (error) {

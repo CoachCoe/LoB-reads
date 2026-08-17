@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/options";
-import { getBookShelfStatus } from "@/server/shelves";
+import { getWorkShelfStatus } from "@/server/shelves";
 
 export async function GET(
   request: Request,
-  { params }: { params: Promise<{ bookId: string }> }
+  { params }: { params: Promise<{ workKey: string }> }
 ) {
   const session = await getServerSession(authOptions);
 
@@ -14,11 +14,11 @@ export async function GET(
   }
 
   try {
-    const { bookId } = await params;
-    const status = await getBookShelfStatus(session.user.id, bookId);
+    const { workKey } = await params;
+    const status = await getWorkShelfStatus(session.user.id, workKey);
     return NextResponse.json(status);
   } catch (error) {
-    console.error("Get book shelf status error:", error);
+    console.error("Get work shelf status error:", error);
     return NextResponse.json(
       { error: "Failed to get shelf status" },
       { status: 500 }

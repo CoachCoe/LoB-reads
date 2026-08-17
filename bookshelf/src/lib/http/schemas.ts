@@ -67,24 +67,18 @@ export const createShelfSchema = z.object({
   name: shortText("Shelf name"),
 });
 
-export const shelfBookSchema = z.object({
-  bookId: z.string().min(1, "Book ID is required"),
-});
+/** Work keys are Open Library ids: OL45804W. */
+const workKey = z
+  .string()
+  .trim()
+  .min(1, "Work key is required")
+  .max(40)
+  .regex(/^OL[0-9A-Za-z]+W$/, "Not a valid work key");
 
-export const createBookSchema = z.object({
-  title: shortText("Title"),
-  author: shortText("Author"),
-  isbn: z.string().trim().max(20).optional().nullable(),
-  description: optionalLongText,
-  coverUrl: z.url().max(2000).optional().nullable(),
-  pageCount: z.int().positive().max(100_000).optional().nullable(),
-  publishedDate: z.string().trim().max(50).optional().nullable(),
-  genres: z.array(z.string().trim().min(1).max(100)).max(20).optional(),
-  openLibraryId: z.string().trim().max(100).optional().nullable(),
-});
+export const shelfWorkSchema = z.object({ workKey });
 
 export const createReviewSchema = z.object({
-  bookId: z.string().min(1, "Book ID is required"),
+  workKey,
   // Was range-checked but not constrained to an integer, so 3.7 reached the
   // database column and failed there instead of here.
   rating: z.int().min(1).max(5),
@@ -93,7 +87,8 @@ export const createReviewSchema = z.object({
 
 export const updateProgressSchema = z
   .object({
-    bookId: z.string().min(1, "Book ID is required"),
+    workKey,
+    editionKey: z.string().trim().max(40).optional(),
     action: z.enum(["start", "finish"]).optional(),
     // Was entirely unvalidated: negative page numbers were accepted.
     currentPage: z.int().min(0).max(100_000).optional(),
@@ -119,7 +114,7 @@ export const updateMapSchema = z.object({
   description: optionalLongText,
 });
 
-export const createBookLocationSchema = z.object({
+export const createWorkLocationSchema = z.object({
   name: shortText("Location name"),
   type: z.enum(["setting", "mentioned", "inspired_by"]),
   description: optionalLongText,

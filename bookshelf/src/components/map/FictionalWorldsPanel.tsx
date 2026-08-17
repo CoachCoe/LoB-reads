@@ -1,13 +1,12 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { X, Upload, BookOpen, Map, Sparkles, Trash2, Plus, Edit2, ChevronLeft } from "lucide-react";
+import { X, Upload, Map, Sparkles, Trash2, Plus, Edit2, ChevronLeft } from "lucide-react";
 import Image from "next/image";
-import Link from "next/link";
 
 import type {
   FictionalWorldMap,
-  FictionalWorldWithBooks as FictionalWorld,
+  FictionalWorldWithWorks as FictionalWorld,
 } from "@/server/fictional-worlds";
 import { useToast } from "@/components/providers/ToastProvider";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
@@ -110,7 +109,7 @@ export default function FictionalWorldsPanel({
       });
 
       if (response.ok) {
-        const updatedMaps = selectedWorld.maps.filter((m) => m.id !== mapId);
+        const updatedMaps = selectedWorld.maps.filter((m: FictionalWorldMap) => m.id !== mapId);
         const updatedWorlds = worlds.map((w) =>
           w.id === selectedWorld.id ? { ...w, maps: updatedMaps } : w
         );
@@ -151,7 +150,7 @@ export default function FictionalWorldsPanel({
         const data = await response.json();
         const updatedMap = data.map;
 
-        const updatedMaps = selectedWorld.maps.map((m) =>
+        const updatedMaps = selectedWorld.maps.map((m: FictionalWorldMap) =>
           m.id === updatedMap.id ? updatedMap : m
         );
         const updatedWorlds = worlds.map((w) =>
@@ -259,7 +258,7 @@ export default function FictionalWorldsPanel({
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-3">
-                    {selectedWorld.maps.map((map) => (
+                    {selectedWorld.maps.map((map: FictionalWorldMap) => (
                       <button
                         key={map.id}
                         onClick={() => setViewingMap(map)}
@@ -280,48 +279,6 @@ export default function FictionalWorldsPanel({
                     ))}
                   </div>
                 )}
-              </div>
-
-              {/* Books in this world */}
-              <div>
-                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
-                  <BookOpen className="h-4 w-4" />
-                  Books set in {selectedWorld.name} ({selectedWorld._count.books})
-                </h3>
-                <div className="space-y-2">
-                  {selectedWorld.books.map((book) => (
-                    <Link
-                      key={book.id}
-                      href={`/book/${book.id}`}
-                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                    >
-                      <div className="w-10 h-14 bg-gray-200 dark:bg-gray-700 rounded overflow-hidden flex-shrink-0">
-                        {book.coverUrl ? (
-                          <Image
-                            src={book.coverUrl}
-                            alt={book.title}
-                            width={40}
-                            height={56}
-                            className="w-full h-full object-cover"
-                            unoptimized
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-gray-400">
-                            <BookOpen className="h-4 w-4" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                          {book.title}
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                          {book.author}
-                        </p>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
               </div>
             </div>
           ) : (
@@ -362,7 +319,7 @@ export default function FictionalWorldsPanel({
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-gray-900 dark:text-gray-100">{world.name}</p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {world._count.books} {world._count.books === 1 ? "book" : "books"}
+                          {world.workCount} {world.workCount === 1 ? "book" : "books"}
                           {world.maps.length > 0 && ` · ${world.maps.length} ${world.maps.length === 1 ? "map" : "maps"}`}
                         </p>
                       </div>

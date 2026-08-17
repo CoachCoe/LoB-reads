@@ -1,165 +1,95 @@
 import prisma from "@/lib/prisma";
+import { getWorksByKeys } from "./catalog";
 
-export interface BookLocation {
-  id: string;
-  title: string;
-  author: string;
-  coverUrl: string | null;
-  settingLocation: string | null;
-  settingCoordinates: { lat: number; lng: number } | null;
-  authorOrigin: string | null;
-  authorOriginCoordinates: { lat: number; lng: number } | null;
-  isFictional: boolean;
-  fictionalWorldName: string | null;
-}
+/**
+ * Everything the world map renders.
+ *
+ * Locations are keyed by catalog work and author keys, so the display data
+ * (title, author name) is hydrated separately rather than joined — `app` holds
+ * no foreign key into `catalog`.
+ */
 
-// Crowdsourced location for the map
-export interface CrowdsourcedLocation {
+export interface MappedWorkLocation {
   id: string;
   name: string;
   type: string;
   coordinates: { lat: number; lng: number };
-  book: {
-    id: string;
-    title: string;
-    author: string;
-    coverUrl: string | null;
-  };
-  isFictional: boolean;
+  workKey: string;
+  workTitle: string;
+  workAuthor: string | null;
+  coverId: number | null;
   fictionalWorldName: string | null;
-  addedBy: string;
+  addedBy: string | null;
 }
 
-export interface AuthorMapLocation {
+export interface MappedAuthorLocation {
   id: string;
   name: string;
   type: string;
   coordinates: { lat: number; lng: number };
-  author: {
-    id: string;
-    name: string;
-    photoUrl: string | null;
-  };
-  addedBy: string;
+  authorKey: string;
+  authorName: string;
+  yearStart: number | null;
+  yearEnd: number | null;
+  addedBy: string | null;
 }
 
-/** Coordinates live in Float columns; callers want a `{ lat, lng }` pair. */
-function toCoordinates(
-  lat: number | null,
-  lng: number | null
-): { lat: number; lng: number } | null {
-  return lat !== null && lng !== null ? { lat, lng } : null;
-}
-
-// Get legacy book locations (from book table fields)
-export async function getBooksWithLocations(): Promise<BookLocation[]> {
-  const books = await prisma.book.findMany({
-    where: {
-      OR: [{ settingLat: { not: null } }, { authorOriginLat: { not: null } }],
-    },
-    select: {
-      id: true,
-      title: true,
-      author: true,
-      coverUrl: true,
-      settingLocation: true,
-      settingLat: true,
-      settingLng: true,
-      authorOrigin: true,
-      authorOriginLat: true,
-      authorOriginLng: true,
-      isFictional: true,
-      fictionalWorld: {
-        select: {
-          name: true,
-        },
-      },
-    },
-  });
-
-  return books.map((book) => ({
-    id: book.id,
-    title: book.title,
-    author: book.author,
-    coverUrl: book.coverUrl,
-    settingLocation: book.settingLocation,
-    settingCoordinates: toCoordinates(book.settingLat, book.settingLng),
-    authorOrigin: book.authorOrigin,
-    authorOriginCoordinates: toCoordinates(
-      book.authorOriginLat,
-      book.authorOriginLng
-    ),
-    isFictional: book.isFictional,
-    fictionalWorldName: book.fictionalWorld?.name ?? null,
-  }));
-}
-
-// Get crowdsourced book locations from BookLocation table
-export async function getCrowdsourcedBookLocations(): Promise<
-  CrowdsourcedLocation[]
-> {
-  const locations = await prisma.bookLocation.findMany({
-    where: {
-      isFictional: false,
-      lat: { not: null },
-      lng: { not: null },
-    },
+/** Real-world book locations. Fictional ones belong to a world, not a point. */
+export async function getMappedWorkLocations(): Promise<MappedWorkLocation[]> {
+  const locations = await prisma.workLocation.findMany({
+    where: { isFictional: false, lat: { not: null }, lng: { not: null } },
     include: {
-      book: {
-        select: {
-          id: true,
-          title: true,
-          author: true,
-          coverUrl: true,
-        },
-      },
-      fictionalWorld: {
-        select: { name: true },
-      },
-      addedBy: {
-        select: { name: true },
-      },
+      fictionalWorld: { select: { name: true } },
+      addedBy: { select: { name: true } },
     },
   });
 
-  return locations.map((loc) => ({
-    id: loc.id,
-    name: loc.name,
-    type: loc.type,
-    // The where clause guarantees both are present.
-    coordinates: { lat: loc.lat!, lng: loc.lng! },
-    book: loc.book,
-    isFictional: loc.isFictional,
-    fictionalWorldName: loc.fictionalWorld?.name ?? null,
-    addedBy: loc.addedBy.name,
-  }));
+  const works = await getWorksByKeys(locations.map((l) => l.workKey));
+
+  return locations.map((loc) => {
+    const work = works.get(loc.workKey);
+    return {
+      id: loc.id,
+      name: loc.name,
+      type: loc.type,
+      // The where clause guarantees both are present.
+      coordinates: { lat: loc.lat!, lng: loc.lng! },
+      workKey: loc.workKey,
+      // A location can outlive its work leaving the catalog slice; showing the
+      // pin with a placeholder beats dropping a contribution off the map.
+      workTitle: work?.title ?? "Unknown work",
+      workAuthor: work?.authorNames ?? null,
+      coverId: work?.coverId ?? null,
+      fictionalWorldName: loc.fictionalWorld?.name ?? null,
+      addedBy: loc.addedBy?.name ?? null,
+    };
+  });
 }
 
-// Get crowdsourced author locations from AuthorLocation table
-export async function getCrowdsourcedAuthorLocations(): Promise<
-  AuthorMapLocation[]
+export async function getMappedAuthorLocations(): Promise<
+  MappedAuthorLocation[]
 > {
   const locations = await prisma.authorLocation.findMany({
-    include: {
-      author: {
-        select: {
-          id: true,
-          name: true,
-          photoUrl: true,
-        },
-      },
-      addedBy: {
-        select: { name: true },
-      },
-    },
+    include: { addedBy: { select: { name: true } } },
   });
+
+  if (locations.length === 0) return [];
+
+  const names = await prisma.$queryRaw<{ olKey: string; name: string }[]>`
+    SELECT ol_key AS "olKey", name FROM catalog.authors
+    WHERE ol_key = ANY(${[...new Set(locations.map((l) => l.authorKey))]})
+  `;
+  const nameByKey = new Map(names.map((n) => [n.olKey, n.name]));
 
   return locations.map((loc) => ({
     id: loc.id,
     name: loc.name,
     type: loc.type,
     coordinates: { lat: loc.lat, lng: loc.lng },
-    author: loc.author,
-    addedBy: loc.addedBy.name,
+    authorKey: loc.authorKey,
+    authorName: nameByKey.get(loc.authorKey) ?? "Unknown author",
+    yearStart: loc.yearStart,
+    yearEnd: loc.yearEnd,
+    addedBy: loc.addedBy?.name ?? null,
   }));
 }

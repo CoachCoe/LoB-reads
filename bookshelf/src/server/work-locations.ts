@@ -1,7 +1,13 @@
 import prisma from "@/lib/prisma";
+
+/**
+ * Locations describe the WORK — where Dune is set does not change between
+ * printings. Contributions outlive the account that made them, so addedBy is
+ * nullable and a deleted account leaves the pin with its attribution severed.
+ */
 import { AuthorizationError, NotFoundError } from "@/lib/http/errors";
 
-export interface BookLocationData {
+export interface WorkLocationData {
   id: string;
   name: string;
   type: string;
@@ -10,18 +16,15 @@ export interface BookLocationData {
   isFictional: boolean;
   fictionalWorldId: string | null;
   fictionalWorldName: string | null;
-  addedBy: {
-    id: string;
-    name: string;
-  };
+  addedBy: { id: string; name: string } | null;
   createdAt: Date;
 }
 
-export async function getBookLocations(
-  bookId: string
-): Promise<BookLocationData[]> {
-  const locations = await prisma.bookLocation.findMany({
-    where: { bookId },
+export async function getWorkLocations(
+  workKey: string
+): Promise<WorkLocationData[]> {
+  const locations = await prisma.workLocation.findMany({
+    where: { workKey },
     include: {
       addedBy: {
         select: { id: true, name: true },
@@ -51,8 +54,8 @@ export async function getBookLocations(
   }));
 }
 
-export async function addBookLocation(
-  bookId: string,
+export async function addWorkLocation(
+  workKey: string,
   userId: string,
   data: {
     name: string;
@@ -63,9 +66,9 @@ export async function addBookLocation(
     fictionalWorldId?: string;
   }
 ) {
-  return prisma.bookLocation.create({
+  return prisma.workLocation.create({
     data: {
-      bookId,
+      workKey,
       addedById: userId,
       name: data.name,
       type: data.type,
@@ -86,8 +89,8 @@ export async function addBookLocation(
   });
 }
 
-export async function deleteBookLocation(locationId: string, userId: string) {
-  const location = await prisma.bookLocation.findUnique({
+export async function deleteWorkLocation(locationId: string, userId: string) {
+  const location = await prisma.workLocation.findUnique({
     where: { id: locationId },
     select: { addedById: true },
   });
@@ -102,7 +105,7 @@ export async function deleteBookLocation(locationId: string, userId: string) {
     );
   }
 
-  return prisma.bookLocation.delete({
+  return prisma.workLocation.delete({
     where: { id: locationId },
   });
 }

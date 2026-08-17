@@ -19,69 +19,63 @@ const mapSelect = {
   createdAt: true,
 } as const;
 
-export interface FictionalWorldWithBooks {
+export interface FictionalWorldWithWorks {
   id: string;
   name: string;
   description: string | null;
   maps: FictionalWorldMap[];
-  _count: {
-    books: number;
-  };
-  books: {
-    id: string;
-    title: string;
-    author: string;
-    coverUrl: string | null;
-  }[];
+  workCount: number;
 }
 
 const fictionalWorldInclude = {
-  _count: {
-    select: { books: true },
-  },
-  books: {
-    select: {
-      id: true,
-      title: true,
-      author: true,
-      coverUrl: true,
-    },
-  },
-  maps: {
-    select: mapSelect,
-    orderBy: {
-      createdAt: "desc" as const,
-    },
-  },
+  _count: { select: { works: true } },
+  maps: { select: mapSelect, orderBy: { createdAt: "desc" as const } },
 };
 
-export async function getAllFictionalWorlds(): Promise<FictionalWorldWithBooks[]> {
-  return prisma.fictionalWorld.findMany({
+type WorldRow = {
+  id: string;
+  name: string;
+  description: string | null;
+  maps: FictionalWorldMap[];
+  _count: { works: number };
+};
+
+const toWorld = (row: WorldRow): FictionalWorldWithWorks => ({
+  id: row.id,
+  name: row.name,
+  description: row.description,
+  maps: row.maps,
+  workCount: row._count.works,
+});
+
+export async function getAllFictionalWorlds(): Promise<FictionalWorldWithWorks[]> {
+  const rows = await prisma.fictionalWorld.findMany({
     include: fictionalWorldInclude,
-    orderBy: {
-      name: "asc",
-    },
+    orderBy: { name: "asc" },
   });
+  return rows.map(toWorld);
 }
 
-export async function getFictionalWorldById(id: string): Promise<FictionalWorldWithBooks | null> {
-  return prisma.fictionalWorld.findUnique({
+export async function getFictionalWorldById(
+  id: string
+): Promise<FictionalWorldWithWorks | null> {
+  const row = await prisma.fictionalWorld.findUnique({
     where: { id },
     include: fictionalWorldInclude,
   });
+  return row ? toWorld(row) : null;
 }
 
 export async function createFictionalWorld(
   name: string,
   description?: string
-): Promise<FictionalWorldWithBooks> {
-  return prisma.fictionalWorld.create({
-    data: {
-      name,
-      description,
-    },
-    include: fictionalWorldInclude,
-  });
+): Promise<FictionalWorldWithWorks> {
+  return toWorld(
+    await prisma.fictionalWorld.create({
+      data: { name, description },
+      include: fictionalWorldInclude,
+    })
+  );
 }
 
 // Map management functions

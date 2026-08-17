@@ -275,10 +275,10 @@ export default function AuthorLocationsSection({
                     </p>
                   )}
                   <p className="text-xs text-[var(--foreground-secondary)] mt-1">
-                    Added by {location.addedBy.name}
+                    Added by {location.addedBy?.name ?? "a former member"}
                   </p>
                 </div>
-                {currentUserId === location.addedBy.id && (
+                {location.addedBy != null && currentUserId === location.addedBy.id && (
                   <button
                     onClick={() => setPendingDelete(location)}
                     className="text-[var(--foreground-secondary)] hover:text-red-500 p-1"

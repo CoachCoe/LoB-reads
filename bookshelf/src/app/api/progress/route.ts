@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/options";
 import {
-  getUserCurrentlyReading,
-  updateReadingProgress,
+  getCurrentlyReading,
+  updateProgress,
   startReading,
   finishReading,
 } from "@/server/progress";
@@ -18,7 +18,7 @@ export async function GET() {
   }
 
   try {
-    const progress = await getUserCurrentlyReading(session.user.id);
+    const progress = await getCurrentlyReading(session.user.id);
     return NextResponse.json(progress);
   } catch (error) {
     return errorResponse("Get progress error", error);
@@ -33,23 +33,23 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { bookId, currentPage, action } = await parseBody(
+    const { workKey, editionKey, currentPage, action } = await parseBody(
       request,
       updateProgressSchema
     );
     const userId = session.user.id;
 
     if (action === "start") {
-      return NextResponse.json(await startReading(userId, bookId));
+      return NextResponse.json(await startReading(userId, workKey, editionKey));
     }
 
     if (action === "finish") {
-      return NextResponse.json(await finishReading(userId, bookId));
+      return NextResponse.json(await finishReading(userId, workKey));
     }
 
     // The schema guarantees one of action/currentPage is present.
     return NextResponse.json(
-      await updateReadingProgress(userId, bookId, currentPage!)
+      await updateProgress(userId, workKey, currentPage!)
     );
   } catch (error) {
     return errorResponse("Update progress error", error);

@@ -1,20 +1,20 @@
 import {
   deleteShelf,
-  addBookToShelf,
-  removeBookFromShelf,
+  addWorkToShelf,
+  removeWorkFromShelf,
   getShelfById,
 } from "@/server/shelves";
 import { deleteReview, createOrUpdateReview } from "@/server/reviews";
-import { deleteBookLocation } from "@/server/book-locations";
+import { deleteWorkLocation } from "@/server/work-locations";
 import { deleteAuthorLocation } from "@/server/authors";
 import { AuthorizationError, NotFoundError, ValidationError } from "@/lib/http/errors";
 import { prisma } from "./setup";
 import {
   makeUser,
   makeUserWithShelves,
-  makeBook,
+  makeWork,
   makeShelf,
-  makeBookLocation,
+  makeWorkLocation,
   makeAuthorLocation,
 } from "./factories";
 
@@ -74,9 +74,9 @@ describe("shelf ownership", () => {
     const owner = await makeUser();
     const stranger = await makeUser();
     const shelf = await makeShelf(owner.id);
-    const book = await makeBook();
+    const work = await makeWork();
 
-    await expect(addBookToShelf(shelf.id, book.id, stranger.id)).rejects.toThrow(
+    await expect(addWorkToShelf(shelf.id, work.olKey, stranger.id)).rejects.toThrow(
       AuthorizationError
     );
 
@@ -87,11 +87,11 @@ describe("shelf ownership", () => {
     const owner = await makeUser();
     const stranger = await makeUser();
     const shelf = await makeShelf(owner.id);
-    const book = await makeBook();
-    await addBookToShelf(shelf.id, book.id, owner.id);
+    const work = await makeWork();
+    await addWorkToShelf(shelf.id, work.olKey, owner.id);
 
     await expect(
-      removeBookFromShelf(shelf.id, book.id, stranger.id)
+      removeWorkFromShelf(shelf.id, work.olKey, stranger.id)
     ).rejects.toThrow(AuthorizationError);
 
     expect(await prisma.shelfItem.count({ where: { shelfId: shelf.id } })).toBe(1);
@@ -118,8 +118,8 @@ describe("review ownership", () => {
   it("refuses to delete another user's review, and leaves it intact", async () => {
     const owner = await makeUser();
     const stranger = await makeUser();
-    const book = await makeBook();
-    const review = await createOrUpdateReview(owner.id, book.id, 4, "Good");
+    const work = await makeWork();
+    const review = await createOrUpdateReview(owner.id, work.olKey, 4, "Good");
 
     await expect(deleteReview(review.id, stranger.id)).rejects.toThrow(
       AuthorizationError
@@ -130,8 +130,8 @@ describe("review ownership", () => {
 
   it("lets the owner delete their own review", async () => {
     const owner = await makeUser();
-    const book = await makeBook();
-    const review = await createOrUpdateReview(owner.id, book.id, 4);
+    const work = await makeWork();
+    const review = await createOrUpdateReview(owner.id, work.olKey, 4);
 
     await deleteReview(review.id, owner.id);
 
@@ -143,15 +143,15 @@ describe("crowdsourced location ownership", () => {
   it("refuses to delete a book location contributed by someone else", async () => {
     const contributor = await makeUser();
     const stranger = await makeUser();
-    const book = await makeBook();
-    const location = await makeBookLocation(book.id, contributor.id);
+    const work = await makeWork();
+    const location = await makeWorkLocation(work.olKey, contributor.id);
 
-    await expect(deleteBookLocation(location.id, stranger.id)).rejects.toThrow(
+    await expect(deleteWorkLocation(location.id, stranger.id)).rejects.toThrow(
       AuthorizationError
     );
 
     expect(
-      await prisma.bookLocation.findUnique({ where: { id: location.id } })
+      await prisma.workLocation.findUnique({ where: { id: location.id } })
     ).not.toBeNull();
   });
 
@@ -171,19 +171,19 @@ describe("crowdsourced location ownership", () => {
 
   it("lets the contributor remove their own location", async () => {
     const contributor = await makeUser();
-    const book = await makeBook();
-    const location = await makeBookLocation(book.id, contributor.id);
+    const work = await makeWork();
+    const location = await makeWorkLocation(work.olKey, contributor.id);
 
-    await deleteBookLocation(location.id, contributor.id);
+    await deleteWorkLocation(location.id, contributor.id);
 
     expect(
-      await prisma.bookLocation.findUnique({ where: { id: location.id } })
+      await prisma.workLocation.findUnique({ where: { id: location.id } })
     ).toBeNull();
   });
 
   it("distinguishes a missing location from someone else's", async () => {
     const user = await makeUser();
-    await expect(deleteBookLocation("no-such-id", user.id)).rejects.toThrow(
+    await expect(deleteWorkLocation("no-such-id", user.id)).rejects.toThrow(
       NotFoundError
     );
   });

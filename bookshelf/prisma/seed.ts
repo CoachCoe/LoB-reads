@@ -3,486 +3,247 @@ import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
-async function main() {
-  console.log("🌱 Starting seed...");
+/**
+ * Development seed.
+ *
+ * User data references catalog works by key, so this needs a populated
+ * catalog. Rather than depend on one having been ingested, it inserts a small
+ * set of works itself — enough for shelves, ratings and the map to have
+ * something to point at on a fresh clone.
+ *
+ * A real ingest TRUNCATEs and rebuilds catalog.*, which will remove these. That
+ * is expected: there is no foreign key from app into catalog precisely so a
+ * rebuild cannot cascade into user data. Shelf entries whose work has gone are
+ * rendered as "not in the current catalog" rather than disappearing.
+ *
+ *   npm run ingest && npm run db:seed    # realistic
+ *   npm run db:seed                      # standalone, still works
+ */
 
-  // Clear existing data
-  await prisma.follow.deleteMany();
-  await prisma.readingProgress.deleteMany();
+const SEED_AUTHORS = [
+  { olKey: "OLA001A", name: "Frank Herbert" },
+  { olKey: "OLA002A", name: "J. R. R. Tolkien" },
+  { olKey: "OLA003A", name: "Gabriel García Márquez" },
+  { olKey: "OLA009A", name: "George Orwell" },
+  { olKey: "OLA015A", name: "Margaret Atwood" },
+  { olKey: "OLA016A", name: "Octavia E. Butler" },
+];
+
+/** Keys match scripts/ingest/known-books.ts, so a later ingest lines up. */
+const SEED_WORKS = [
+  { olKey: "OLK001W", title: "Dune", authorKey: "OLA001A", year: 1965, pages: 412,
+    subjects: ["Science Fiction", "Desert"] },
+  { olKey: "OLK002W", title: "The Hobbit", authorKey: "OLA002A", year: 1937, pages: 304,
+    subjects: ["Fantasy", "Adventure"] },
+  { olKey: "OLK003W", title: "One Hundred Years of Solitude", authorKey: "OLA003A", year: 1967, pages: 417,
+    subjects: ["Magical Realism"] },
+  { olKey: "OLK009W", title: "Nineteen Eighty-Four", authorKey: "OLA009A", year: 1949, pages: 328,
+    subjects: ["Dystopian"] },
+  { olKey: "OLK015W", title: "The Handmaid's Tale", authorKey: "OLA015A", year: 1985, pages: 311,
+    subjects: ["Dystopian"] },
+  { olKey: "OLK016W", title: "Kindred", authorKey: "OLA016A", year: 1979, pages: 264,
+    subjects: ["Science Fiction"] },
+];
+
+const DEFAULT_SHELVES = ["Want to Read", "Currently Reading", "Read"];
+
+async function seedCatalog() {
+  for (const author of SEED_AUTHORS) {
+    await prisma.$executeRaw`
+      INSERT INTO catalog.authors (ol_key, name) VALUES (${author.olKey}, ${author.name})
+      ON CONFLICT (ol_key) DO NOTHING`;
+  }
+
+  for (const work of SEED_WORKS) {
+    const author = SEED_AUTHORS.find((a) => a.olKey === work.authorKey)!;
+    await prisma.$executeRaw`
+      INSERT INTO catalog.works
+        (ol_key, title, author_names, subjects, first_publish_year,
+         edition_count, cover_edition_key)
+      VALUES (${work.olKey}, ${work.title}, ${author.name}, ${work.subjects},
+              ${work.year}, 1, ${work.olKey + "E"})
+      ON CONFLICT (ol_key) DO NOTHING`;
+
+    await prisma.$executeRaw`
+      INSERT INTO catalog.work_authors (work_key, author_key, position)
+      VALUES (${work.olKey}, ${work.authorKey}, 0)
+      ON CONFLICT DO NOTHING`;
+
+    await prisma.$executeRaw`
+      INSERT INTO catalog.editions
+        (ol_key, work_key, title, publish_year, number_of_pages, languages)
+      VALUES (${work.olKey + "E"}, ${work.olKey}, ${work.title},
+              ${work.year}, ${work.pages}, ARRAY['eng'])
+      ON CONFLICT (ol_key) DO NOTHING`;
+  }
+}
+
+async function main() {
+  console.log("🌱 Seeding…");
+
+  // User data only. The catalog is left alone: it may hold a real ingest.
+  await prisma.readingSession.deleteMany();
   await prisma.review.deleteMany();
   await prisma.shelfItem.deleteMany();
+  await prisma.workLocation.deleteMany();
+  await prisma.authorLocation.deleteMany();
+  await prisma.follow.deleteMany();
   await prisma.shelf.deleteMany();
-  await prisma.book.deleteMany();
+  await prisma.fictionalWorldMap.deleteMany();
+  await prisma.workFictionalWorld.deleteMany();
   await prisma.fictionalWorld.deleteMany();
   await prisma.user.deleteMany();
 
-  console.log("🌍 Creating fictional worlds...");
+  await seedCatalog();
+  console.log(`📚 Catalog: ${SEED_WORKS.length} works available`);
 
-  // Create fictional worlds
-  const fictionalWorlds = await Promise.all([
-    prisma.fictionalWorld.create({
-      data: {
-        name: "Middle-earth",
-        description: "The fantasy world created by J.R.R. Tolkien, home to hobbits, elves, dwarves, and the epic struggle against Sauron.",
-      },
-    }),
-    prisma.fictionalWorld.create({
-      data: {
-        name: "Arrakis",
-        description: "The desert planet from Frank Herbert's Dune, also known as Dune. The only source of the spice melange.",
-      },
-    }),
-    prisma.fictionalWorld.create({
-      data: {
-        name: "Macondo",
-        description: "The fictional town in Colombia from Gabriel García Márquez's One Hundred Years of Solitude.",
-      },
-    }),
-  ]);
-
-  const middleEarth = fictionalWorlds[0];
-  const arrakis = fictionalWorlds[1];
-  const macondo = fictionalWorlds[2];
-
-  console.log(`✅ Created ${fictionalWorlds.length} fictional worlds`);
-
-  console.log("📚 Creating books...");
-
-  // Create sample books
-  const books = await Promise.all([
-    prisma.book.create({
-      data: {
-        title: "1984",
-        author: "George Orwell",
-        isbn: "9780451524935",
-        description:
-          "A dystopian novel set in a totalitarian society ruled by Big Brother. Winston Smith works for the Ministry of Truth, rewriting history. When he begins a forbidden love affair and starts questioning the Party, he discovers the true nature of his world.",
-        coverUrl: "https://covers.openlibrary.org/b/isbn/9780451524935-L.jpg",
-        pageCount: 328,
-        publishedDate: "1949",
-        genres: ["Dystopian", "Science Fiction", "Political Fiction"],
-        openLibraryId: "/works/OL1168083W",
-        settingLocation: "London, England",
-        settingLat: 51.5074,
-        settingLng: -0.1278,
-        authorOrigin: "Motihari, India",
-        authorOriginLat: 26.6597,
-        authorOriginLng: 84.9167,
-      },
-    }),
-    prisma.book.create({
-      data: {
-        title: "To Kill a Mockingbird",
-        author: "Harper Lee",
-        isbn: "9780061120084",
-        description:
-          "Through the eyes of young Scout Finch, this novel explores themes of racial injustice and moral growth in the American South during the 1930s, as her father Atticus defends a Black man falsely accused of a crime.",
-        coverUrl: "https://covers.openlibrary.org/b/isbn/9780061120084-L.jpg",
-        pageCount: 336,
-        publishedDate: "1960",
-        genres: ["Southern Gothic", "Coming-of-age", "Legal Drama"],
-        openLibraryId: "/works/OL4397551W",
-        settingLocation: "Maycomb, Alabama (fictional)",
-        settingLat: 31.2619,
-        settingLng: -85.4808,
-        authorOrigin: "Monroeville, Alabama",
-        authorOriginLat: 31.5274,
-        authorOriginLng: -87.3247,
-      },
-    }),
-    prisma.book.create({
-      data: {
-        title: "The Great Gatsby",
-        author: "F. Scott Fitzgerald",
-        isbn: "9780743273565",
-        description:
-          "A tale of wealth, love, and the American Dream set in the Jazz Age. Narrator Nick Carraway becomes entangled in the world of his mysterious millionaire neighbor Jay Gatsby and his obsession with the beautiful Daisy Buchanan.",
-        coverUrl: "https://covers.openlibrary.org/b/isbn/9780743273565-L.jpg",
-        pageCount: 180,
-        publishedDate: "1925",
-        genres: ["Literary Fiction", "Tragedy", "Jazz Age"],
-        openLibraryId: "/works/OL468431W",
-        settingLocation: "Long Island, New York",
-        settingLat: 40.7891,
-        settingLng: -73.1350,
-        authorOrigin: "St. Paul, Minnesota",
-        authorOriginLat: 44.9537,
-        authorOriginLng: -93.0900,
-      },
-    }),
-    prisma.book.create({
-      data: {
-        title: "Pride and Prejudice",
-        author: "Jane Austen",
-        isbn: "9780141439518",
-        description:
-          "The story follows Elizabeth Bennet as she navigates issues of manners, morality, education, and marriage in early 19th-century England, particularly her relationship with the proud Mr. Darcy.",
-        coverUrl: "https://covers.openlibrary.org/b/isbn/9780141439518-L.jpg",
-        pageCount: 432,
-        publishedDate: "1813",
-        genres: ["Romance", "Classic Literature", "Social Commentary"],
-        openLibraryId: "/works/OL66554W",
-        settingLocation: "Hertfordshire, England",
-        settingLat: 51.8098,
-        settingLng: -0.2377,
-        authorOrigin: "Steventon, Hampshire, England",
-        authorOriginLat: 51.2545,
-        authorOriginLng: -1.2350,
-      },
-    }),
-    prisma.book.create({
-      data: {
-        title: "The Hobbit",
-        author: "J.R.R. Tolkien",
-        isbn: "9780547928227",
-        description:
-          "Bilbo Baggins, a comfortable hobbit, is swept into an epic quest to reclaim the Dwarf Kingdom of Erebor from the fearsome dragon Smaug, discovering courage and a powerful ring along the way.",
-        coverUrl: "https://covers.openlibrary.org/b/isbn/9780547928227-L.jpg",
-        pageCount: 366,
-        publishedDate: "1937",
-        genres: ["Fantasy", "Adventure", "Children's Literature"],
-        openLibraryId: "/works/OL262758W",
-        settingLocation: "The Shire, Middle-earth",
-        authorOrigin: "Bloemfontein, South Africa",
-        authorOriginLat: -29.0852,
-        authorOriginLng: 26.1596,
-        isFictional: true,
-        fictionalWorldId: middleEarth.id,
-      },
-    }),
-    prisma.book.create({
-      data: {
-        title: "Dune",
-        author: "Frank Herbert",
-        isbn: "9780441172719",
-        description:
-          "Set in the distant future, young Paul Atreides and his family are thrust into a war for control of the desert planet Arrakis, the only source of the most valuable substance in the universe.",
-        coverUrl: "https://covers.openlibrary.org/b/isbn/9780441172719-L.jpg",
-        pageCount: 688,
-        publishedDate: "1965",
-        genres: ["Science Fiction", "Space Opera", "Political Fiction"],
-        openLibraryId: "/works/OL893415W",
-        settingLocation: "Arrakeen, Arrakis",
-        authorOrigin: "Tacoma, Washington",
-        authorOriginLat: 47.2529,
-        authorOriginLng: -122.4443,
-        isFictional: true,
-        fictionalWorldId: arrakis.id,
-      },
-    }),
-    prisma.book.create({
-      data: {
-        title: "The Catcher in the Rye",
-        author: "J.D. Salinger",
-        isbn: "9780316769488",
-        description:
-          "Holden Caulfield, a teenager expelled from prep school, wanders New York City over a few days, grappling with alienation, loss of innocence, and the phoniness of the adult world.",
-        coverUrl: "https://covers.openlibrary.org/b/isbn/9780316769488-L.jpg",
-        pageCount: 277,
-        publishedDate: "1951",
-        genres: ["Coming-of-age", "Literary Fiction", "Realistic Fiction"],
-        openLibraryId: "/works/OL5845689W",
-        settingLocation: "New York City, New York",
-        settingLat: 40.7128,
-        settingLng: -74.0060,
-        authorOrigin: "Manhattan, New York",
-        authorOriginLat: 40.7831,
-        authorOriginLng: -73.9712,
-      },
-    }),
-    prisma.book.create({
-      data: {
-        title: "One Hundred Years of Solitude",
-        author: "Gabriel García Márquez",
-        isbn: "9780060883287",
-        description:
-          "The multi-generational story of the Buendía family in the fictional town of Macondo, blending the everyday with the magical in a landmark of magical realism.",
-        coverUrl: "https://covers.openlibrary.org/b/isbn/9780060883287-L.jpg",
-        pageCount: 417,
-        publishedDate: "1967",
-        genres: ["Magical Realism", "Literary Fiction", "Family Saga"],
-        openLibraryId: "/works/OL59856W",
-        settingLocation: "Macondo",
-        authorOrigin: "Aracataca, Colombia",
-        authorOriginLat: 10.5919,
-        authorOriginLng: -74.1897,
-        isFictional: true,
-        fictionalWorldId: macondo.id,
-      },
-    }),
-    prisma.book.create({
-      data: {
-        title: "Brave New World",
-        author: "Aldous Huxley",
-        isbn: "9780060850524",
-        description:
-          "A futuristic World State where citizens are genetically modified and socially conditioned to serve a ruling order. When a savage from outside this society enters, he challenges everything.",
-        coverUrl: "https://covers.openlibrary.org/b/isbn/9780060850524-L.jpg",
-        pageCount: 288,
-        publishedDate: "1932",
-        genres: ["Dystopian", "Science Fiction", "Philosophical Fiction"],
-        openLibraryId: "/works/OL59929W",
-        settingLocation: "London, World State",
-        settingLat: 51.5074,
-        settingLng: -0.1278,
-        authorOrigin: "Godalming, Surrey, England",
-        authorOriginLat: 51.1859,
-        authorOriginLng: -0.6206,
-      },
-    }),
-    prisma.book.create({
-      data: {
-        title: "The Lord of the Rings",
-        author: "J.R.R. Tolkien",
-        isbn: "9780618640157",
-        description:
-          "The epic tale of Frodo Baggins and the Fellowship as they journey to destroy the One Ring and defeat the Dark Lord Sauron, saving Middle-earth from darkness.",
-        coverUrl: "https://covers.openlibrary.org/b/isbn/9780618640157-L.jpg",
-        pageCount: 1178,
-        publishedDate: "1954",
-        genres: ["Fantasy", "Adventure", "Epic"],
-        openLibraryId: "/works/OL27448W",
-        settingLocation: "Middle-earth",
-        authorOrigin: "Bloemfontein, South Africa",
-        authorOriginLat: -29.0852,
-        authorOriginLng: 26.1596,
-        isFictional: true,
-        fictionalWorldId: middleEarth.id,
-      },
-    }),
-  ]);
-
-  console.log(`✅ Created ${books.length} books`);
-
-  console.log("👤 Creating users...");
-
-  // Create sample users
   const passwordHash = await bcrypt.hash("password123", 10);
 
-  const users = await Promise.all([
-    prisma.user.create({
-      data: {
-        email: "alice@example.com",
-        passwordHash,
-        name: "Alice Reader",
-        bio: "Avid reader of classic literature and sci-fi. Always looking for my next great read!",
-        avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Alice",
-      },
-    }),
-    prisma.user.create({
-      data: {
-        email: "bob@example.com",
-        passwordHash,
-        name: "Bob Bookworm",
-        bio: "Fantasy enthusiast and aspiring writer. Let's discuss our favorite worlds!",
-        avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Bob",
-      },
-    }),
-    prisma.user.create({
-      data: {
-        email: "carol@example.com",
-        passwordHash,
-        name: "Carol Chapter",
-        bio: "Reading is my superpower. Dystopian fiction is my guilty pleasure.",
-        avatarUrl: "https://api.dicebear.com/7.x/avataaars/svg?seed=Carol",
-      },
-    }),
-  ]);
-
-  console.log(`✅ Created ${users.length} users`);
-
-  console.log("📖 Creating default shelves...");
-
-  // Create default shelves for each user
-  const defaultShelfNames = ["Want to Read", "Currently Reading", "Read"];
-
-  for (const user of users) {
-    for (const shelfName of defaultShelfNames) {
-      await prisma.shelf.create({
+  const [alice, bob, carol] = await Promise.all(
+    [
+      { email: "alice@example.com", name: "Alice Reader", bio: "Science fiction and long walks." },
+      { email: "bob@example.com", name: "Bob Bookworm", bio: "Reading my way through the classics." },
+      { email: "carol@example.com", name: "Carol Chapters", bio: "Dystopias, mostly." },
+    ].map((user) =>
+      prisma.user.create({
         data: {
-          userId: user.id,
-          name: shelfName,
-          isDefault: true,
+          ...user,
+          passwordHash,
+          avatarUrl: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(user.name)}`,
+          shelves: {
+            create: DEFAULT_SHELVES.map((name) => ({ name, isDefault: true })),
+          },
         },
-      });
-    }
-  }
+        include: { shelves: true },
+      })
+    )
+  );
+  console.log("👤 3 users with default shelves");
 
-  console.log("✅ Created default shelves for all users");
+  const shelfOf = (
+    user: (typeof alice) | (typeof bob) | (typeof carol),
+    name: string
+  ) => user.shelves.find((s) => s.name === name)!.id;
 
-  // Get shelves for adding books
-  const aliceShelves = await prisma.shelf.findMany({
-    where: { userId: users[0].id },
+  // Alice: finished Dune, reading The Hobbit, wants Kindred.
+  await prisma.shelfItem.create({
+    data: { shelfId: shelfOf(alice, "Read"), workKey: "OLK001W", userId: alice.id },
   });
-  const bobShelves = await prisma.shelf.findMany({
-    where: { userId: users[1].id },
+  await prisma.shelfItem.create({
+    data: { shelfId: shelfOf(alice, "Currently Reading"), workKey: "OLK002W", userId: alice.id },
   });
-  const carolShelves = await prisma.shelf.findMany({
-    where: { userId: users[2].id },
-  });
-
-  console.log("📚 Adding books to shelves...");
-
-  // Alice's shelf items
-  const aliceReadShelf = aliceShelves.find((s) => s.name === "Read")!;
-  const aliceReadingShelf = aliceShelves.find((s) => s.name === "Currently Reading")!;
-  const aliceWantShelf = aliceShelves.find((s) => s.name === "Want to Read")!;
-
-  await prisma.shelfItem.createMany({
-    data: [
-      { shelfId: aliceReadShelf.id, bookId: books[0].id }, // 1984
-      { shelfId: aliceReadShelf.id, bookId: books[1].id }, // To Kill a Mockingbird
-      { shelfId: aliceReadShelf.id, bookId: books[2].id }, // Great Gatsby
-      { shelfId: aliceReadingShelf.id, bookId: books[5].id }, // Dune
-      { shelfId: aliceWantShelf.id, bookId: books[4].id }, // The Hobbit
-      { shelfId: aliceWantShelf.id, bookId: books[9].id }, // LOTR
-    ],
+  await prisma.shelfItem.create({
+    data: { shelfId: shelfOf(alice, "Want to Read"), workKey: "OLK016W", userId: alice.id },
   });
 
-  // Bob's shelf items
-  const bobReadShelf = bobShelves.find((s) => s.name === "Read")!;
-  const bobReadingShelf = bobShelves.find((s) => s.name === "Currently Reading")!;
-  const bobWantShelf = bobShelves.find((s) => s.name === "Want to Read")!;
-
-  await prisma.shelfItem.createMany({
-    data: [
-      { shelfId: bobReadShelf.id, bookId: books[4].id }, // The Hobbit
-      { shelfId: bobReadShelf.id, bookId: books[9].id }, // LOTR
-      { shelfId: bobReadingShelf.id, bookId: books[3].id }, // Pride and Prejudice
-      { shelfId: bobWantShelf.id, bookId: books[0].id }, // 1984
-      { shelfId: bobWantShelf.id, bookId: books[5].id }, // Dune
-    ],
+  // Bob: two finished.
+  await prisma.shelfItem.create({
+    data: { shelfId: shelfOf(bob, "Read"), workKey: "OLK009W", userId: bob.id },
+  });
+  await prisma.shelfItem.create({
+    data: { shelfId: shelfOf(bob, "Read"), workKey: "OLK003W", userId: bob.id },
   });
 
-  // Carol's shelf items
-  const carolReadShelf = carolShelves.find((s) => s.name === "Read")!;
-  const carolReadingShelf = carolShelves.find((s) => s.name === "Currently Reading")!;
-  const carolWantShelf = carolShelves.find((s) => s.name === "Want to Read")!;
-
-  await prisma.shelfItem.createMany({
-    data: [
-      { shelfId: carolReadShelf.id, bookId: books[0].id }, // 1984
-      { shelfId: carolReadShelf.id, bookId: books[8].id }, // Brave New World
-      { shelfId: carolReadingShelf.id, bookId: books[7].id }, // 100 Years of Solitude
-      { shelfId: carolWantShelf.id, bookId: books[6].id }, // Catcher in the Rye
-    ],
+  // Carol: one finished, one in progress.
+  await prisma.shelfItem.create({
+    data: { shelfId: shelfOf(carol, "Read"), workKey: "OLK015W", userId: carol.id },
+  });
+  await prisma.shelfItem.create({
+    data: { shelfId: shelfOf(carol, "Currently Reading"), workKey: "OLK001W", userId: carol.id },
   });
 
-  console.log("✅ Added books to shelves");
+  // A custom, non-exclusive shelf — a work may sit here and on an exclusive one.
+  const favourites = await prisma.shelf.create({
+    data: { userId: alice.id, name: "Favourites", isDefault: false },
+  });
+  await prisma.shelfItem.create({
+    data: { shelfId: favourites.id, workKey: "OLK001W", userId: alice.id },
+  });
+  console.log("📖 Shelves populated");
 
-  console.log("⭐ Creating reviews...");
-
-  // Create reviews
   await prisma.review.createMany({
     data: [
-      {
-        userId: users[0].id,
-        bookId: books[0].id,
-        rating: 5,
-        content:
-          "A masterpiece of dystopian fiction. Orwell's vision is terrifyingly prescient. The way he explores surveillance, truth, and power is more relevant than ever.",
-      },
-      {
-        userId: users[0].id,
-        bookId: books[1].id,
-        rating: 5,
-        content:
-          "A beautifully written story about justice, morality, and growing up. Atticus Finch remains one of literature's greatest heroes.",
-      },
-      {
-        userId: users[0].id,
-        bookId: books[2].id,
-        rating: 4,
-        content:
-          "Fitzgerald's prose is absolutely gorgeous. The tragedy of Gatsby's dream is both heartbreaking and thought-provoking.",
-      },
-      {
-        userId: users[1].id,
-        bookId: books[4].id,
-        rating: 5,
-        content:
-          "The book that started my love of fantasy! Bilbo's journey from comfort to courage is timeless. A perfect adventure story.",
-      },
-      {
-        userId: users[1].id,
-        bookId: books[9].id,
-        rating: 5,
-        content:
-          "The greatest fantasy epic ever written. Tolkien created an entire world with its own languages, history, and mythology. Absolutely incredible.",
-      },
-      {
-        userId: users[2].id,
-        bookId: books[0].id,
-        rating: 5,
-        content:
-          "Chilling and unforgettable. Every page drips with dread. The ending left me thinking for days.",
-      },
-      {
-        userId: users[2].id,
-        bookId: books[8].id,
-        rating: 4,
-        content:
-          "A different kind of dystopia - controlled by pleasure rather than pain. Huxley's vision is equally terrifying in its own way.",
-      },
+      { userId: alice.id, workKey: "OLK001W", rating: 5, content: "The desert planet has never felt so real." },
+      { userId: bob.id, workKey: "OLK009W", rating: 5, content: "Bleaker every year." },
+      { userId: bob.id, workKey: "OLK003W", rating: 4, content: "Generations blur beautifully." },
+      { userId: carol.id, workKey: "OLK015W", rating: 5, content: "Read it in one sitting." },
+      { userId: carol.id, workKey: "OLK001W", rating: 4 },
     ],
   });
+  console.log("⭐ Reviews written");
 
-  console.log("✅ Created reviews");
+  const now = new Date();
+  const daysAgo = (n: number) => new Date(now.getTime() - n * 86_400_000);
 
-  console.log("📈 Creating reading progress...");
-
-  // Create reading progress
-  await prisma.readingProgress.createMany({
+  await prisma.readingSession.createMany({
     data: [
-      {
-        userId: users[0].id,
-        bookId: books[5].id, // Dune
-        currentPage: 245,
-        startedAt: new Date("2024-01-15"),
-      },
-      {
-        userId: users[1].id,
-        bookId: books[3].id, // Pride and Prejudice
-        currentPage: 128,
-        startedAt: new Date("2024-02-01"),
-      },
-      {
-        userId: users[2].id,
-        bookId: books[7].id, // 100 Years of Solitude
-        currentPage: 189,
-        startedAt: new Date("2024-01-20"),
-      },
+      { userId: alice.id, workKey: "OLK001W", editionKey: "OLK001WE", pageCount: 412,
+        currentPage: 412, startedAt: daysAgo(40), finishedAt: daysAgo(20) },
+      { userId: alice.id, workKey: "OLK002W", editionKey: "OLK002WE", pageCount: 304,
+        currentPage: 120, startedAt: daysAgo(5) },
+      { userId: bob.id, workKey: "OLK009W", editionKey: "OLK009WE", pageCount: 328,
+        currentPage: 328, startedAt: daysAgo(60), finishedAt: daysAgo(45) },
+      { userId: carol.id, workKey: "OLK015W", editionKey: "OLK015WE", pageCount: 311,
+        currentPage: 311, startedAt: daysAgo(15), finishedAt: daysAgo(10) },
+      { userId: carol.id, workKey: "OLK001W", editionKey: "OLK001WE", pageCount: 412,
+        currentPage: 88, startedAt: daysAgo(3) },
     ],
   });
+  console.log("📈 Reading sessions recorded");
 
-  console.log("✅ Created reading progress");
-
-  console.log("👥 Creating follows...");
-
-  // Create follows
   await prisma.follow.createMany({
     data: [
-      { followerId: users[0].id, followingId: users[1].id },
-      { followerId: users[0].id, followingId: users[2].id },
-      { followerId: users[1].id, followingId: users[0].id },
-      { followerId: users[2].id, followingId: users[0].id },
-      { followerId: users[2].id, followingId: users[1].id },
+      { followerId: alice.id, followingId: bob.id },
+      { followerId: alice.id, followingId: carol.id },
+      { followerId: bob.id, followingId: alice.id },
+      { followerId: carol.id, followingId: alice.id },
+    ],
+  });
+  console.log("👥 Follows created");
+
+  const arrakis = await prisma.fictionalWorld.create({
+    data: { name: "Arrakis", description: "The desert planet." },
+  });
+  const middleEarth = await prisma.fictionalWorld.create({
+    data: { name: "Middle-earth", description: "Hobbits, and worse." },
+  });
+
+  await prisma.workFictionalWorld.createMany({
+    data: [
+      { workKey: "OLK001W", worldId: arrakis.id, addedById: alice.id },
+      { workKey: "OLK002W", worldId: middleEarth.id, addedById: alice.id },
     ],
   });
 
-  console.log("✅ Created follows");
+  await prisma.workLocation.createMany({
+    data: [
+      { workKey: "OLK003W", addedById: bob.id, name: "Cartagena, Colombia",
+        type: "inspired_by", lat: 10.391, lng: -75.4794 },
+      { workKey: "OLK009W", addedById: bob.id, name: "London",
+        type: "setting", lat: 51.5074, lng: -0.1278 },
+      { workKey: "OLK001W", addedById: alice.id, name: "Arrakeen",
+        type: "setting", isFictional: true, fictionalWorldId: arrakis.id },
+    ],
+  });
 
-  console.log("🎉 Seed completed successfully!");
-  console.log("\n📋 Sample Login Credentials:");
-  console.log("   Email: alice@example.com");
-  console.log("   Password: password123");
+  await prisma.authorLocation.createMany({
+    data: [
+      { authorKey: "OLA002A", addedById: alice.id, name: "Oxford, UK",
+        type: "residence", lat: 51.752, lng: -1.2577, yearStart: 1925, yearEnd: 1968 },
+      { authorKey: "OLA001A", addedById: alice.id, name: "Tacoma, Washington",
+        type: "birthplace", lat: 47.2529, lng: -122.4443 },
+    ],
+  });
+  console.log("🗺️  Worlds and map locations added");
+
+  console.log("\n🎉 Seed complete\n");
+  console.log("   Email:    alice@example.com");
+  console.log("   Password: password123\n");
 }
 
 main()
-  .catch((e) => {
-    console.error("❌ Seed failed:", e);
+  .catch((error) => {
+    console.error("Seed failed:", error);
     process.exit(1);
   })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+  .finally(() => prisma.$disconnect());

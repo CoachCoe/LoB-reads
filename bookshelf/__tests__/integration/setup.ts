@@ -21,16 +21,15 @@ export { prisma };
  */
 const APP_TABLES = [
   "follows",
-  "reading_progress",
+  "reading_sessions",
   "reviews",
   "shelf_items",
   "shelves",
-  "book_locations",
+  "work_locations",
   "author_locations",
+  "work_fictional_worlds",
   "fictional_world_maps",
   "fictional_worlds",
-  "authors",
-  "books",
   "users",
 ];
 
@@ -40,6 +39,25 @@ export async function resetDatabase() {
   );
 }
 
+/**
+ * Catalog rows created by test factories.
+ *
+ * Not truncated between every test: the search suite seeds thousands of works
+ * once in beforeAll, and clearing them per test would make it unusably slow.
+ * Factory-created works use an OLT prefix so they can be removed selectively.
+ */
+export async function clearTestCatalogRows() {
+  // One statement per call: $executeRawUnsafe does not accept a batch.
+  for (const sql of [
+    `DELETE FROM catalog.work_authors WHERE work_key LIKE 'OLT%' OR author_key LIKE 'OLT%'`,
+    `DELETE FROM catalog.editions WHERE ol_key LIKE 'OLT%'`,
+    `DELETE FROM catalog.works WHERE ol_key LIKE 'OLT%'`,
+    `DELETE FROM catalog.authors WHERE ol_key LIKE 'OLT%'`,
+  ]) {
+    await prisma.$executeRawUnsafe(sql);
+  }
+}
+
 // A clean database per test. Cheaper to reason about than shared fixtures, and
 // a failing test cannot cascade into the next one.
 beforeEach(async () => {
@@ -47,5 +65,6 @@ beforeEach(async () => {
 });
 
 afterAll(async () => {
+  await clearTestCatalogRows();
   await prisma.$disconnect();
 });

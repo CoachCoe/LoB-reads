@@ -8,22 +8,17 @@ interface ReviewCardProps {
     id: string;
     rating: number;
     content: string | null;
-    createdAt: Date | string;
-    user: {
-      id: string;
-      name: string;
-      avatarUrl: string | null;
-    };
-    book?: {
-      id: string;
-      title: string;
-      coverUrl: string | null;
-    };
+    createdAt: Date;
+    workKey: string;
+    work: { title: string; authorNames: string | null; coverId: number | null } | null;
+    user: { id: string; name: string; avatarUrl: string | null };
   };
-  showBook?: boolean;
+  /** Show which book the review is of — off on a work page, on in a feed. */
+  showWork?: boolean;
+  onDelete?: () => void;
 }
 
-export default function ReviewCard({ review, showBook = false }: ReviewCardProps) {
+export default function ReviewCard({ review, showWork = false }: ReviewCardProps) {
   return (
     <div className="bg-[var(--card-bg)] rounded-lg border border-[var(--card-border)] p-4">
       <div className="flex items-start gap-3">
@@ -42,14 +37,14 @@ export default function ReviewCard({ review, showBook = false }: ReviewCardProps
             >
               {review.user.name}
             </Link>
-            {showBook && review.book && (
+            {showWork && review.work && (
               <>
                 <span className="text-[var(--foreground-secondary)]">reviewed</span>
                 <Link
-                  href={`/book/${review.book.id}`}
+                  href={`/work/${review.workKey}`}
                   className="font-medium text-[var(--foreground)] hover:text-[#D4A017]"
                 >
-                  {review.book.title}
+                  {review.work?.title ?? "Unknown work"}
                 </Link>
               </>
             )}

@@ -55,7 +55,7 @@ describe("errorResponse", () => {
   it("maps a schema failure to 400 with a readable message", async () => {
     let zodError: ZodError | undefined;
     try {
-      createReviewSchema.parse({ bookId: "b1", rating: 9 });
+      createReviewSchema.parse({ workKey: "OL45804W", rating: 9 });
     } catch (error) {
       zodError = error as ZodError;
     }

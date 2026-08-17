@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getUserProfile, isFollowing } from "@/server/users";
+import { getUserReviews } from "@/server/reviews";
+import { coverUrl } from "@/server/catalog";
 import { getCurrentUser } from "@/lib/auth/session";
 import Avatar from "@/components/ui/Avatar";
 import Card, { CardContent } from "@/components/ui/Card";
@@ -14,9 +16,10 @@ interface Props {
 
 export default async function UserProfilePage({ params }: Props) {
   const { userId } = await params;
-  const [user, currentUser] = await Promise.all([
+  const [user, currentUser, reviews] = await Promise.all([
     getUserProfile(userId),
     getCurrentUser(),
+    getUserReviews(userId, 5),
   ]);
 
   if (!user) {
@@ -99,8 +102,8 @@ export default async function UserProfilePage({ params }: Props) {
                         key={item.id}
                         className="w-10 h-14 rounded border-2 border-white overflow-hidden"
                         style={{
-                          backgroundImage: item.book.coverUrl
-                            ? `url(${item.book.coverUrl})`
+                          backgroundImage: coverUrl(item.work?.coverId)
+                            ? `url(${coverUrl(item.work?.coverId)})`
                             : undefined,
                           backgroundSize: "cover",
                           backgroundColor: "#f3f4f6",
@@ -116,24 +119,17 @@ export default async function UserProfilePage({ params }: Props) {
       </section>
 
       {/* Recent reviews */}
-      {user.reviews.length > 0 && (
+      {reviews.length > 0 && (
         <section>
           <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4">
             Recent Reviews
           </h2>
           <div className="space-y-4">
-            {user.reviews.map((review) => (
+            {reviews.map((review) => (
               <ReviewCard
                 key={review.id}
-                review={{
-                  ...review,
-                  user: {
-                    id: user.id,
-                    name: user.name,
-                    avatarUrl: user.avatarUrl,
-                  },
-                }}
-                showBook
+                review={review}
+                showWork
               />
             ))}
           </div>

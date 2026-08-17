@@ -45,15 +45,25 @@ export async function makeUserWithShelves(
   });
 }
 
-export async function makeBook(overrides: { title?: string; pageCount?: number } = {}) {
+/** A catalog work, so shelf and review tests have something real to point at. */
+export async function makeWork(
+  overrides: { title?: string; pages?: number } = {}
+) {
   const n = unique();
-  return prisma.book.create({
-    data: {
-      title: overrides.title ?? `Book ${n}`,
-      author: "Test Author",
-      pageCount: overrides.pageCount ?? 300,
-    },
-  });
+  const olKey = `OLT${n.replace(/[^0-9]/g, "").slice(-10)}W`;
+  const title = overrides.title ?? `Work ${n}`;
+
+  await prisma.$executeRaw`
+    INSERT INTO catalog.works (ol_key, title, author_names, subjects, edition_count)
+    VALUES (${olKey}, ${title}, 'Test Author', ARRAY['Fiction'], 1)
+    ON CONFLICT (ol_key) DO NOTHING`;
+
+  await prisma.$executeRaw`
+    INSERT INTO catalog.editions (ol_key, work_key, title, number_of_pages)
+    VALUES (${olKey + "E"}, ${olKey}, ${title}, ${overrides.pages ?? 300})
+    ON CONFLICT (ol_key) DO NOTHING`;
+
+  return { olKey, title };
 }
 
 export async function makeShelf(
@@ -86,10 +96,10 @@ export async function makeMap(worldId: string, addedById: string) {
   });
 }
 
-export async function makeBookLocation(bookId: string, addedById: string) {
-  return prisma.bookLocation.create({
+export async function makeWorkLocation(workKey: string, addedById: string) {
+  return prisma.workLocation.create({
     data: {
-      bookId,
+      workKey,
       addedById,
       name: "London",
       type: "setting",
@@ -100,12 +110,14 @@ export async function makeBookLocation(bookId: string, addedById: string) {
 }
 
 export async function makeAuthorLocation(addedById: string) {
-  const author = await prisma.author.create({
-    data: { name: `Author ${unique()}` },
-  });
+  const authorKey = `OLT${unique().replace(/[^0-9]/g, "").slice(-9)}A`;
+  await prisma.$executeRaw`
+    INSERT INTO catalog.authors (ol_key, name) VALUES (${authorKey}, ${"Author " + authorKey})
+    ON CONFLICT (ol_key) DO NOTHING`;
+
   const location = await prisma.authorLocation.create({
     data: {
-      authorId: author.id,
+      authorKey,
       addedById,
       name: "Oxford",
       type: "residence",
@@ -113,5 +125,5 @@ export async function makeAuthorLocation(addedById: string) {
       lng: -1.2577,
     },
   });
-  return { author, location };
+  return { authorKey, location };
 }

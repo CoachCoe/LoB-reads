@@ -2,34 +2,28 @@
 
 Where things live, why, and — importantly — which parts are mid-migration.
 
-## Current state: two book models coexist
+## One book model
 
-The app is partway through replacing its own book table with a catalog built
-from Open Library dumps. Both exist right now. This is deliberate, but it is
-the thing most likely to confuse a reader, so it comes first.
+`app.books` is gone. User data — shelves, ratings, reviews, reading sessions,
+map locations — references catalog works by `work_key`, and display data is
+hydrated from `catalog.works` at read time.
 
-| | `app.books` | `catalog.works` + `catalog.editions` |
-| --- | --- | --- |
-| Source | Created by the app | Open Library monthly dumps |
-| Status | **Legacy, being replaced** | **Target** |
-| Read by | Home page, shelves, reviews | Search, work detail |
-| Models | One row per book | Work and Edition split |
+The old model conflated a *work* with an *edition*: `isbn` sat on the same row
+as `title` and `author`, so two printings of *Dune* were two unrelated rows
+with ratings split between them. That is now one work with many editions.
 
-`app.books` conflates a *work* with an *edition*: `isbn` sits on the same row
-as `title` and `author`, so two printings of *Dune* are two unrelated rows with
-ratings split between them. That is the Goodreads data-quality complaint, and
-fixing it is the point of the catalog.
+**There is no foreign key from `app` into `catalog`,** deliberately: a bad
+ingest must not cascade into user data. Two consequences follow.
 
-**Do not add features against `app.books`.** Search and work detail already
-read the catalog — `/search` and `/work/[olKey]`. What still points at
-`app.books` is the home page and everything user-owned: shelves, reviews,
-reading progress. M3 repoints those at `work_key`, after which `app.books`
-goes away.
+1. **Write paths validate explicitly.** `addWorkToShelf` and
+   `createOrUpdateReview` check the work exists before inserting; without that,
+   a typo becomes a shelf entry that renders blank forever.
+2. **Read paths tolerate absence.** An ingest can narrow the slice and drop a
+   work someone has shelved. Those render as "not in the current catalog"
+   rather than vanishing, and `getWorksByKeys` returns a map with the key
+   simply missing.
 
-Until then a catalog work cannot be shelved: shelving needs an `app.books`
-row, and most of the catalog has none. That is the visible seam.
-
-## Schemas
+## Schemas## Schemas
 
 Three, and the separation is a licensing and lifecycle control rather than an
 aesthetic one.
@@ -56,6 +50,7 @@ Two rules follow from that first line:
 src/app/(main)     Server components. Fetch via src/server, render.
 src/app/api        Route handlers. Thin: auth, parse, delegate, respond.
 src/server         All database access. Throws typed errors.
+src/server/catalog Catalog reads: search, work detail, key hydration.
 src/lib/http       Request parsing, schemas, error-to-status mapping.
 src/lib/auth       NextAuth options, session access, email normalisation.
 src/lib/storage    Object storage and upload validation.
@@ -125,6 +120,28 @@ querying the raw form matches nothing — silently.
 Queries go through `websearch_to_tsquery`, which tolerates the punctuation
 users actually type. `to_tsquery` raises a syntax error on an apostrophe.
 
+## Exclusive shelves
+
+A work sits on at most one of the three default shelves per user. This is
+enforced twice, on purpose.
+
+`addWorkToShelf` deletes from the other exclusive shelves before inserting,
+in a transaction. That is the cooperative path and it is not sufficient: two
+simultaneous requests each read a state where the other's row does not exist
+yet, and both insert.
+
+The database enforces it independently with a partial unique index on
+`shelf_items (user_id, work_key) WHERE is_exclusive`. A predicate selecting
+exclusive shelves through a subquery is rejected by Postgres, so `is_exclusive`
+is denormalized onto the row — and a trigger derives it from the parent shelf
+on every write, rather than trusting the caller. Without that trigger the
+constraint silently stops applying the moment application code forgets to set
+the flag.
+
+Covered by `__tests__/integration/exclusive-shelves.test.ts`. Note that a
+single racing test is not enough: with the index dropped it still passed,
+because it happened not to interleave. The ten-round version is what fails.
+
 ## Known limitations
 
 - **Rate limiting is per-process** (`src/lib/rate-limit.ts`). Correct for a
@@ -134,6 +151,9 @@ users actually type. `to_tsquery` raises a syntax error on an apostrophe.
 - **The `acquire` ingest step is unverified against the live endpoint** —
   it was written where openlibrary.org was unreachable. Start with the
   authors dump (~500MB) rather than editions (~9.2GB).
+- **Covers are hotlinked from covers.openlibrary.org.** They should be fetched
+  once and served from our own storage, misses cached included, before any
+  real traffic. That is M4.
 - **Postgres 14 locally, 16 in CI and on RDS.** Nothing currently depends on
   15+ features, but the versions should be aligned.
 
@@ -143,9 +163,7 @@ users actually type. `to_tsquery` raises a syntax error on an apostrophe.
 | --- | --- | --- |
 | M1 | Ingest to sliced catalog | Done |
 | M2 | Search and detail pages on `catalog.works` | Done |
-| M3 | Users, shelves, ratings repointed at `work_key` | Next |
-| M4 | Enrichment worker and covers | |
+| M3 | Users, shelves, ratings repointed at `work_key` | Done |
+| M4 | Enrichment worker and covers | Next |
 | M5 | Social layer, seeded rating graph | |
 | M6 | Goodreads import against the catalog | |
-
-M3 is where `app.books` is retired.

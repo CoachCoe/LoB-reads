@@ -6,28 +6,29 @@ import {
   ImportResult,
   getShelfDisplayName,
 } from "@/lib/sources/goodreads";
-import { createBook, findBooksByIsbns } from "@/server/books";
-import { getUserShelfSummaries, addBookToShelf } from "@/server/shelves";
+import { findWorkKeysByIsbns, findWorkKeyByTitleAuthor } from "@/server/catalog";
+import { getUserShelfSummaries, addWorkToShelf } from "@/server/shelves";
 import { createOrUpdateReview } from "@/server/reviews";
-import { recordFinishedRead } from "@/server/progress";
-import { getBookByISBN, normalizeOpenLibraryBook } from "@/lib/sources/openlibrary";
-import { mapWithConcurrency } from "@/lib/concurrency";
+import { finishReading } from "@/server/progress";
 import { errorResponse, unauthorized } from "@/lib/http/api";
 import { ValidationError } from "@/lib/http/errors";
-import type { Book } from "@prisma/client";
-
-/** CSV file size ceiling. */
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 /**
- * Rows processed per request. Beyond this the handler risks exceeding a
- * serverless execution limit, so we import the first N and tell the user
- * plainly how many were left out rather than timing out with no explanation.
+ * Goodreads CSV import, matched against the local catalog.
+ *
+ * There is no network call here any more. The importer used to fetch Open
+ * Library over HTTP once per unmatched book — a 500-book export meant 500
+ * sequential round trips — and create a local book row from the result. With
+ * the catalog held locally that becomes a single ISBN lookup for the file.
+ *
+ * Rows that do not match are reported back rather than dropped. A review queue
+ * where the reader confirms fuzzy matches is M6.
  */
-const MAX_ROWS = 2_000;
 
-/** Parallel Open Library lookups. Kept modest to stay a polite API client. */
-const LOOKUP_CONCURRENCY = 5;
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+/** Rows per request, so one upload cannot run for an unbounded time. */
+const MAX_ROWS = 2_000;
 
 export async function POST(request: NextRequest) {
   try {
@@ -76,8 +77,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const books = parsed.slice(0, MAX_ROWS);
-    const notProcessed = parsed.length - books.length;
+    const rows = parsed.slice(0, MAX_ROWS);
+    const notProcessed = parsed.length - rows.length;
 
     const shelves = await getUserShelfSummaries(userId);
     const shelfIdByName = new Map(shelves.map((s) => [s.name, s.id]));
@@ -89,64 +90,77 @@ export async function POST(request: NextRequest) {
       books: [],
     };
 
-    // Step 1: resolve every row to a Book record.
-    //
-    // Existing books are found in a single query rather than one per row, and
-    // the Open Library lookups for the remainder run with bounded concurrency
-    // instead of one blocking request at a time.
-    const resolved = await resolveBooks(books, result);
+    // One lookup for the whole file.
+    const byIsbn = await findWorkKeysByIsbns(
+      rows.map((r) => r.isbn13 || r.isbn).filter((v): v is string => !!v)
+    );
 
-    // Step 2: apply shelf, review and progress. These are local writes, so
-    // they stay sequential — no external calls involved.
-    for (let i = 0; i < books.length; i++) {
-      const grBook = books[i];
-      const book = resolved[i];
-
-      if (!book) continue; // Already recorded as an error in resolveBooks.
-
+    for (const row of rows) {
       try {
-        if (grBook.exclusiveShelf) {
+        const workKey = await resolveWorkKey(row, byIsbn);
+
+        if (!workKey) {
+          // Reported, not silently dropped. Otherwise a reader finds a smaller
+          // library than they exported and no explanation for the difference.
+          result.skipped++;
+          result.books.push({
+            title: row.title,
+            author: row.author,
+            status: "skipped",
+            reason: "No match in the catalog",
+          });
+          continue;
+        }
+
+        if (row.exclusiveShelf) {
           const shelfId = shelfIdByName.get(
-            getShelfDisplayName(grBook.exclusiveShelf)
+            getShelfDisplayName(row.exclusiveShelf)
           );
           if (shelfId) {
             try {
-              await addBookToShelf(shelfId, book.id, userId);
+              await addWorkToShelf(shelfId, workKey, userId);
             } catch {
               // Already on the shelf; nothing to do.
             }
           }
         }
 
-        if (Number.isInteger(grBook.myRating) && grBook.myRating >= 1 && grBook.myRating <= 5) {
+        if (
+          Number.isInteger(row.myRating) &&
+          row.myRating >= 1 &&
+          row.myRating <= 5
+        ) {
           try {
-            await createOrUpdateReview(userId, book.id, grBook.myRating);
+            await createOrUpdateReview(userId, workKey, row.myRating);
           } catch {
-            // A review failure shouldn't lose the book itself.
+            // A rating failure should not lose the book itself.
           }
         }
 
-        if (grBook.dateRead && grBook.exclusiveShelf === "read") {
+        if (row.dateRead && row.exclusiveShelf === "read") {
           try {
-            await recordFinishedRead(
-              userId,
-              book.id,
-              grBook.dateRead,
-              book.pageCount
-            );
+            await finishReading(userId, workKey);
           } catch {
-            // Progress is a nice-to-have; the book is already imported.
+            // Reading history is a nice-to-have; the book is already shelved.
           }
         }
 
         result.imported++;
         result.books.push({
-          title: grBook.title,
-          author: grBook.author,
+          title: row.title,
+          author: row.author,
           status: "imported",
         });
       } catch (error) {
-        recordError(result, grBook, error);
+        const reason = error instanceof Error ? error.message : "Unknown error";
+        result.skipped++;
+        result.errors.push(`${row.title}: ${reason}`);
+        result.books.push({
+          title: row.title,
+          author: row.author,
+          status: "error",
+          reason,
+        });
       }
     }
 
@@ -156,81 +170,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const matchRate =
+      rows.length > 0 ? Math.round((result.imported / rows.length) * 100) : 0;
+    result.errors.unshift(
+      `Matched ${result.imported} of ${rows.length} rows (${matchRate}%).`
+    );
+
     return NextResponse.json(result);
   } catch (error) {
     return errorResponse("Goodreads import error", error);
   }
 }
 
-/**
- * Map each CSV row to a Book, creating one where needed. Returns an array
- * positionally aligned with `books`; a null entry means that row failed and
- * has already been recorded in `result`.
- */
-async function resolveBooks(
-  books: GoodreadsBook[],
-  result: ImportResult
-): Promise<(Book | null)[]> {
-  const isbnFor = (b: GoodreadsBook) => b.isbn13 || b.isbn;
-
-  const isbns = [...new Set(books.map(isbnFor).filter((v): v is string => !!v))];
-
-  const existing = await findBooksByIsbns(isbns);
-  const bookByIsbn = new Map(existing.map((b) => [b.isbn!, b]));
-
-  return mapWithConcurrency(books, LOOKUP_CONCURRENCY, async (grBook) => {
-    try {
-      const isbn = isbnFor(grBook);
-
-      if (isbn) {
-        const known = bookByIsbn.get(isbn);
-        if (known) return known;
-      }
-
-      if (isbn) {
-        try {
-          const olBook = await getBookByISBN(isbn);
-          if (olBook) {
-            const normalized = normalizeOpenLibraryBook(olBook);
-            const created = await createBook({
-              ...normalized,
-              title: normalized.title || grBook.title,
-              author: normalized.author || grBook.author,
-            });
-            bookByIsbn.set(isbn, created);
-            return created;
-          }
-        } catch {
-          // Open Library is best-effort; fall back to the Goodreads columns.
-        }
-      }
-
-      const created = await createBook({
-        title: grBook.title,
-        author: grBook.author,
-        isbn,
-      });
-      if (isbn) bookByIsbn.set(isbn, created);
-      return created;
-    } catch (error) {
-      recordError(result, grBook, error);
-      return null;
-    }
-  });
-}
-
-function recordError(
-  result: ImportResult,
-  grBook: GoodreadsBook,
-  error: unknown
-) {
-  const reason = error instanceof Error ? error.message : "Unknown error";
-  result.skipped++;
-  result.errors.push(`${grBook.title}: ${reason}`);
-  result.books.push({
-    title: grBook.title,
-    author: grBook.author,
-    status: "error",
-    reason,
-  });
+/** ISBN first; fall back to an exact title and author match. */
+async function resolveWorkKey(
+  row: GoodreadsBook,
+  byIsbn: Map<string, string>
+): Promise<string | null> {
+  const isbn = row.isbn13 || row.isbn;
+  if (isbn) {
+    const matched = byIsbn.get(isbn);
+    if (matched) return matched;
+  }
+  return findWorkKeyByTitleAuthor(row.title, row.author);
 }

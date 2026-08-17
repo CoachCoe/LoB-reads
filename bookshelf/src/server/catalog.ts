@@ -265,3 +265,121 @@ export async function getCatalogSubjects(limit = 40): Promise<string[]> {
 
 /** Kept for the explain-plan check in the performance test. */
 export const SEARCH_SQL_MARKER = Prisma.sql`catalog.works`;
+
+/**
+ * Summary of a work, as shown in a shelf, a review or an activity feed.
+ * Deliberately small: these are fetched in bulk.
+ */
+export interface WorkSummary {
+  olKey: string;
+  title: string;
+  authorNames: string | null;
+  firstPublishYear: number | null;
+  coverId: number | null;
+}
+
+/**
+ * Hydrate work keys into displayable works.
+ *
+ * User data stores only a `work_key`, because `app` holds no foreign key into
+ * `catalog` — a bad ingest must not cascade into shelves and reviews. The cost
+ * of that decision is paid here: a caller with a list of keys does one bulk
+ * lookup rather than a join.
+ *
+ * Keys with no matching work are simply absent from the map. That happens
+ * legitimately — an ingest can drop a work the slice no longer covers — so
+ * callers must handle a missing entry rather than assume one.
+ */
+export async function getWorksByKeys(
+  keys: string[]
+): Promise<Map<string, WorkSummary>> {
+  const unique = [...new Set(keys)].filter(Boolean);
+  if (unique.length === 0) return new Map();
+
+  const rows = await prisma.$queryRaw<WorkSummary[]>`
+    SELECT
+      w.ol_key             AS "olKey",
+      w.title,
+      w.author_names       AS "authorNames",
+      w.first_publish_year AS "firstPublishYear",
+      e.cover_id::int      AS "coverId"
+    FROM catalog.works w
+    LEFT JOIN catalog.editions e ON e.ol_key = w.cover_edition_key
+    WHERE w.ol_key = ANY(${unique})
+  `;
+
+  return new Map(rows.map((row) => [row.olKey, row]));
+}
+
+/** Page count for a specific edition, used when starting a reading session. */
+export async function getEditionPageCount(
+  editionKey: string
+): Promise<number | null> {
+  const rows = await prisma.$queryRaw<{ pages: number | null }[]>`
+    SELECT number_of_pages AS pages FROM catalog.editions WHERE ol_key = ${editionKey}
+  `;
+  return rows[0]?.pages ?? null;
+}
+
+/** The edition a reader is most likely to hold, for a default page count. */
+export async function getDefaultEdition(
+  workKey: string
+): Promise<{ olKey: string; numberOfPages: number | null } | null> {
+  const rows = await prisma.$queryRaw<
+    { olKey: string; numberOfPages: number | null }[]
+  >`
+    SELECT ol_key AS "olKey", number_of_pages AS "numberOfPages"
+    FROM catalog.editions
+    WHERE work_key = ${workKey}
+    ORDER BY (number_of_pages IS NULL), publish_year DESC NULLS LAST, ol_key
+    LIMIT 1
+  `;
+  return rows[0] ?? null;
+}
+
+/** True when the key exists in the catalog. Routes validate before writing. */
+export async function workExists(workKey: string): Promise<boolean> {
+  const rows = await prisma.$queryRaw<{ exists: boolean }[]>`
+    SELECT EXISTS(SELECT 1 FROM catalog.works WHERE ol_key = ${workKey}) AS exists
+  `;
+  return rows[0]?.exists ?? false;
+}
+
+/**
+ * Resolve ISBNs to catalog works, for the Goodreads import.
+ *
+ * One query for a whole export. This used to be one Open Library HTTP request
+ * per unmatched book; with the catalog held locally there is no network call
+ * in the import at all.
+ */
+export async function findWorkKeysByIsbns(
+  isbns: string[]
+): Promise<Map<string, string>> {
+  const unique = [...new Set(isbns)].filter(Boolean);
+  if (unique.length === 0) return new Map();
+
+  const rows = await prisma.$queryRaw<{ isbn: string; workKey: string }[]>`
+    SELECT isbn13 AS isbn, work_key AS "workKey"
+    FROM catalog.editions
+    WHERE work_key IS NOT NULL AND isbn13 = ANY(${unique})
+  `;
+
+  return new Map(rows.map((r) => [r.isbn, r.workKey]));
+}
+
+/** Last-resort match on exact title and author, for rows with no usable ISBN. */
+export async function findWorkKeyByTitleAuthor(
+  title: string,
+  author: string
+): Promise<string | null> {
+  const rows = await prisma.$queryRaw<{ olKey: string }[]>`
+    SELECT ol_key AS "olKey"
+    FROM catalog.works
+    WHERE unaccent(lower(title)) = unaccent(lower(${title}))
+      AND unaccent(lower(coalesce(author_names, ''))) LIKE
+          '%' || unaccent(lower(${author})) || '%'
+    ORDER BY edition_count DESC
+    LIMIT 1
+  `;
+  return rows[0]?.olKey ?? null;
+}

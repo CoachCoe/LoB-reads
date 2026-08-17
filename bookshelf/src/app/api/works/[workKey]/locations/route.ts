@@ -1,30 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  getBookLocations,
-  addBookLocation,
-  deleteBookLocation,
-} from "@/server/book-locations";
+  getWorkLocations,
+  addWorkLocation,
+  deleteWorkLocation,
+} from "@/server/work-locations";
 import { getCurrentUser } from "@/lib/auth/session";
 import { errorResponse, parseBody, unauthorized } from "@/lib/http/api";
-import { createBookLocationSchema } from "@/lib/http/schemas";
+import { createWorkLocationSchema } from "@/lib/http/schemas";
 import { ValidationError } from "@/lib/http/errors";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ bookId: string }> }
+  { params }: { params: Promise<{ workKey: string }> }
 ) {
   try {
-    const { bookId } = await params;
-    const locations = await getBookLocations(bookId);
+    const { workKey } = await params;
+    const locations = await getWorkLocations(workKey);
     return NextResponse.json(locations);
   } catch (error) {
-    return errorResponse("Error fetching book locations", error);
+    return errorResponse("Error fetching work locations", error);
   }
 }
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ bookId: string }> }
+  { params }: { params: Promise<{ workKey: string }> }
 ) {
   try {
     const user = await getCurrentUser();
@@ -32,8 +32,8 @@ export async function POST(
       return unauthorized();
     }
 
-    const { bookId } = await params;
-    const data = await parseBody(request, createBookLocationSchema);
+    const { workKey } = await params;
+    const data = await parseBody(request, createWorkLocationSchema);
 
     // A real-world location needs coordinates to be placeable on the map;
     // a fictional one is pinned to its world instead.
@@ -43,7 +43,7 @@ export async function POST(
       );
     }
 
-    const location = await addBookLocation(bookId, user.id, {
+    const location = await addWorkLocation(workKey, user.id, {
       name: data.name,
       type: data.type,
       description: data.description ?? undefined,
@@ -54,7 +54,7 @@ export async function POST(
 
     return NextResponse.json(location, { status: 201 });
   } catch (error) {
-    return errorResponse("Error adding book location", error);
+    return errorResponse("Error adding work location", error);
   }
 }
 
@@ -72,9 +72,9 @@ export async function DELETE(request: NextRequest) {
       throw new ValidationError("Location ID is required");
     }
 
-    await deleteBookLocation(locationId, user.id);
+    await deleteWorkLocation(locationId, user.id);
     return NextResponse.json({ success: true });
   } catch (error) {
-    return errorResponse("Error deleting book location", error);
+    return errorResponse("Error deleting work location", error);
   }
 }

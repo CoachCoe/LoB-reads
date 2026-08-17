@@ -1,9 +1,8 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
 import {
-  getBooksWithLocations,
-  getCrowdsourcedBookLocations,
-  getCrowdsourcedAuthorLocations,
+  getMappedWorkLocations,
+  getMappedAuthorLocations,
 } from "@/server/map";
 import { getAllFictionalWorlds } from "@/server/fictional-worlds";
 import MapClient from "./MapClient";
@@ -15,18 +14,16 @@ export default async function MapPage() {
     redirect("/login?callbackUrl=/map");
   }
 
-  const [books, crowdsourcedBooks, crowdsourcedAuthors, fictionalWorlds] = await Promise.all([
-    getBooksWithLocations(),
-    getCrowdsourcedBookLocations(),
-    getCrowdsourcedAuthorLocations(),
+  const [workLocations, authorLocations, fictionalWorlds] = await Promise.all([
+    getMappedWorkLocations(),
+    getMappedAuthorLocations(),
     getAllFictionalWorlds(),
   ]);
 
   return (
     <MapClient
-      books={books}
-      crowdsourcedBookLocations={crowdsourcedBooks}
-      crowdsourcedAuthorLocations={crowdsourcedAuthors}
+      workLocations={workLocations}
+      authorLocations={authorLocations}
       initialFictionalWorlds={fictionalWorlds}
       currentUserId={user.id}
       canModerate={user.isModerator}

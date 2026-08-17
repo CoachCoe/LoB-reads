@@ -1,5 +1,33 @@
 import prisma from "@/lib/prisma";
 
+/**
+ * Wrapped reads from reading sessions, with titles, authors and subjects
+ * hydrated from the catalog. Page counts come from the session snapshot, not
+ * the catalog: a year in review should not change because an ingest dropped
+ * an edition.
+ */
+
+interface WorkStat {
+  title: string;
+  authorNames: string | null;
+  subjects: string[];
+  coverId: number | null;
+}
+
+async function getWorkStats(keys: string[]): Promise<Map<string, WorkStat>> {
+  const unique = [...new Set(keys)].filter(Boolean);
+  if (unique.length === 0) return new Map();
+
+  const rows = await prisma.$queryRaw<Array<WorkStat & { olKey: string }>>`
+    SELECT w.ol_key AS "olKey", w.title, w.author_names AS "authorNames",
+           w.subjects, e.cover_id::int AS "coverId"
+    FROM catalog.works w
+    LEFT JOIN catalog.editions e ON e.ol_key = w.cover_edition_key
+    WHERE w.ol_key = ANY(${unique})
+  `;
+  return new Map(rows.map((r) => [r.olKey, r]));
+}
+
 export interface WrappedStats {
   year: number;
   booksRead: number;
@@ -13,7 +41,7 @@ export interface WrappedStats {
   firstBookOfYear: { title: string; author: string; finishedAt: Date } | null;
   mostRecentBook: { title: string; author: string; finishedAt: Date } | null;
   readingByMonth: { month: number; count: number }[];
-  topRatedBooks: { title: string; author: string; rating: number; coverUrl: string | null }[];
+  topRatedBooks: { title: string; author: string; rating: number; coverId: number | null }[];
   totalReadingDays: number;
   averageBooksPerMonth: number;
   favoriteGenre: string | null;
@@ -24,40 +52,35 @@ export async function getWrappedStats(userId: string, year: number = new Date().
   const startOfYear = new Date(year, 0, 1);
   const endOfYear = new Date(year, 11, 31, 23, 59, 59);
 
-  // Get all finished reading progress for the year
-  const finishedBooks = await prisma.readingProgress.findMany({
-    where: {
-      userId,
-      finishedAt: {
-        gte: startOfYear,
-        lte: endOfYear,
-      },
-    },
-    include: {
-      book: true,
-    },
-    orderBy: {
-      finishedAt: "asc",
-    },
-  });
+  const [sessions, reviewRows] = await Promise.all([
+    prisma.readingSession.findMany({
+      where: { userId, finishedAt: { gte: startOfYear, lte: endOfYear } },
+      orderBy: { finishedAt: "asc" },
+    }),
+    prisma.review.findMany({
+      where: { userId, createdAt: { gte: startOfYear, lte: endOfYear } },
+    }),
+  ]);
 
-  // Get reviews written this year
-  const reviews = await prisma.review.findMany({
-    where: {
-      userId,
-      createdAt: {
-        gte: startOfYear,
-        lte: endOfYear,
-      },
-    },
-    include: {
-      book: true,
-    },
-  });
+  // Titles, authors and subjects live in the catalog, so they are fetched
+  // once for every work involved rather than joined per row.
+  const works = await getWorkStats([
+    ...sessions.map((s) => s.workKey),
+    ...reviewRows.map((r) => r.workKey),
+  ]);
+
+  const finishedBooks = sessions.map((session) => ({
+    ...session,
+    book: works.get(session.workKey) ?? null,
+  }));
+  const reviews = reviewRows.map((review) => ({
+    ...review,
+    book: works.get(review.workKey) ?? null,
+  }));
 
   // Calculate basic stats
   const booksRead = finishedBooks.length;
-  const pagesRead = finishedBooks.reduce((sum, p) => sum + (p.book.pageCount || 0), 0);
+  const pagesRead = finishedBooks.reduce((sum, p) => sum + (p.pageCount || 0), 0);
   const reviewsWritten = reviews.length;
   const averageRating = reviews.length > 0
     ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
@@ -66,7 +89,7 @@ export async function getWrappedStats(userId: string, year: number = new Date().
   // Genre analysis
   const genreCounts: Record<string, number> = {};
   finishedBooks.forEach((p) => {
-    p.book.genres.forEach((genre) => {
+    (p.book?.subjects ?? []).forEach((genre: string) => {
       genreCounts[genre] = (genreCounts[genre] || 0) + 1;
     });
   });
@@ -78,7 +101,7 @@ export async function getWrappedStats(userId: string, year: number = new Date().
   // Author analysis
   const authorCounts: Record<string, number> = {};
   finishedBooks.forEach((p) => {
-    const author = p.book.author;
+    const author = p.book?.authorNames ?? "Unknown";
     authorCounts[author] = (authorCounts[author] || 0) + 1;
   });
   const topAuthors = Object.entries(authorCounts)
@@ -87,40 +110,40 @@ export async function getWrappedStats(userId: string, year: number = new Date().
     .slice(0, 5);
 
   // Find longest and shortest books
-  const booksWithPages = finishedBooks.filter((p) => p.book.pageCount && p.book.pageCount > 0);
+  const booksWithPages = finishedBooks.filter((p) => p.pageCount != null && p.pageCount > 0);
   const sortedByPages = [...booksWithPages].sort(
-    (a, b) => (b.book.pageCount || 0) - (a.book.pageCount || 0)
+    (a, b) => (b.pageCount || 0) - (a.pageCount || 0)
   );
 
   const longestBook = sortedByPages[0]
     ? {
-        title: sortedByPages[0].book.title,
-        author: sortedByPages[0].book.author,
-        pageCount: sortedByPages[0].book.pageCount || 0,
+        title: sortedByPages[0].book?.title ?? "Unknown",
+        author: sortedByPages[0].book?.authorNames ?? "Unknown",
+        pageCount: sortedByPages[0].pageCount || 0,
       }
     : null;
 
   const shortestBook = sortedByPages[sortedByPages.length - 1]
     ? {
-        title: sortedByPages[sortedByPages.length - 1].book.title,
-        author: sortedByPages[sortedByPages.length - 1].book.author,
-        pageCount: sortedByPages[sortedByPages.length - 1].book.pageCount || 0,
+        title: sortedByPages[sortedByPages.length - 1].book?.title ?? "Unknown",
+        author: sortedByPages[sortedByPages.length - 1].book?.authorNames ?? "Unknown",
+        pageCount: sortedByPages[sortedByPages.length - 1].pageCount || 0,
       }
     : null;
 
   // First and most recent books
   const firstBookOfYear = finishedBooks[0]
     ? {
-        title: finishedBooks[0].book.title,
-        author: finishedBooks[0].book.author,
+        title: finishedBooks[0].book?.title ?? "Unknown",
+        author: finishedBooks[0].book?.authorNames ?? "Unknown",
         finishedAt: finishedBooks[0].finishedAt!,
       }
     : null;
 
   const mostRecentBook = finishedBooks[finishedBooks.length - 1]
     ? {
-        title: finishedBooks[finishedBooks.length - 1].book.title,
-        author: finishedBooks[finishedBooks.length - 1].book.author,
+        title: finishedBooks[finishedBooks.length - 1].book?.title ?? "Unknown",
+        author: finishedBooks[finishedBooks.length - 1].book?.authorNames ?? "Unknown",
         finishedAt: finishedBooks[finishedBooks.length - 1].finishedAt!,
       }
     : null;
@@ -147,10 +170,10 @@ export async function getWrappedStats(userId: string, year: number = new Date().
     .sort((a, b) => b.rating - a.rating)
     .slice(0, 5)
     .map((r) => ({
-      title: r.book.title,
-      author: r.book.author,
+      title: r.book?.title ?? "Unknown",
+      author: r.book?.authorNames ?? "Unknown",
       rating: r.rating,
-      coverUrl: r.book.coverUrl,
+      coverId: r.book?.coverId ?? null,
     }));
 
   // Calculate reading days (unique days with finished books)
@@ -229,32 +252,24 @@ export async function getWrappedProjections(userId: string): Promise<WrappedProj
   const daysRemaining = totalDaysInYear - daysElapsed;
 
   // Get books finished this year
-  const finishedBooks = await prisma.readingProgress.findMany({
-    where: {
-      userId,
-      finishedAt: {
-        gte: startOfYear,
-        lte: endOfYear,
-      },
-    },
-    include: {
-      book: true,
-    },
-    orderBy: {
-      finishedAt: "desc",
-    },
+  const finishedSessions = await prisma.readingSession.findMany({
+    where: { userId, finishedAt: { gte: startOfYear, lte: endOfYear } },
+    orderBy: { finishedAt: "desc" },
   });
 
-  // Get currently reading books (started but not finished)
-  const currentlyReadingProgress = await prisma.readingProgress.findMany({
-    where: {
-      userId,
-      finishedAt: null,
-    },
-    include: {
-      book: true,
-    },
+  const currentlyReadingProgress = await prisma.readingSession.findMany({
+    where: { userId, finishedAt: null },
   });
+
+  const projWorks = await getWorkStats([
+    ...finishedSessions.map((s) => s.workKey),
+    ...currentlyReadingProgress.map((s) => s.workKey),
+  ]);
+
+  const finishedBooks = finishedSessions.map((s) => ({
+    ...s,
+    book: projWorks.get(s.workKey) ?? null,
+  }));
 
   // Get reviews this year
   const reviews = await prisma.review.findMany({
@@ -270,7 +285,7 @@ export async function getWrappedProjections(userId: string): Promise<WrappedProj
   // Get previous year stats
   const previousYearStart = new Date(year - 1, 0, 1);
   const previousYearEnd = new Date(year - 1, 11, 31, 23, 59, 59);
-  const previousYearBooks = await prisma.readingProgress.count({
+  const previousYearBooks = await prisma.readingSession.count({
     where: {
       userId,
       finishedAt: {
@@ -282,7 +297,7 @@ export async function getWrappedProjections(userId: string): Promise<WrappedProj
 
   // Calculate YTD stats
   const booksReadYTD = finishedBooks.length;
-  const pagesReadYTD = finishedBooks.reduce((sum, p) => sum + (p.book.pageCount || 0), 0);
+  const pagesReadYTD = finishedBooks.reduce((sum, p) => sum + (p.pageCount || 0), 0);
   const reviewsWrittenYTD = reviews.length;
 
   // Current pace calculations
@@ -319,7 +334,7 @@ export async function getWrappedProjections(userId: string): Promise<WrappedProj
 
   // Previous year comparison (at same point in year)
   const sameDateLastYear = new Date(year - 1, now.getMonth(), now.getDate());
-  const booksAtThisPointLastYear = await prisma.readingProgress.count({
+  const booksAtThisPointLastYear = await prisma.readingSession.count({
     where: {
       userId,
       finishedAt: {
@@ -332,19 +347,20 @@ export async function getWrappedProjections(userId: string): Promise<WrappedProj
   // Last book finished
   const lastBookFinished = finishedBooks[0]
     ? {
-        title: finishedBooks[0].book.title,
-        author: finishedBooks[0].book.author,
+        title: finishedBooks[0].book?.title ?? "Unknown",
+        author: finishedBooks[0].book?.authorNames ?? "Unknown",
         finishedAt: finishedBooks[0].finishedAt!,
       }
     : null;
 
   // Currently reading (calculate progress from currentPage / pageCount)
   const currentlyReading = currentlyReadingProgress.map((p) => ({
-    title: p.book.title,
-    author: p.book.author,
-    progress: p.book.pageCount && p.book.pageCount > 0
-      ? Math.round((p.currentPage / p.book.pageCount) * 100)
-      : 0,
+    title: projWorks.get(p.workKey)?.title ?? "Unknown",
+    author: projWorks.get(p.workKey)?.authorNames ?? "Unknown",
+    progress:
+      p.pageCount != null && p.pageCount > 0
+        ? Math.round((p.currentPage / p.pageCount) * 100)
+        : 0,
   }));
 
   return {

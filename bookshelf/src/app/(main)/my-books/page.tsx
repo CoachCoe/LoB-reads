@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getUserShelves } from "@/server/shelves";
-import { getUserReadingStats } from "@/server/progress";
+import { getReadingStats } from "@/server/progress";
 import ShelfSection from "./ShelfSection";
 import Card, { CardContent } from "@/components/ui/Card";
 import { BookOpen, BookMarked, Trophy } from "lucide-react";
@@ -16,7 +16,7 @@ export default async function MyBooksPage() {
 
   const [shelves, stats] = await Promise.all([
     getUserShelves(user.id),
-    getUserReadingStats(user.id),
+    getReadingStats(user.id),
   ]);
 
   // Separate default and custom shelves
@@ -92,7 +92,7 @@ export default async function MyBooksPage() {
       )}
 
       {/* Empty state */}
-      {shelves.every((s) => s._count?.shelfItems === 0) && (
+      {shelves.every((s) => s.itemCount === 0) && (
         <div className="text-center py-12 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg">
           <BookOpen className="h-16 w-16 text-[var(--foreground-secondary)] mx-auto mb-4" />
           <h2 className="text-xl font-semibold text-[var(--foreground)] mb-2">

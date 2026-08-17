@@ -1,192 +1,103 @@
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth/session";
-import { getPopularBooks, searchLocalBooks } from "@/server/books";
-import { getActivityFeed } from "@/server/users";
-import { getUserCurrentlyReading } from "@/server/progress";
-import ActivityFeed from "@/components/social/ActivityFeed";
-import CurrentlyReadingCard from "@/components/books/CurrentlyReadingCard";
-import Button from "@/components/ui/Button";
-import { BookOpen, Search, Users } from "lucide-react";
+import { getPopularWorks } from "@/server/catalog";
+import { getCurrentlyReading } from "@/server/progress";
+import { getRecentReviews } from "@/server/reviews";
+import WorkCard from "@/components/catalog/WorkCard";
+import CurrentlyReadingCard from "@/components/catalog/CurrentlyReadingCard";
+import ReviewCard from "@/components/reviews/ReviewCard";
 
 export default async function HomePage() {
   const user = await getCurrentUser();
 
-  if (!user) {
-    return <LandingPage />;
-  }
-
-  const [popularBooks, feed, currentlyReading] = await Promise.all([
-    getPopularBooks(10),
-    getActivityFeed(user.id, 10),
-    getUserCurrentlyReading(user.id),
+  const [popular, reading, reviews] = await Promise.all([
+    getPopularWorks(12),
+    user ? getCurrentlyReading(user.id) : Promise.resolve([]),
+    getRecentReviews(6),
   ]);
 
-  // If no popular books, show all books
-  const booksToShow =
-    popularBooks.length > 0
-      ? popularBooks
-      : await searchLocalBooks("", 10);
-
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Main content */}
-        <div className="lg:col-span-2 space-y-8">
-          {/* Currently reading */}
-          {currentlyReading.length > 0 && (
-            <section>
-              <h2 className="text-xl font-bold text-[var(--foreground)] mb-4">
-                Continue Reading
-              </h2>
-              <div className="grid gap-4 sm:grid-cols-2">
-                {currentlyReading.slice(0, 2).map((progress) => (
-                  <CurrentlyReadingCard
-                    key={progress.id}
-                    progress={progress}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Activity feed */}
-          <section>
-            <h2 className="text-xl font-bold text-[var(--foreground)] mb-4">
-              Activity Feed
-            </h2>
-            {feed.length > 0 ? (
-              <ActivityFeed activities={feed} />
-            ) : (
-              <div className="bg-[var(--card-bg)] rounded-lg border border-[var(--card-border)] p-8 text-center">
-                <Users className="h-12 w-12 text-[var(--foreground-secondary)] mx-auto mb-4" />
-                <p className="text-[var(--foreground-secondary)] mb-4">
-                  Follow other readers to see their activity here
-                </p>
-                <Link href="/search?tab=users">
-                  <Button variant="outline">Find Readers</Button>
-                </Link>
-              </div>
-            )}
-          </section>
-        </div>
-
-        {/* Sidebar */}
-        <div className="space-y-8">
-          {/* Popular books */}
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-bold text-[var(--foreground)]">
-                Popular This Week
-              </h2>
-              <Link
-                href="/search"
-                className="text-sm text-[#D4A017] hover:text-[#B8860B]"
-              >
-                See all
-              </Link>
-            </div>
-            <div className="space-y-3">
-              {booksToShow.slice(0, 5).map((book, index) => (
-                <Link
-                  key={book.id}
-                  href={`/book/${book.id}`}
-                  className="flex items-center gap-3 p-2 -mx-2 rounded-lg hover:bg-[var(--border-light)]"
-                >
-                  <span className="text-lg font-bold text-[var(--foreground-secondary)] w-6">
-                    {index + 1}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-medium text-[var(--foreground)] truncate">
-                      {book.title}
-                    </h3>
-                    <p className="text-sm text-[var(--foreground-secondary)] truncate">
-                      {book.author}
-                    </p>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </section>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LandingPage() {
-  return (
-    <div className="min-h-[calc(100vh-4rem)]">
-      {/* Hero section */}
-      <section className="bg-[var(--card-bg)] py-20 border-b border-[var(--border)]">
-        <div className="max-w-4xl mx-auto px-4 text-center">
-          <h1 className="text-4xl md:text-5xl font-bold text-[var(--foreground)] mb-6">
-            Track Your Reading Journey
+    <div className="mx-auto max-w-6xl px-4 py-8">
+      {user ? (
+        <h1 className="mb-6 text-3xl font-bold text-gray-900 dark:text-gray-100">
+          Welcome back, {user.name?.split(" ")[0] ?? "reader"}
+        </h1>
+      ) : (
+        <div className="mb-10 text-center">
+          <h1 className="text-4xl font-bold text-gray-900 dark:text-gray-100">
+            Life on Books
           </h1>
-          <p className="text-xl text-[var(--foreground-secondary)] mb-8 max-w-2xl mx-auto">
-            Discover new books, track your reading progress, and connect with
-            other readers. Your personal library, organized beautifully.
+          <p className="mx-auto mt-3 max-w-xl text-lg text-gray-600 dark:text-gray-400">
+            Track what you read, keep your shelves, and map where the stories
+            happen.
           </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/register">
-              <Button size="lg" className="w-full sm:w-auto">
-                Get Started Free
-              </Button>
+          <div className="mt-6 flex justify-center gap-3">
+            <Link
+              href="/register"
+              className="rounded-lg bg-[#D4A017] px-6 py-2.5 font-medium text-white hover:bg-[#B8860B]"
+            >
+              Get started
             </Link>
-            <Link href="/login">
-              <Button variant="outline" size="lg" className="w-full sm:w-auto">
-                Sign In
-              </Button>
+            <Link
+              href="/search"
+              className="rounded-lg border border-gray-300 px-6 py-2.5 font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+            >
+              Browse books
             </Link>
           </div>
         </div>
+      )}
+
+      {reading.length > 0 && (
+        <section className="mb-10">
+          <h2 className="mb-3 text-xl font-bold text-gray-900 dark:text-gray-100">
+            Currently reading
+          </h2>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {reading.map((session) => (
+              <CurrentlyReadingCard key={session.id} session={session} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="mb-10">
+        <div className="mb-3 flex items-baseline justify-between">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">
+            Most published
+          </h2>
+          <Link
+            href="/search"
+            className="text-sm text-[#0B6157] hover:underline dark:text-[#52B7A6]"
+          >
+            Browse all
+          </Link>
+        </div>
+        {popular.length === 0 ? (
+          <p className="text-gray-500 dark:text-gray-400">
+            The catalog is empty — run <code>npm run ingest</code> to populate it.
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+            {popular.map((work) => (
+              <WorkCard key={work.olKey} {...work} />
+            ))}
+          </div>
+        )}
       </section>
 
-      {/* Features */}
-      <section className="py-16 bg-[var(--background)]">
-        <div className="max-w-6xl mx-auto px-4">
-          <h2 className="text-3xl font-bold text-center text-[var(--foreground)] mb-12">
-            Everything You Need
+      {reviews.length > 0 && (
+        <section>
+          <h2 className="mb-3 text-xl font-bold text-gray-900 dark:text-gray-100">
+            Recent reviews
           </h2>
-          <div className="grid md:grid-cols-3 gap-8">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-[#D4A017]/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                <BookOpen className="h-8 w-8 text-[#D4A017]" />
-              </div>
-              <h3 className="text-xl font-semibold text-[var(--foreground)] mb-2">
-                Track Your Books
-              </h3>
-              <p className="text-[var(--foreground-secondary)]">
-                Organize books into shelves, track your reading progress, and
-                never lose track of what you want to read next.
-              </p>
-            </div>
-            <div className="text-center">
-              <div className="w-16 h-16 bg-[#D4A017]/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Search className="h-8 w-8 text-[#D4A017]" />
-              </div>
-              <h3 className="text-xl font-semibold text-[var(--foreground)] mb-2">
-                Discover New Books
-              </h3>
-              <p className="text-[var(--foreground-secondary)]">
-                Search millions of books, read reviews from other readers, and
-                find your next favorite read.
-              </p>
-            </div>
-            <div className="text-center">
-              <div className="w-16 h-16 bg-[#D4A017]/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Users className="h-8 w-8 text-[#D4A017]" />
-              </div>
-              <h3 className="text-xl font-semibold text-[var(--foreground)] mb-2">
-                Connect with Readers
-              </h3>
-              <p className="text-[var(--foreground-secondary)]">
-                Follow friends, share reviews, and see what others are reading
-                in your community.
-              </p>
-            </div>
+          <div className="space-y-4">
+            {reviews.map((review) => (
+              <ReviewCard key={review.id} review={review} showWork />
+            ))}
           </div>
-        </div>
-      </section>
+        </section>
+      )}
     </div>
   );
 }

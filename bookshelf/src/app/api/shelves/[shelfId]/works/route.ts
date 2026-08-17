@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/options";
-import { addBookToShelf, removeBookFromShelf } from "@/server/shelves";
+import { addWorkToShelf, removeWorkFromShelf } from "@/server/shelves";
 import { errorResponse, parseBody, unauthorized } from "@/lib/http/api";
-import { shelfBookSchema } from "@/lib/http/schemas";
+import { shelfWorkSchema } from "@/lib/http/schemas";
 
 export async function POST(
   request: Request,
@@ -17,12 +17,12 @@ export async function POST(
 
   try {
     const { shelfId } = await params;
-    const { bookId } = await parseBody(request, shelfBookSchema);
+    const { workKey } = await parseBody(request, shelfWorkSchema);
 
-    const shelfItem = await addBookToShelf(shelfId, bookId, session.user.id);
+    const shelfItem = await addWorkToShelf(shelfId, workKey, session.user.id);
     return NextResponse.json(shelfItem, { status: 201 });
   } catch (error) {
-    return errorResponse("Add book to shelf error", error);
+    return errorResponse("Add work to shelf error", error);
   }
 }
 
@@ -38,11 +38,11 @@ export async function DELETE(
 
   try {
     const { shelfId } = await params;
-    const { bookId } = await parseBody(request, shelfBookSchema);
+    const { workKey } = await parseBody(request, shelfWorkSchema);
 
-    await removeBookFromShelf(shelfId, bookId, session.user.id);
-    return NextResponse.json({ message: "Book removed from shelf" });
+    await removeWorkFromShelf(shelfId, workKey, session.user.id);
+    return NextResponse.json({ message: "Removed from shelf" });
   } catch (error) {
-    return errorResponse("Remove book from shelf error", error);
+    return errorResponse("Remove work from shelf error", error);
   }
 }

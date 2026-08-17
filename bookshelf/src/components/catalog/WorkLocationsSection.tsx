@@ -4,16 +4,16 @@ import { useState, useEffect } from "react";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { useCrowdsourcedLocations } from "@/components/locations/useCrowdsourcedLocations";
 import { MapPin, Plus, X, Sparkles, Globe, Trash2 } from "lucide-react";
-import { BookLocationData } from "@/server/book-locations";
-import { FictionalWorldWithBooks } from "@/server/fictional-worlds";
+import { WorkLocationData } from "@/server/work-locations";
+import { FictionalWorldWithWorks } from "@/server/fictional-worlds";
 
-interface BookLocationsSectionProps {
-  bookId: string;
+interface WorkLocationsSectionProps {
+  workKey: string;
   currentUserId?: string;
 }
 
 /** The endpoint returns a bare array; the author endpoint wraps it. */
-const extractLocations = (payload: unknown) => payload as BookLocationData[];
+const extractLocations = (payload: unknown) => payload as WorkLocationData[];
 
 const LOCATION_TYPES = [
   { value: "setting", label: "Primary Setting", description: "Where the main story takes place" },
@@ -21,7 +21,7 @@ const LOCATION_TYPES = [
   { value: "inspired_by", label: "Inspired By", description: "Real location that inspired the story" },
 ];
 
-export default function BookLocationsSection({ bookId, currentUserId }: BookLocationsSectionProps) {
+export default function WorkLocationsSection({ workKey, currentUserId }: WorkLocationsSectionProps) {
   const {
     locations,
     loading,
@@ -30,12 +30,12 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
     setPendingDelete,
     addLocation,
     removeLocation,
-  } = useCrowdsourcedLocations<BookLocationData>({
-    basePath: `/api/books/${bookId}/locations`,
+  } = useCrowdsourcedLocations<WorkLocationData>({
+    basePath: `/api/works/${workKey}/locations`,
     extractList: extractLocations,
   });
 
-  const [fictionalWorlds, setFictionalWorlds] = useState<FictionalWorldWithBooks[]>([]);
+  const [fictionalWorlds, setFictionalWorlds] = useState<FictionalWorldWithWorks[]>([]);
   const [showAddForm, setShowAddForm] = useState(false);
 
   // Form state
@@ -302,10 +302,10 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
                   <p className="text-sm text-[var(--foreground-secondary)] mt-1">{location.description}</p>
                 )}
                 <p className="text-xs text-[var(--foreground-secondary)] mt-1">
-                  Added by {location.addedBy.name}
+                  Added by {location.addedBy?.name ?? "a former member"}
                 </p>
               </div>
-              {currentUserId === location.addedBy.id && (
+              {location.addedBy != null && currentUserId === location.addedBy.id && (
                 <button
                   onClick={() => setPendingDelete(location)}
                   className="text-[var(--foreground-secondary)] hover:text-red-500 p-1"

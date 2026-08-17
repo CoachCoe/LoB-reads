@@ -2,40 +2,35 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { MapPin, BookOpen, User, Eye, EyeOff, Sparkles, Users } from "lucide-react";
-import { BookLocation, CrowdsourcedLocation, AuthorMapLocation } from "@/server/map";
-import { FictionalWorldWithBooks } from "@/server/fictional-worlds";
+import { MapPin, BookOpen, User, Eye, EyeOff, Sparkles } from "lucide-react";
+import type { MappedWorkLocation, MappedAuthorLocation } from "@/server/map";
+import type { FictionalWorldWithWorks } from "@/server/fictional-worlds";
 import FictionalWorldsPanel from "@/components/map/FictionalWorldsPanel";
 
 interface MapClientProps {
-  books: BookLocation[];
-  crowdsourcedBookLocations: CrowdsourcedLocation[];
-  crowdsourcedAuthorLocations: AuthorMapLocation[];
-  initialFictionalWorlds: FictionalWorldWithBooks[];
+  workLocations: MappedWorkLocation[];
+  authorLocations: MappedAuthorLocation[];
+  initialFictionalWorlds: FictionalWorldWithWorks[];
   currentUserId: string | null;
   canModerate: boolean;
 }
 
 export default function MapClient({
-  books,
-  crowdsourcedBookLocations,
-  crowdsourcedAuthorLocations,
+  workLocations,
+  authorLocations,
   initialFictionalWorlds,
   currentUserId,
   canModerate,
 }: MapClientProps) {
-  const [showSettings, setShowSettings] = useState(true);
+  const [showWorks, setShowWorks] = useState(true);
   const [showAuthors, setShowAuthors] = useState(true);
-  const [showCrowdsourced, setShowCrowdsourced] = useState(true);
   const [showFictionalPanel, setShowFictionalPanel] = useState(false);
   const [fictionalWorlds, setFictionalWorlds] = useState(initialFictionalWorlds);
   const [MapComponent, setMapComponent] = useState<React.ComponentType<{
-    books: BookLocation[];
-    crowdsourcedBookLocations: CrowdsourcedLocation[];
-    crowdsourcedAuthorLocations: AuthorMapLocation[];
-    showSettings: boolean;
+    workLocations: MappedWorkLocation[];
+    authorLocations: MappedAuthorLocation[];
+    showWorks: boolean;
     showAuthors: boolean;
-    showCrowdsourced: boolean;
   }> | null>(null);
 
   useEffect(() => {
@@ -45,9 +40,8 @@ export default function MapClient({
     });
   }, []);
 
-  const settingsCount = books.filter((b) => b.settingCoordinates).length;
-  const authorsCount = books.filter((b) => b.authorOriginCoordinates).length;
-  const crowdsourcedCount = crowdsourcedBookLocations.length + crowdsourcedAuthorLocations.length;
+  const worksCount = workLocations.length;
+  const authorsCount = authorLocations.length;
 
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col">
@@ -64,20 +58,20 @@ export default function MapClient({
           <div className="flex items-center gap-3">
             {/* Toggle for Book Settings */}
             <button
-              onClick={() => setShowSettings(!showSettings)}
+              onClick={() => setShowWorks(!showWorks)}
               className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                showSettings
+                showWorks
                   ? "bg-[#3B82F6] text-white"
                   : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
               }`}
             >
-              {showSettings ? (
+              {showWorks ? (
                 <Eye className="h-4 w-4" />
               ) : (
                 <EyeOff className="h-4 w-4" />
               )}
               <BookOpen className="h-4 w-4" />
-              Book Settings ({settingsCount})
+              Book settings ({worksCount})
             </button>
 
             {/* Toggle for Author Origins */}
@@ -95,28 +89,8 @@ export default function MapClient({
                 <EyeOff className="h-4 w-4" />
               )}
               <User className="h-4 w-4" />
-              Author Origins ({authorsCount})
+              Author places ({authorsCount})
             </button>
-
-            {/* Toggle for Crowdsourced Locations */}
-            {crowdsourcedCount > 0 && (
-              <button
-                onClick={() => setShowCrowdsourced(!showCrowdsourced)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                  showCrowdsourced
-                    ? "bg-amber-500 text-white"
-                    : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
-                }`}
-              >
-                {showCrowdsourced ? (
-                  <Eye className="h-4 w-4" />
-                ) : (
-                  <EyeOff className="h-4 w-4" />
-                )}
-                <Users className="h-4 w-4" />
-                Community ({crowdsourcedCount})
-              </button>
-            )}
 
             {/* Fictional Worlds Button */}
             <button
@@ -132,7 +106,7 @@ export default function MapClient({
 
       {/* Map Container */}
       <div className="flex-1 relative">
-        {books.length === 0 ? (
+        {worksCount === 0 && authorsCount === 0 ? (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-50 dark:bg-gray-800">
             <div className="text-center px-4">
               <MapPin className="h-16 w-16 text-gray-300 mx-auto mb-4" />
@@ -153,12 +127,10 @@ export default function MapClient({
           </div>
         ) : MapComponent ? (
           <MapComponent
-            books={books}
-            crowdsourcedBookLocations={crowdsourcedBookLocations}
-            crowdsourcedAuthorLocations={crowdsourcedAuthorLocations}
-            showSettings={showSettings}
+            workLocations={workLocations}
+            authorLocations={authorLocations}
+            showWorks={showWorks}
             showAuthors={showAuthors}
-            showCrowdsourced={showCrowdsourced}
           />
         ) : (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-50 dark:bg-gray-800">
@@ -168,24 +140,18 @@ export default function MapClient({
       </div>
 
       {/* Legend */}
-      {(books.length > 0 || crowdsourcedCount > 0) && (
+      {(worksCount > 0 || authorsCount > 0) && (
         <div className="absolute bottom-4 left-4 bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-3 z-[1000]">
           <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">Legend</p>
           <div className="space-y-1.5">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-[#3B82F6]" />
-              <span className="text-xs text-gray-600 dark:text-gray-400">Book Setting</span>
+              <span className="text-xs text-gray-600 dark:text-gray-400">Book setting</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-[#22C55E]" />
-              <span className="text-xs text-gray-600 dark:text-gray-400">Author Origin</span>
+              <span className="text-xs text-gray-600 dark:text-gray-400">Author place</span>
             </div>
-            {crowdsourcedCount > 0 && (
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-amber-500" />
-                <span className="text-xs text-gray-600 dark:text-gray-400">Community Added</span>
-              </div>
-            )}
           </div>
         </div>
       )}

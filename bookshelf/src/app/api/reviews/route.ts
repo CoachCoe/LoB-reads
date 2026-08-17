@@ -22,14 +22,14 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { bookId, rating, content } = await parseBody(
+    const { workKey, rating, content } = await parseBody(
       request,
       createReviewSchema
     );
 
     const review = await createOrUpdateReview(
       session.user.id,
-      bookId,
+      workKey,
       rating,
       content
     );

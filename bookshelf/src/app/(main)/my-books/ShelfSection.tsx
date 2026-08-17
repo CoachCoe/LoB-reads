@@ -1,17 +1,18 @@
 "use client";
 
+import { coverUrl } from "@/server/catalog";
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { ChevronRight, X } from "lucide-react";
-import { ShelfWithBooks } from "@/types";
+import type { ShelfWithItems } from "@/server/shelves";
 
 interface ShelfSectionProps {
-  shelf: ShelfWithBooks;
+  shelf: ShelfWithItems;
 }
 
 export default function ShelfSection({ shelf }: ShelfSectionProps) {
-  const [items, setItems] = useState(shelf.shelfItems);
+  const [items, setItems] = useState(shelf.items);
   const [removingBook, setRemovingBook] = useState<string | null>(null);
 
   const handleRemoveBook = async (bookId: string) => {
@@ -24,7 +25,7 @@ export default function ShelfSection({ shelf }: ShelfSectionProps) {
       });
 
       if (response.ok) {
-        setItems(items.filter((item) => item.bookId !== bookId));
+        setItems(items.filter((item) => item.workKey !== bookId));
       }
     } catch (error) {
       console.error("Failed to remove book:", error);
@@ -62,13 +63,13 @@ export default function ShelfSection({ shelf }: ShelfSectionProps) {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
           {displayBooks.map((item) => (
             <div key={item.id} className="group relative">
-              <Link href={`/book/${item.bookId}`}>
+              <Link href={`/work/${item.workKey}`}>
                 <div className="bg-[var(--card-bg)] rounded-lg shadow-sm border border-[var(--card-border)] overflow-hidden hover:shadow-md transition-shadow">
                   <div className="aspect-[2/3] relative bg-[var(--border-light)]">
-                    {item.book.coverUrl ? (
+                    {coverUrl(item.work?.coverId) ? (
                       <Image
-                        src={item.book.coverUrl}
-                        alt={item.book.title}
+                        src={coverUrl(item.work?.coverId) ?? ""}
+                        alt={item.work?.title ?? "Not in the current catalog"}
                         fill
                         className="object-cover"
                         sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 16vw"
@@ -82,10 +83,10 @@ export default function ShelfSection({ shelf }: ShelfSectionProps) {
                   </div>
                   <div className="p-2">
                     <h3 className="font-medium text-sm text-[var(--foreground)] line-clamp-1">
-                      {item.book.title}
+                      {item.work?.title ?? "Not in the current catalog"}
                     </h3>
                     <p className="text-xs text-[var(--foreground-secondary)] line-clamp-1">
-                      {item.book.author}
+                      {item.work?.authorNames ?? ""}
                     </p>
                   </div>
                 </div>
@@ -95,12 +96,12 @@ export default function ShelfSection({ shelf }: ShelfSectionProps) {
               <button
                 onClick={(e) => {
                   e.preventDefault();
-                  handleRemoveBook(item.bookId);
+                  handleRemoveBook(item.workKey);
                 }}
-                disabled={removingBook === item.bookId}
+                disabled={removingBook === item.workKey}
                 className="absolute top-2 right-2 p-1.5 bg-[var(--card-bg)] rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/10"
                 title="Remove from shelf"
-                aria-label={`Remove ${item.book.title} from this shelf`}
+                aria-label={`Remove ${item.work?.title ?? "Not in the current catalog"} from this shelf`}
               >
                 <X className="h-4 w-4 text-[var(--foreground-secondary)] hover:text-red-500" />
               </button>

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getShelfById } from "@/server/shelves";
-import BookGrid from "@/components/books/BookGrid";
+import WorkGrid from "@/components/catalog/WorkGrid";
 import Avatar from "@/components/ui/Avatar";
 
 interface Props {
@@ -23,7 +23,7 @@ export default async function ShelfPage({ params }: Props) {
   }
 
   const isOwnShelf = currentUser?.id === shelf.userId;
-  const books = shelf.shelfItems.map((item) => item.book);
+  
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
@@ -53,11 +53,11 @@ export default async function ShelfPage({ params }: Props) {
         )}
         <span>
           {!isOwnShelf && "· "}
-          {books.length} {books.length === 1 ? "book" : "books"}
+          {shelf.itemCount} {shelf.itemCount === 1 ? "book" : "books"}
         </span>
       </div>
 
-      <BookGrid books={books} emptyMessage="No books on this shelf yet" />
+      <WorkGrid items={shelf.items} emptyMessage="No books on this shelf yet" />
     </div>
   );
 }

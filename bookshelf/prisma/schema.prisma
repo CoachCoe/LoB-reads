@@ -34,55 +34,17 @@ model User {
   // Relations
   shelves         Shelf[]
   reviews         Review[]
-  readingProgress ReadingProgress[]
-  followers       Follow[]            @relation("Following")
-  following       Follow[]            @relation("Follower")
-  bookLocations   BookLocation[] // Locations this user contributed
+  readingSessions ReadingSession[]
+  followers       Follow[]             @relation("Following")
+  following       Follow[]             @relation("Follower")
+  shelfItems      ShelfItem[]
+  workLocations   WorkLocation[] // Locations this user contributed
   authorLocations AuthorLocation[] // Author locations this user contributed
-  mapsUploaded    FictionalWorldMap[] @relation("MapUploader")
-  mapsEdited      FictionalWorldMap[] @relation("MapEditor")
+  worldLinks      WorkFictionalWorld[]
+  mapsUploaded    FictionalWorldMap[]  @relation("MapUploader")
+  mapsEdited      FictionalWorldMap[]  @relation("MapEditor")
 
   @@map("users")
-  @@schema("app")
-}
-
-model Book {
-  id            String   @id @default(cuid())
-  title         String
-  author        String
-  isbn          String?  @unique
-  description   String?
-  coverUrl      String?
-  pageCount     Int?
-  publishedDate String?
-  genres        String[] @default([])
-  openLibraryId String?  @unique
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  // Legacy per-book map fields, predating the crowdsourced BookLocation table
-  settingLocation String?
-  settingLat      Float?
-  settingLng      Float?
-  authorOrigin    String?
-  authorOriginLat Float?
-  authorOriginLng Float?
-
-  // Fictional location support
-  isFictional      Boolean         @default(false)
-  fictionalWorldId String?
-  fictionalWorld   FictionalWorld? @relation(fields: [fictionalWorldId], references: [id])
-
-  // Relations
-  reviews         Review[]
-  shelfItems      ShelfItem[]
-  readingProgress ReadingProgress[]
-  locations       BookLocation[] // Crowdsourced location data
-
-  @@index([title])
-  @@index([author])
-  @@index([fictionalWorldId])
-  @@map("books")
   @@schema("app")
 }
 
@@ -94,9 +56,9 @@ model FictionalWorld {
   updatedAt   DateTime @updatedAt
 
   // Relations
-  books         Book[]
-  bookLocations BookLocation[] // Fictional locations in this world
-  maps          FictionalWorldMap[]
+  works     WorkFictionalWorld[]
+  locations WorkLocation[] // Fictional locations in this world
+  maps      FictionalWorldMap[]
 
   @@map("fictional_worlds")
   @@schema("app")
@@ -126,6 +88,23 @@ model FictionalWorldMap {
   @@schema("app")
 }
 
+// Replaces Book.fictionalWorldId. This cannot be a column on catalog.works:
+// the catalog is rebuilt from dumps every month and would erase it.
+model WorkFictionalWorld {
+  workKey   String   @map("work_key")
+  worldId   String   @map("world_id")
+  addedById String?  @map("added_by_id")
+  addedAt   DateTime @default(now()) @map("added_at")
+
+  world   FictionalWorld @relation(fields: [worldId], references: [id], onDelete: Cascade)
+  addedBy User?          @relation(fields: [addedById], references: [id], onDelete: SetNull)
+
+  @@id([workKey, worldId])
+  @@index([worldId])
+  @@map("work_fictional_worlds")
+  @@schema("app")
+}
+
 model Shelf {
   id        String   @id @default(cuid())
   userId    String
@@ -146,52 +125,69 @@ model Shelf {
 model ShelfItem {
   id      String   @id @default(cuid())
   shelfId String
-  bookId  String
+  workKey String   @map("work_key") // catalog.works.ol_key — no FK by design
   addedAt DateTime @default(now())
+
+  // Denormalized from the parent shelf. A partial unique index cannot contain
+  // a subquery, so enforcing "one exclusive shelf per work per user" in the
+  // database requires both of these on the row itself. Kept in sync by the
+  // shelf_items_sync_exclusive trigger, not by application code.
+  userId      String  @map("user_id")
+  isExclusive Boolean @default(false) @map("is_exclusive")
 
   // Relations
   shelf Shelf @relation(fields: [shelfId], references: [id], onDelete: Cascade)
-  book  Book  @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([shelfId, bookId])
+  @@unique([shelfId, workKey])
+  @@index([workKey])
+  @@index([userId])
   @@map("shelf_items")
   @@schema("app")
 }
 
+// Ratings and reviews attach to the WORK, not an edition — a rating of Dune
+// is a rating of Dune, whichever printing you happened to read.
 model Review {
   id        String   @id @default(cuid())
   userId    String
-  bookId    String
+  workKey   String   @map("work_key")
   rating    Int      @db.SmallInt // 1-5
   content   String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, bookId])
+  @@unique([userId, workKey])
+  @@index([workKey])
   @@map("reviews")
   @@schema("app")
 }
 
-model ReadingProgress {
+// Progress binds to an EDITION where one is known, because page counts differ
+// between printings, while the shelf and rating stay on the work.
+//
+// There is no unique constraint on (user, work): re-reads are a real thing and
+// each is its own session. What IS enforced, by a partial unique index in the
+// migration, is at most one OPEN session per user and work.
+model ReadingSession {
   id          String    @id @default(cuid())
   userId      String
-  bookId      String
+  workKey     String    @map("work_key")
+  editionKey  String?   @map("edition_key") // catalog.editions.ol_key, if known
   currentPage Int       @default(0)
-  startedAt   DateTime  @default(now())
-  finishedAt  DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  pageCount   Int?      @map("page_count") // snapshot, so history survives an ingest
+  startedAt   DateTime  @default(now()) @map("started_at")
+  finishedAt  DateTime? @map("finished_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
-  // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, bookId])
-  @@map("reading_progress")
+  @@index([userId, workKey])
+  @@index([userId, finishedAt])
+  @@map("reading_sessions")
   @@schema("app")
 }
 
@@ -212,68 +208,49 @@ model Follow {
 
 // Crowdsourced location data - Wikipedia-style contributions
 
-model BookLocation {
+model WorkLocation {
   id               String   @id @default(cuid())
-  bookId           String
-  addedById        String
+  workKey          String   @map("work_key")
+  // Nullable: a contribution to the shared map outlives the account that made
+  // it. ON DELETE SET NULL against a NOT NULL column is accepted at CREATE
+  // TABLE and only fails later, when someone actually deletes their account.
+  addedById        String?  @map("added_by_id")
   name             String // e.g., "Arrakis", "Paris", "Shire"
   type             String // "setting", "mentioned", "inspired_by"
-  description      String? // User's note about this location
-  lat              Float? // Null for fictional locations, which are pinned to a world
+  description      String?
+  lat              Float? // Null for fictional locations, pinned to a world
   lng              Float?
-  isFictional      Boolean  @default(false)
-  fictionalWorldId String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  isFictional      Boolean  @default(false) @map("is_fictional")
+  fictionalWorldId String?  @map("fictional_world_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
-  // Relations
-  book           Book            @relation(fields: [bookId], references: [id], onDelete: Cascade)
-  addedBy        User            @relation(fields: [addedById], references: [id], onDelete: Cascade)
-  fictionalWorld FictionalWorld? @relation(fields: [fictionalWorldId], references: [id])
+  addedBy        User?           @relation(fields: [addedById], references: [id], onDelete: SetNull)
+  fictionalWorld FictionalWorld? @relation(fields: [fictionalWorldId], references: [id], onDelete: SetNull)
 
-  @@index([bookId])
+  @@index([workKey])
   @@index([addedById])
-  @@map("book_locations")
-  @@schema("app")
-}
-
-model Author {
-  id            String   @id @default(cuid())
-  name          String   @unique
-  bio           String?
-  photoUrl      String?
-  birthYear     Int?
-  deathYear     Int?
-  openLibraryId String?  @unique
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  // Relations
-  locations AuthorLocation[]
-
-  @@map("authors")
+  @@map("work_locations")
   @@schema("app")
 }
 
 model AuthorLocation {
   id          String   @id @default(cuid())
-  authorId    String
-  addedById   String
-  name        String // e.g., "Oxford, UK", "Cartagena, Colombia"
+  authorKey   String   @map("author_key") // catalog.authors.ol_key
+  addedById   String?  @map("added_by_id")
+  name        String // e.g., "Oxford, UK"
   type        String // "birthplace", "residence", "death", "worked"
-  description String? // User's note about this location
+  description String?
   lat         Float
   lng         Float
-  yearStart   Int? // When they were at this location
-  yearEnd     Int?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  yearStart   Int?     @map("year_start")
+  yearEnd     Int?     @map("year_end")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
 
-  // Relations
-  author  Author @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  addedBy User   @relation(fields: [addedById], references: [id], onDelete: Cascade)
+  addedBy User? @relation(fields: [addedById], references: [id], onDelete: SetNull)
 
-  @@index([authorId])
+  @@index([authorKey])
   @@index([addedById])
   @@map("author_locations")
   @@schema("app")
@@ -416,5 +393,44 @@ model IngestRun {
 
   @@index([dumpType, startedAt])
   @@map("ingest_runs")
+  @@schema("catalog")
+}
+
+// ---------------------------------------------------------------------------
+// Ingest staging.
+//
+// Modelled here, despite being scratch space, because a table Prisma does not
+// know about reads as drift: every `migrate diff` proposed dropping these.
+// They are UNLOGGED (set in the migration — Prisma cannot express it) and are
+// truncated and reloaded on every ingest.
+// ---------------------------------------------------------------------------
+
+model StageAuthor {
+  olKey        String    @id @map("ol_key")
+  revision     Int?
+  lastModified DateTime? @map("last_modified")
+  data         Json
+
+  @@map("stage_authors")
+  @@schema("catalog")
+}
+
+model StageWork {
+  olKey        String    @id @map("ol_key")
+  revision     Int?
+  lastModified DateTime? @map("last_modified")
+  data         Json
+
+  @@map("stage_works")
+  @@schema("catalog")
+}
+
+model StageEdition {
+  olKey        String    @id @map("ol_key")
+  revision     Int?
+  lastModified DateTime? @map("last_modified")
+  data         Json
+
+  @@map("stage_editions")
   @@schema("catalog")
 }

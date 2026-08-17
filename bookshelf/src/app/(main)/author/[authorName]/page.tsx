@@ -1,143 +1,85 @@
-import Link from "next/link";
-import Image from "next/image";
-import { getAuthorByName, getBooksForAuthor } from "@/server/authors";
+import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import { getCurrentUser } from "@/lib/auth/session";
-import { User, BookOpen, MapPin } from "lucide-react";
+import { findAuthorKeyByName, getAuthorByKey } from "@/server/authors";
+import WorkCard from "@/components/catalog/WorkCard";
 import AuthorLocationsSection from "@/components/authors/AuthorLocationsSection";
 
 interface Props {
   params: Promise<{ authorName: string }>;
 }
 
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { authorName } = await params;
+  return { title: decodeURIComponent(authorName) };
+}
+
+/**
+ * Author page, backed by the catalog.
+ *
+ * The URL still carries a display name rather than an Open Library key —
+ * `/author/Frank%20Herbert` reads better and keeps existing links working —
+ * so the name is resolved to a key here.
+ */
 export default async function AuthorPage({ params }: Props) {
   const { authorName } = await params;
-  const decodedName = decodeURIComponent(authorName);
+  const name = decodeURIComponent(authorName);
 
-  const [author, books, user] = await Promise.all([
-    getAuthorByName(decodedName),
-    getBooksForAuthor(decodedName),
+  const [authorKey, user] = await Promise.all([
+    findAuthorKeyByName(name),
     getCurrentUser(),
   ]);
 
+  if (!authorKey) {
+    notFound();
+  }
+
+  const author = await getAuthorByKey(authorKey);
+  if (!author) {
+    notFound();
+  }
+
+  const lifespan = [author.birthDate, author.deathDate]
+    .filter(Boolean)
+    .join(" – ");
+
   return (
-    <div className="max-w-6xl mx-auto px-4 py-8">
-      {/* Author Header */}
-      <div className="flex flex-col md:flex-row gap-6 mb-8">
-        {/* Photo */}
-        <div className="flex-shrink-0">
-          <div className="w-32 h-32 md:w-40 md:h-40 rounded-full overflow-hidden bg-[var(--border-light)] mx-auto md:mx-0 flex items-center justify-center">
-            {author?.photoUrl ? (
-              <Image
-                src={author.photoUrl}
-                alt={decodedName}
-                width={160}
-                height={160}
-                className="object-cover"
-              />
-            ) : (
-              <User className="w-16 h-16 text-[var(--foreground-secondary)]" />
-            )}
+    <div className="mx-auto max-w-5xl px-4 py-8">
+      <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
+        {author.name}
+      </h1>
+      {lifespan && (
+        <p className="mt-1 text-gray-500 dark:text-gray-400">{lifespan}</p>
+      )}
+      {author.bio && (
+        <p className="mt-4 max-w-prose text-gray-700 dark:text-gray-300">
+          {author.bio}
+        </p>
+      )}
+
+      <section className="mt-8">
+        <h2 className="mb-3 text-xl font-bold text-gray-900 dark:text-gray-100">
+          Books ({author.works.length})
+        </h2>
+        {author.works.length === 0 ? (
+          <p className="text-gray-500 dark:text-gray-400">
+            No works recorded for this author.
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+            {author.works.map((work) => (
+              <WorkCard key={work.olKey} {...work} />
+            ))}
           </div>
-        </div>
+        )}
+      </section>
 
-        {/* Info */}
-        <div className="flex-1 text-center md:text-left">
-          <h1 className="text-3xl md:text-4xl font-bold text-[var(--foreground)] mb-2">
-            {decodedName}
-          </h1>
-
-          {author?.birthYear && (
-            <p className="text-[var(--foreground-secondary)] mb-4">
-              {author.birthYear}
-              {author.deathYear ? ` - ${author.deathYear}` : " - Present"}
-            </p>
-          )}
-
-          {author?.bio && (
-            <p className="text-[var(--foreground-secondary)] max-w-2xl">{author.bio}</p>
-          )}
-
-          <div className="mt-4 flex flex-wrap gap-4 justify-center md:justify-start text-sm text-[var(--foreground-secondary)]">
-            <span className="flex items-center gap-1">
-              <BookOpen className="h-4 w-4" />
-              {books.length} book{books.length !== 1 ? "s" : ""} in library
-            </span>
-            <span className="flex items-center gap-1">
-              <MapPin className="h-4 w-4" />
-              {author?.locations.length || 0} location{(author?.locations.length || 0) !== 1 ? "s" : ""}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Two Column Layout */}
-      <div className="grid md:grid-cols-2 gap-8">
-        {/* Author Locations - Wikipedia style */}
-        <div>
-          <AuthorLocationsSection
-            authorName={decodedName}
-            currentUserId={user?.id}
-          />
-        </div>
-
-        {/* Books by this author */}
-        <div className="bg-[var(--card-bg)] rounded-lg border border-[var(--card-border)] p-6">
-          <h3 className="text-lg font-semibold text-[var(--foreground)] mb-4 flex items-center gap-2">
-            <BookOpen className="h-5 w-5 text-[#D4A017]" />
-            Books in Your Library
-          </h3>
-
-          {books.length > 0 ? (
-            <div className="space-y-3">
-              {books.map((book) => (
-                <Link
-                  key={book.id}
-                  href={`/book/${book.id}`}
-                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-[var(--border-light)] transition-colors"
-                >
-                  <div className="w-12 h-16 flex-shrink-0 rounded overflow-hidden bg-[var(--border-light)]">
-                    {book.coverUrl ? (
-                      <Image
-                        src={book.coverUrl}
-                        alt={book.title}
-                        width={48}
-                        height={64}
-                        className="object-cover w-full h-full"
-                        unoptimized
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-2xl">
-                        📚
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-[var(--foreground)] truncate">
-                      {book.title}
-                    </p>
-                    {book.publishedDate && (
-                      <p className="text-sm text-[var(--foreground-secondary)]">
-                        {book.publishedDate}
-                      </p>
-                    )}
-                  </div>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-[var(--foreground-secondary)]">
-              <BookOpen className="h-8 w-8 mx-auto mb-2 text-[var(--foreground-secondary)]" />
-              <p className="text-sm">No books by this author in your library</p>
-              <Link
-                href="/search"
-                className="text-sm text-[#D4A017] hover:text-[#B8860B] font-medium mt-2 inline-block"
-              >
-                Search for books
-              </Link>
-            </div>
-          )}
-        </div>
-      </div>
+      <section className="mt-10">
+        <AuthorLocationsSection
+          authorName={author.name}
+          currentUserId={user?.id}
+        />
+      </section>
     </div>
   );
 }
