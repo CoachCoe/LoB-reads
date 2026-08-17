@@ -220,6 +220,13 @@ MIT
 
 Contributions are welcome! Please open an issue or submit a pull request.
 
+## Architecture
+
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for the layer boundaries, the
+three-schema layout, and — importantly — which parts are mid-migration. The
+app is partway through replacing `app.books` with an Open Library catalog;
+both exist right now.
+
 ## Deployment
 
 Targets the AWS free tier: EC2 for the app, RDS or self-hosted Postgres, S3 +
