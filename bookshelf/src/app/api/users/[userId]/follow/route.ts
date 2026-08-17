@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { followUser, unfollowUser, isFollowing } from "@/server/users";
+import { errorResponse, unauthorized } from "@/lib/api";
 
 export async function GET(
   request: Request,
@@ -10,7 +11,7 @@ export async function GET(
   const session = await getServerSession(authOptions);
 
   if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return unauthorized();
   }
 
   try {
@@ -18,8 +19,7 @@ export async function GET(
     const following = await isFollowing(session.user.id, userId);
     return NextResponse.json({ isFollowing: following });
   } catch (error) {
-    console.error("Check follow error:", error);
-    return NextResponse.json({ error: "Failed to check follow status" }, { status: 500 });
+    return errorResponse("Check follow error", error);
   }
 }
 
@@ -30,7 +30,7 @@ export async function POST(
   const session = await getServerSession(authOptions);
 
   if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return unauthorized();
   }
 
   try {
@@ -38,9 +38,7 @@ export async function POST(
     await followUser(session.user.id, userId);
     return NextResponse.json({ message: "User followed" }, { status: 201 });
   } catch (error) {
-    console.error("Follow user error:", error);
-    const message = error instanceof Error ? error.message : "Failed to follow user";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return errorResponse("Follow user error", error);
   }
 }
 
@@ -51,7 +49,7 @@ export async function DELETE(
   const session = await getServerSession(authOptions);
 
   if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return unauthorized();
   }
 
   try {
@@ -59,7 +57,6 @@ export async function DELETE(
     await unfollowUser(session.user.id, userId);
     return NextResponse.json({ message: "User unfollowed" });
   } catch (error) {
-    console.error("Unfollow user error:", error);
-    return NextResponse.json({ error: "Failed to unfollow user" }, { status: 400 });
+    return errorResponse("Unfollow user error", error);
   }
 }

@@ -3,6 +3,7 @@ import { put } from "@vercel/blob";
 import { getCurrentUser } from "@/lib/session";
 import { getFictionalWorldById, addMapToWorld } from "@/server/fictional-worlds";
 import { validateImageFile, sanitizeFilename } from "@/lib/file-validation";
+import { checkLimit, LIMITS } from "@/lib/rate-limit";
 
 interface RouteParams {
   params: Promise<{ worldId: string }>;
@@ -11,8 +12,17 @@ interface RouteParams {
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const user = await getCurrentUser();
-    if (!user) {
+    if (!user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    // Uploads write to paid blob storage, so cap them per account.
+    const limit = checkLimit(`upload:map:${user.id}`, LIMITS.upload);
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: "Too many uploads. Please try again later." },
+        { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+      );
     }
 
     const { worldId } = await params;
@@ -59,12 +69,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     });
 
     // Create the map entry in the database
-    const map = await addMapToWorld(
-      worldId,
-      blob.url,
-      title.trim(),
-      description?.trim() || undefined
-    );
+    const map = await addMapToWorld(worldId, user.id, {
+      imageUrl: blob.url,
+      title: title.trim(),
+      description: description?.trim() || null,
+    });
 
     return NextResponse.json({ map });
   } catch (error) {

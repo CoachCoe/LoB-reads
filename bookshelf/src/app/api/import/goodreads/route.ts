@@ -7,16 +7,32 @@ import {
   getShelfDisplayName,
 } from "@/lib/goodreads";
 import { createBook } from "@/server/books";
-import { getUserShelves, addBookToShelf } from "@/server/shelves";
+import { getUserShelfSummaries, addBookToShelf } from "@/server/shelves";
 import { createOrUpdateReview } from "@/server/reviews";
 import { getBookByISBN, normalizeOpenLibraryBook } from "@/lib/openlibrary";
+import { mapWithConcurrency } from "@/lib/concurrency";
+import { errorResponse, unauthorized } from "@/lib/api";
 import prisma from "@/lib/prisma";
+import type { Book } from "@prisma/client";
+
+/** CSV file size ceiling. */
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+/**
+ * Rows processed per request. Beyond this the handler risks exceeding a
+ * serverless execution limit, so we import the first N and tell the user
+ * plainly how many were left out rather than timing out with no explanation.
+ */
+const MAX_ROWS = 2_000;
+
+/** Parallel Open Library lookups. Kept modest to stay a polite API client. */
+const LOOKUP_CONCURRENCY = 5;
 
 export async function POST(request: NextRequest) {
   try {
     const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!user?.id) {
+      return unauthorized();
     }
 
     const userId = user.id;
@@ -27,7 +43,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
-    // Validate file type
     if (!file.name.toLowerCase().endsWith(".csv")) {
       return NextResponse.json(
         { error: "Invalid file type. Please upload a CSV file." },
@@ -35,43 +50,36 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate file size (10MB max for CSV)
-    const maxSize = 10 * 1024 * 1024;
-    if (file.size > maxSize) {
+    if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
         { error: "File too large. Maximum size is 10MB." },
         { status: 400 }
       );
     }
 
-    // Parse CSV content
-    const csvContent = await file.text();
-    let books: GoodreadsBook[];
-
+    let parsed: GoodreadsBook[];
     try {
-      books = parseGoodreadsCSV(csvContent);
+      parsed = parseGoodreadsCSV(await file.text());
     } catch (error) {
       return NextResponse.json(
-        {
-          error:
-            error instanceof Error ? error.message : "Failed to parse CSV",
-        },
+        { error: error instanceof Error ? error.message : "Failed to parse CSV" },
         { status: 400 }
       );
     }
 
-    if (books.length === 0) {
+    if (parsed.length === 0) {
       return NextResponse.json(
         { error: "No valid books found in CSV" },
         { status: 400 }
       );
     }
 
-    // Get user's shelves
-    const userShelves = await getUserShelves(userId);
-    const shelfMap = new Map(userShelves.map((s) => [s.name, s.id]));
+    const books = parsed.slice(0, MAX_ROWS);
+    const notProcessed = parsed.length - books.length;
 
-    // Process each book
+    const shelves = await getUserShelfSummaries(userId);
+    const shelfIdByName = new Map(shelves.map((s) => [s.name, s.id]));
+
     const result: ImportResult = {
       imported: 0,
       skipped: 0,
@@ -79,76 +87,47 @@ export async function POST(request: NextRequest) {
       books: [],
     };
 
-    for (const grBook of books) {
+    // Step 1: resolve every row to a Book record.
+    //
+    // Existing books are found in a single query rather than one per row, and
+    // the Open Library lookups for the remainder run with bounded concurrency
+    // instead of one blocking request at a time.
+    const resolved = await resolveBooks(books, result);
+
+    // Step 2: apply shelf, review and progress. These are local writes, so
+    // they stay sequential — no external calls involved.
+    for (let i = 0; i < books.length; i++) {
+      const grBook = books[i];
+      const book = resolved[i];
+
+      if (!book) continue; // Already recorded as an error in resolveBooks.
+
       try {
-        // Step 1: Find or create book
-        let book = null;
-        const isbn = grBook.isbn13 || grBook.isbn;
-
-        // Check local database first by ISBN
-        if (isbn) {
-          book = await prisma.book.findUnique({
-            where: { isbn },
-          });
-        }
-
-        // If not found locally, try Open Library
-        if (!book && isbn) {
-          try {
-            const olBook = await getBookByISBN(isbn);
-            if (olBook) {
-              const normalized = normalizeOpenLibraryBook(olBook);
-              book = await createBook({
-                ...normalized,
-                // Use Goodreads data if OL doesn't have it
-                title: normalized.title || grBook.title,
-                author: normalized.author || grBook.author,
-              });
-            }
-          } catch {
-            // Open Library lookup failed, continue with Goodreads data only
-          }
-        }
-
-        // If still not found, create with minimal Goodreads data
-        if (!book) {
-          book = await createBook({
-            title: grBook.title,
-            author: grBook.author,
-            isbn: isbn,
-          });
-        }
-
-        // Step 2: Add to appropriate shelf
         if (grBook.exclusiveShelf) {
-          const shelfName = getShelfDisplayName(grBook.exclusiveShelf);
-          const shelfId = shelfMap.get(shelfName);
-
+          const shelfId = shelfIdByName.get(
+            getShelfDisplayName(grBook.exclusiveShelf)
+          );
           if (shelfId) {
             try {
               await addBookToShelf(shelfId, book.id, userId);
             } catch {
-              // Ignore if already on shelf
+              // Already on the shelf; nothing to do.
             }
           }
         }
 
-        // Step 3: Create review if rating exists (1-5)
-        if (grBook.myRating >= 1 && grBook.myRating <= 5) {
+        if (Number.isInteger(grBook.myRating) && grBook.myRating >= 1 && grBook.myRating <= 5) {
           try {
             await createOrUpdateReview(userId, book.id, grBook.myRating);
           } catch {
-            // Ignore review errors
+            // A review failure shouldn't lose the book itself.
           }
         }
 
-        // Step 4: Set reading progress if date read exists
         if (grBook.dateRead && grBook.exclusiveShelf === "read") {
           try {
             await prisma.readingProgress.upsert({
-              where: {
-                userId_bookId: { userId, bookId: book.id },
-              },
+              where: { userId_bookId: { userId, bookId: book.id } },
               create: {
                 userId,
                 bookId: book.id,
@@ -161,7 +140,7 @@ export async function POST(request: NextRequest) {
               },
             });
           } catch {
-            // Ignore progress errors
+            // Progress is a nice-to-have; the book is already imported.
           }
         }
 
@@ -172,25 +151,93 @@ export async function POST(request: NextRequest) {
           status: "imported",
         });
       } catch (error) {
-        result.skipped++;
-        const errorMessage =
-          error instanceof Error ? error.message : "Unknown error";
-        result.errors.push(`${grBook.title}: ${errorMessage}`);
-        result.books.push({
-          title: grBook.title,
-          author: grBook.author,
-          status: "error",
-          reason: errorMessage,
-        });
+        recordError(result, grBook, error);
       }
+    }
+
+    if (notProcessed > 0) {
+      result.errors.push(
+        `Only the first ${MAX_ROWS} rows were imported. ${notProcessed} more were not processed — re-upload the remainder to continue.`
+      );
     }
 
     return NextResponse.json(result);
   } catch (error) {
-    console.error("Goodreads import error:", error);
-    return NextResponse.json(
-      { error: "Failed to import Goodreads library" },
-      { status: 500 }
-    );
+    return errorResponse("Goodreads import error", error);
   }
+}
+
+/**
+ * Map each CSV row to a Book, creating one where needed. Returns an array
+ * positionally aligned with `books`; a null entry means that row failed and
+ * has already been recorded in `result`.
+ */
+async function resolveBooks(
+  books: GoodreadsBook[],
+  result: ImportResult
+): Promise<(Book | null)[]> {
+  const isbnFor = (b: GoodreadsBook) => b.isbn13 || b.isbn;
+
+  const isbns = [...new Set(books.map(isbnFor).filter((v): v is string => !!v))];
+
+  const existing = isbns.length
+    ? await prisma.book.findMany({ where: { isbn: { in: isbns } } })
+    : [];
+  const bookByIsbn = new Map(existing.map((b) => [b.isbn!, b]));
+
+  return mapWithConcurrency(books, LOOKUP_CONCURRENCY, async (grBook) => {
+    try {
+      const isbn = isbnFor(grBook);
+
+      if (isbn) {
+        const known = bookByIsbn.get(isbn);
+        if (known) return known;
+      }
+
+      if (isbn) {
+        try {
+          const olBook = await getBookByISBN(isbn);
+          if (olBook) {
+            const normalized = normalizeOpenLibraryBook(olBook);
+            const created = await createBook({
+              ...normalized,
+              title: normalized.title || grBook.title,
+              author: normalized.author || grBook.author,
+            });
+            bookByIsbn.set(isbn, created);
+            return created;
+          }
+        } catch {
+          // Open Library is best-effort; fall back to the Goodreads columns.
+        }
+      }
+
+      const created = await createBook({
+        title: grBook.title,
+        author: grBook.author,
+        isbn,
+      });
+      if (isbn) bookByIsbn.set(isbn, created);
+      return created;
+    } catch (error) {
+      recordError(result, grBook, error);
+      return null;
+    }
+  });
+}
+
+function recordError(
+  result: ImportResult,
+  grBook: GoodreadsBook,
+  error: unknown
+) {
+  const reason = error instanceof Error ? error.message : "Unknown error";
+  result.skipped++;
+  result.errors.push(`${grBook.title}: ${reason}`);
+  result.books.push({
+    title: grBook.title,
+    author: grBook.author,
+    status: "error",
+    reason,
+  });
 }

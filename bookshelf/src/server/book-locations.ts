@@ -1,16 +1,5 @@
 import prisma from "@/lib/prisma";
-
-function safeParseCoordinates(json: string): { lat: number; lng: number } {
-  try {
-    const parsed = JSON.parse(json);
-    if (typeof parsed.lat === "number" && typeof parsed.lng === "number") {
-      return parsed;
-    }
-    return { lat: 0, lng: 0 };
-  } catch {
-    return { lat: 0, lng: 0 };
-  }
-}
+import { AuthorizationError, NotFoundError } from "@/lib/errors";
 
 export interface BookLocationData {
   id: string;
@@ -28,7 +17,9 @@ export interface BookLocationData {
   createdAt: Date;
 }
 
-export async function getBookLocations(bookId: string): Promise<BookLocationData[]> {
+export async function getBookLocations(
+  bookId: string
+): Promise<BookLocationData[]> {
   const locations = await prisma.bookLocation.findMany({
     where: { bookId },
     include: {
@@ -47,7 +38,11 @@ export async function getBookLocations(bookId: string): Promise<BookLocationData
     name: loc.name,
     type: loc.type,
     description: loc.description,
-    coordinates: loc.coordinates ? safeParseCoordinates(loc.coordinates) : null,
+    // Fictional locations have no real-world position; they belong to a world.
+    coordinates:
+      loc.lat !== null && loc.lng !== null
+        ? { lat: loc.lat, lng: loc.lng }
+        : null,
     isFictional: loc.isFictional,
     fictionalWorldId: loc.fictionalWorldId,
     fictionalWorldName: loc.fictionalWorld?.name ?? null,
@@ -75,7 +70,8 @@ export async function addBookLocation(
       name: data.name,
       type: data.type,
       description: data.description ?? null,
-      coordinates: data.coordinates ? JSON.stringify(data.coordinates) : null,
+      lat: data.coordinates?.lat ?? null,
+      lng: data.coordinates?.lng ?? null,
       isFictional: data.isFictional ?? false,
       fictionalWorldId: data.fictionalWorldId ?? null,
     },
@@ -91,48 +87,22 @@ export async function addBookLocation(
 }
 
 export async function deleteBookLocation(locationId: string, userId: string) {
-  // Only allow deletion by the user who added it
   const location = await prisma.bookLocation.findUnique({
     where: { id: locationId },
     select: { addedById: true },
   });
 
-  if (!location || location.addedById !== userId) {
-    throw new Error("Not authorized to delete this location");
+  if (!location) {
+    throw new NotFoundError("Location not found");
+  }
+
+  if (location.addedById !== userId) {
+    throw new AuthorizationError(
+      "You can only remove locations you contributed"
+    );
   }
 
   return prisma.bookLocation.delete({
     where: { id: locationId },
   });
-}
-
-export async function getAllBookLocationsForMap() {
-  const locations = await prisma.bookLocation.findMany({
-    where: {
-      isFictional: false,
-      coordinates: { not: null },
-    },
-    include: {
-      book: {
-        select: {
-          id: true,
-          title: true,
-          author: true,
-          coverUrl: true,
-        },
-      },
-      fictionalWorld: {
-        select: { name: true },
-      },
-    },
-  });
-
-  return locations.map((loc) => ({
-    id: loc.id,
-    name: loc.name,
-    type: loc.type,
-    coordinates: safeParseCoordinates(loc.coordinates!),
-    book: loc.book,
-    fictionalWorldName: loc.fictionalWorld?.name ?? null,
-  }));
 }

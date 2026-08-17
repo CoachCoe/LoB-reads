@@ -1,0 +1,70 @@
+import { NextResponse } from "next/server";
+import { ZodError, ZodType } from "zod";
+import {
+  AuthorizationError,
+  NotFoundError,
+  ValidationError,
+} from "./errors";
+
+/**
+ * Single place where a thrown error becomes a response.
+ *
+ * Only errors we raised deliberately have their message shown. Anything else
+ * — most importantly Prisma errors, which name constraints and columns — is
+ * logged server-side and answered with a fixed string.
+ */
+export function errorResponse(context: string, error: unknown): NextResponse {
+  if (error instanceof AuthorizationError) {
+    return NextResponse.json({ error: error.message }, { status: 403 });
+  }
+
+  if (error instanceof NotFoundError) {
+    return NextResponse.json({ error: error.message }, { status: 404 });
+  }
+
+  if (error instanceof ValidationError) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+
+  if (error instanceof ZodError) {
+    return NextResponse.json(
+      { error: firstZodMessage(error) },
+      { status: 400 }
+    );
+  }
+
+  console.error(`${context}:`, error);
+  return NextResponse.json(
+    { error: "Something went wrong. Please try again." },
+    { status: 500 }
+  );
+}
+
+/**
+ * Parse a request body against a schema. Throws ZodError, which
+ * `errorResponse` turns into a 400 carrying the first readable message.
+ */
+export async function parseBody<T>(
+  request: Request,
+  schema: ZodType<T>
+): Promise<T> {
+  let raw: unknown;
+  try {
+    raw = await request.json();
+  } catch {
+    throw new ValidationError("Request body must be valid JSON");
+  }
+  return schema.parse(raw);
+}
+
+/** Zod issue paths are arrays; surface something a person can act on. */
+function firstZodMessage(error: ZodError): string {
+  const issue = error.issues[0];
+  if (!issue) return "Invalid request";
+  const path = issue.path.join(".");
+  return path ? `${path}: ${issue.message}` : issue.message;
+}
+
+export function unauthorized(): NextResponse {
+  return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+}

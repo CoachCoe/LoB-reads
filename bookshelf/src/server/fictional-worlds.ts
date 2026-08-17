@@ -5,14 +5,24 @@ export interface FictionalWorldMap {
   imageUrl: string;
   title: string;
   description: string | null;
+  addedById: string;
   createdAt: Date;
 }
+
+/** Shared shape for map reads — `addedById` is what the delete check reads. */
+const mapSelect = {
+  id: true,
+  imageUrl: true,
+  title: true,
+  description: true,
+  addedById: true,
+  createdAt: true,
+} as const;
 
 export interface FictionalWorldWithBooks {
   id: string;
   name: string;
   description: string | null;
-  mapImageUrl: string | null; // DEPRECATED: Use maps instead
   maps: FictionalWorldMap[];
   _count: {
     books: number;
@@ -38,13 +48,7 @@ const fictionalWorldInclude = {
     },
   },
   maps: {
-    select: {
-      id: true,
-      imageUrl: true,
-      title: true,
-      description: true,
-      createdAt: true,
-    },
+    select: mapSelect,
     orderBy: {
       createdAt: "desc" as const,
     },
@@ -84,24 +88,18 @@ export async function createFictionalWorld(
 
 export async function addMapToWorld(
   worldId: string,
-  imageUrl: string,
-  title: string,
-  description?: string
+  userId: string,
+  data: { imageUrl: string; title: string; description?: string | null }
 ): Promise<FictionalWorldMap> {
   return prisma.fictionalWorldMap.create({
     data: {
       fictionalWorldId: worldId,
-      imageUrl,
-      title,
-      description,
+      addedById: userId,
+      imageUrl: data.imageUrl,
+      title: data.title,
+      description: data.description ?? null,
     },
-    select: {
-      id: true,
-      imageUrl: true,
-      title: true,
-      description: true,
-      createdAt: true,
-    },
+    select: mapSelect,
   });
 }
 
@@ -124,43 +122,16 @@ export async function deleteMap(mapId: string): Promise<void> {
 
 export async function updateMap(
   mapId: string,
-  title: string,
-  description?: string
+  userId: string,
+  data: { title: string; description?: string | null }
 ): Promise<FictionalWorldMap> {
   return prisma.fictionalWorldMap.update({
     where: { id: mapId },
     data: {
-      title,
-      description,
+      title: data.title,
+      description: data.description ?? null,
+      updatedById: userId,
     },
-    select: {
-      id: true,
-      imageUrl: true,
-      title: true,
-      description: true,
-      createdAt: true,
-    },
-  });
-}
-
-// DEPRECATED: Keep for backward compatibility during migration
-export async function updateFictionalWorldMapImage(
-  id: string,
-  mapImageUrl: string
-): Promise<FictionalWorldWithBooks | null> {
-  return prisma.fictionalWorld.update({
-    where: { id },
-    data: { mapImageUrl },
-    include: fictionalWorldInclude,
-  });
-}
-
-export async function deleteFictionalWorldMapImage(
-  id: string
-): Promise<FictionalWorldWithBooks | null> {
-  return prisma.fictionalWorld.update({
-    where: { id },
-    data: { mapImageUrl: null },
-    include: fictionalWorldInclude,
+    select: mapSelect,
   });
 }

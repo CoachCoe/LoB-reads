@@ -3,19 +3,12 @@ import type { User, Book, Shelf, ShelfItem, Review, ReadingProgress, Follow } fr
 // Re-export Prisma types
 export type { User, Book, Shelf, ShelfItem, Review, ReadingProgress, Follow };
 
-// User with relations
-export type UserWithRelations = User & {
-  shelves?: ShelfWithBooks[];
-  reviews?: ReviewWithBook[];
-  readingProgress?: ReadingProgressWithBook[];
-  followers?: FollowWithUser[];
-  following?: FollowWithUser[];
-  _count?: {
-    followers: number;
-    following: number;
-    reviews: number;
-  };
-};
+/**
+ * The subset of a user that may be shown to anyone. Prefer this over `User`
+ * in anything that reaches a response — `User` spreads the Prisma row, so it
+ * carries `email` and `passwordHash` by default.
+ */
+export type PublicUser = Pick<User, "id" | "name" | "avatarUrl">;
 
 // Book with relations
 export type BookWithRelations = Book & {
@@ -39,29 +32,14 @@ export type ShelfWithBooks = Shelf & {
   };
 };
 
-// Review with user and book
+// Shelf with its owner's public fields, for public shelf pages
+export type ShelfWithOwner = ShelfWithBooks & {
+  user: PublicUser;
+};
+
+// Review with its author's public fields
 export type ReviewWithUser = Review & {
-  user: Pick<User, "id" | "name" | "avatarUrl">;
-};
-
-export type ReviewWithBook = Review & {
-  book: Book;
-};
-
-export type ReviewWithUserAndBook = Review & {
-  user: Pick<User, "id" | "name" | "avatarUrl">;
-  book: Book;
-};
-
-// Reading progress with book
-export type ReadingProgressWithBook = ReadingProgress & {
-  book: Book;
-};
-
-// Follow with user
-export type FollowWithUser = Follow & {
-  follower: Pick<User, "id" | "name" | "avatarUrl">;
-  following: Pick<User, "id" | "name" | "avatarUrl">;
+  user: PublicUser;
 };
 
 // Open Library API types

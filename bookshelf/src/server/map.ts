@@ -1,17 +1,5 @@
 import prisma from "@/lib/prisma";
 
-function safeParseCoordinates(json: string): { lat: number; lng: number } {
-  try {
-    const parsed = JSON.parse(json);
-    if (typeof parsed.lat === "number" && typeof parsed.lng === "number") {
-      return parsed;
-    }
-    return { lat: 0, lng: 0 };
-  } catch {
-    return { lat: 0, lng: 0 };
-  }
-}
-
 export interface BookLocation {
   id: string;
   title: string;
@@ -55,14 +43,19 @@ export interface AuthorMapLocation {
   addedBy: string;
 }
 
+/** Coordinates live in Float columns; callers want a `{ lat, lng }` pair. */
+function toCoordinates(
+  lat: number | null,
+  lng: number | null
+): { lat: number; lng: number } | null {
+  return lat !== null && lng !== null ? { lat, lng } : null;
+}
+
 // Get legacy book locations (from book table fields)
 export async function getBooksWithLocations(): Promise<BookLocation[]> {
   const books = await prisma.book.findMany({
     where: {
-      OR: [
-        { settingCoordinates: { not: null } },
-        { authorOriginCoordinates: { not: null } },
-      ],
+      OR: [{ settingLat: { not: null } }, { authorOriginLat: { not: null } }],
     },
     select: {
       id: true,
@@ -70,9 +63,11 @@ export async function getBooksWithLocations(): Promise<BookLocation[]> {
       author: true,
       coverUrl: true,
       settingLocation: true,
-      settingCoordinates: true,
+      settingLat: true,
+      settingLng: true,
       authorOrigin: true,
-      authorOriginCoordinates: true,
+      authorOriginLat: true,
+      authorOriginLng: true,
       isFictional: true,
       fictionalWorld: {
         select: {
@@ -88,24 +83,26 @@ export async function getBooksWithLocations(): Promise<BookLocation[]> {
     author: book.author,
     coverUrl: book.coverUrl,
     settingLocation: book.settingLocation,
-    settingCoordinates: book.settingCoordinates
-      ? safeParseCoordinates(book.settingCoordinates)
-      : null,
+    settingCoordinates: toCoordinates(book.settingLat, book.settingLng),
     authorOrigin: book.authorOrigin,
-    authorOriginCoordinates: book.authorOriginCoordinates
-      ? safeParseCoordinates(book.authorOriginCoordinates)
-      : null,
+    authorOriginCoordinates: toCoordinates(
+      book.authorOriginLat,
+      book.authorOriginLng
+    ),
     isFictional: book.isFictional,
     fictionalWorldName: book.fictionalWorld?.name ?? null,
   }));
 }
 
 // Get crowdsourced book locations from BookLocation table
-export async function getCrowdsourcedBookLocations(): Promise<CrowdsourcedLocation[]> {
+export async function getCrowdsourcedBookLocations(): Promise<
+  CrowdsourcedLocation[]
+> {
   const locations = await prisma.bookLocation.findMany({
     where: {
       isFictional: false,
-      coordinates: { not: null },
+      lat: { not: null },
+      lng: { not: null },
     },
     include: {
       book: {
@@ -129,7 +126,8 @@ export async function getCrowdsourcedBookLocations(): Promise<CrowdsourcedLocati
     id: loc.id,
     name: loc.name,
     type: loc.type,
-    coordinates: safeParseCoordinates(loc.coordinates!),
+    // The where clause guarantees both are present.
+    coordinates: { lat: loc.lat!, lng: loc.lng! },
     book: loc.book,
     isFictional: loc.isFictional,
     fictionalWorldName: loc.fictionalWorld?.name ?? null,
@@ -138,7 +136,9 @@ export async function getCrowdsourcedBookLocations(): Promise<CrowdsourcedLocati
 }
 
 // Get crowdsourced author locations from AuthorLocation table
-export async function getCrowdsourcedAuthorLocations(): Promise<AuthorMapLocation[]> {
+export async function getCrowdsourcedAuthorLocations(): Promise<
+  AuthorMapLocation[]
+> {
   const locations = await prisma.authorLocation.findMany({
     include: {
       author: {
@@ -158,7 +158,7 @@ export async function getCrowdsourcedAuthorLocations(): Promise<AuthorMapLocatio
     id: loc.id,
     name: loc.name,
     type: loc.type,
-    coordinates: safeParseCoordinates(loc.coordinates),
+    coordinates: { lat: loc.lat, lng: loc.lng },
     author: loc.author,
     addedBy: loc.addedBy.name,
   }));

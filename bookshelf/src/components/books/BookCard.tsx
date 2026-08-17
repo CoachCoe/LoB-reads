@@ -17,8 +17,8 @@ interface BookCardProps {
 export default function BookCard({ book, showRating = true }: BookCardProps) {
   return (
     <Link href={`/book/${book.id}`} className="group block">
-      <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
-        <div className="aspect-[2/3] relative bg-gray-100">
+      <div className="bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
+        <div className="aspect-[2/3] relative bg-gray-100 dark:bg-gray-800">
           {book.coverUrl ? (
             <Image
               src={book.coverUrl}
@@ -40,14 +40,14 @@ export default function BookCard({ book, showRating = true }: BookCardProps) {
           )}
         </div>
         <div className="p-3">
-          <h3 className="font-medium text-gray-900 line-clamp-1 group-hover:text-amber-600 transition-colors">
+          <h3 className="font-medium text-gray-900 dark:text-gray-100 line-clamp-1 group-hover:text-amber-600 transition-colors">
             {book.title}
           </h3>
-          <p className="text-sm text-gray-500 line-clamp-1">{book.author}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-1">{book.author}</p>
           {showRating && book.averageRating !== undefined && (
             <div className="mt-2 flex items-center gap-1">
               <StarRating rating={Math.round(book.averageRating)} size="sm" />
-              <span className="text-xs text-gray-500">
+              <span className="text-xs text-gray-500 dark:text-gray-400">
                 ({book._count?.reviews || 0})
               </span>
             </div>

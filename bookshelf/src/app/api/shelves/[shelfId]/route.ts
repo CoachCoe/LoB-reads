@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getShelfById, deleteShelf } from "@/server/shelves";
+import { errorResponse, unauthorized } from "@/lib/api";
 
+// Shelves are public — this is intentionally unauthenticated. The query layer
+// returns only the owner's public fields alongside the books.
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ shelfId: string }> }
@@ -17,8 +20,7 @@ export async function GET(
 
     return NextResponse.json(shelf);
   } catch (error) {
-    console.error("Get shelf error:", error);
-    return NextResponse.json({ error: "Failed to fetch shelf" }, { status: 500 });
+    return errorResponse("Get shelf error", error);
   }
 }
 
@@ -29,7 +31,7 @@ export async function DELETE(
   const session = await getServerSession(authOptions);
 
   if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return unauthorized();
   }
 
   try {
@@ -37,8 +39,6 @@ export async function DELETE(
     await deleteShelf(shelfId, session.user.id);
     return NextResponse.json({ message: "Shelf deleted" });
   } catch (error) {
-    console.error("Delete shelf error:", error);
-    const message = error instanceof Error ? error.message : "Failed to delete shelf";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return errorResponse("Delete shelf error", error);
   }
 }

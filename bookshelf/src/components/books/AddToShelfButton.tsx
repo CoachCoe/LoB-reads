@@ -130,7 +130,7 @@ export default function AddToShelfButton({ bookId, onAdd }: AddToShelfButtonProp
             className="fixed inset-0 z-10"
             onClick={() => setIsOpen(false)}
           />
-          <div className="absolute top-full left-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
+          <div className="absolute top-full left-0 mt-2 w-56 bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-20">
             {shelves.map((shelf) => {
               const isOnShelf = currentShelves.some((s) => s.shelfId === shelf.id);
               const isLoadingThis = loadingShelf === shelf.id;
@@ -144,11 +144,11 @@ export default function AddToShelfButton({ bookId, onAdd }: AddToShelfButtonProp
                       : handleAddToShelf(shelf.id)
                   }
                   disabled={isLoadingThis}
-                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 flex items-center justify-between"
+                  className="w-full px-4 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center justify-between"
                 >
                   <span>{shelf.name}</span>
                   {isLoadingThis ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-gray-400" />
+                    <Loader2 className="h-4 w-4 animate-spin text-gray-400 dark:text-gray-500" />
                   ) : isOnShelf ? (
                     <Check className="h-4 w-4 text-green-500" />
                   ) : null}

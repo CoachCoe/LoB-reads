@@ -9,11 +9,12 @@ datasource db {
 
 model User {
   id           String   @id @default(cuid())
-  email        String   @unique
+  email        String   @unique // Always stored lowercased and trimmed
   passwordHash String
   name         String
   avatarUrl    String?
   bio          String?
+  isModerator  Boolean  @default(false) // May remove any community-contributed map
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -25,6 +26,8 @@ model User {
   following         Follow[]          @relation("Follower")
   bookLocations     BookLocation[]    // Locations this user contributed
   authorLocations   AuthorLocation[]  // Author locations this user contributed
+  mapsUploaded      FictionalWorldMap[] @relation("MapUploader")
+  mapsEdited        FictionalWorldMap[] @relation("MapEditor")
 
   @@map("users")
 }
@@ -43,11 +46,13 @@ model Book {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  // V3 map feature fields (nullable for future use)
-  settingLocation          String?
-  settingCoordinates       String? // JSON string: {"lat": number, "lng": number}
-  authorOrigin             String?
-  authorOriginCoordinates  String? // JSON string: {"lat": number, "lng": number}
+  // Legacy per-book map fields, predating the crowdsourced BookLocation table
+  settingLocation      String?
+  settingLat           Float?
+  settingLng           Float?
+  authorOrigin         String?
+  authorOriginLat      Float?
+  authorOriginLng      Float?
 
   // Fictional location support
   isFictional        Boolean          @default(false)
@@ -70,7 +75,6 @@ model FictionalWorld {
   id          String   @id @default(cuid())
   name        String   @unique // e.g., "Middle-earth", "Arrakis", "Macondo"
   description String?
-  mapImageUrl String?  // DEPRECATED: Use maps relation instead
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -82,19 +86,26 @@ model FictionalWorld {
   @@map("fictional_worlds")
 }
 
+// Community-editable: any signed-in user may edit title/description.
+// Deletion is limited to the uploader or a moderator.
 model FictionalWorldMap {
   id               String   @id @default(cuid())
   fictionalWorldId String
   imageUrl         String
   title            String
   description      String?
+  addedById        String   // Who uploaded it
+  updatedById      String?  // Who last edited it, if anyone
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
   // Relations
   fictionalWorld FictionalWorld @relation(fields: [fictionalWorldId], references: [id], onDelete: Cascade)
+  addedBy        User           @relation("MapUploader", fields: [addedById], references: [id], onDelete: Cascade)
+  updatedBy      User?          @relation("MapEditor", fields: [updatedById], references: [id], onDelete: SetNull)
 
   @@index([fictionalWorldId])
+  @@index([addedById])
   @@map("fictional_world_maps")
 }
 
@@ -186,7 +197,8 @@ model BookLocation {
   name        String   // e.g., "Arrakis", "Paris", "Shire"
   type        String   // "setting", "mentioned", "inspired_by"
   description String?  // User's note about this location
-  coordinates String?  // JSON: {"lat": number, "lng": number} - null for fictional
+  lat         Float?   // Null for fictional locations, which are pinned to a world
+  lng         Float?
   isFictional Boolean  @default(false)
   fictionalWorldId String?
   createdAt   DateTime @default(now())
@@ -226,7 +238,8 @@ model AuthorLocation {
   name        String   // e.g., "Oxford, UK", "Cartagena, Colombia"
   type        String   // "birthplace", "residence", "death", "worked"
   description String?  // User's note about this location
-  coordinates String   // JSON: {"lat": number, "lng": number}
+  lat         Float
+  lng         Float
   yearStart   Int?     // When they were at this location
   yearEnd     Int?
   createdAt   DateTime @default(now())

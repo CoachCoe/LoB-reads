@@ -1,16 +1,5 @@
 import prisma from "@/lib/prisma";
-
-function safeParseCoordinates(json: string): { lat: number; lng: number } {
-  try {
-    const parsed = JSON.parse(json);
-    if (typeof parsed.lat === "number" && typeof parsed.lng === "number") {
-      return parsed;
-    }
-    return { lat: 0, lng: 0 };
-  } catch {
-    return { lat: 0, lng: 0 };
-  }
-}
+import { AuthorizationError, NotFoundError } from "@/lib/errors";
 
 export interface AuthorWithLocations {
   id: string;
@@ -38,76 +27,53 @@ export interface AuthorLocationData {
   createdAt: Date;
 }
 
-export async function getOrCreateAuthor(name: string): Promise<AuthorWithLocations> {
-  let author = await prisma.author.findUnique({
-    where: { name },
-    include: {
-      locations: {
-        include: {
-          addedBy: {
-            select: { id: true, name: true },
-          },
-        },
-        orderBy: { createdAt: "desc" },
-      },
-    },
-  });
+const locationInclude = {
+  addedBy: {
+    select: { id: true, name: true },
+  },
+} as const;
 
-  if (!author) {
-    author = await prisma.author.create({
-      data: { name },
-      include: {
-        locations: {
-          include: {
-            addedBy: {
-              select: { id: true, name: true },
-            },
-          },
-          orderBy: { createdAt: "desc" },
-        },
-      },
-    });
-  }
+type AuthorLocationRow = {
+  id: string;
+  name: string;
+  type: string;
+  description: string | null;
+  lat: number;
+  lng: number;
+  yearStart: number | null;
+  yearEnd: number | null;
+  addedBy: { id: string; name: string };
+  createdAt: Date;
+};
 
+/**
+ * Coordinates are stored as two Float columns and presented to callers as a
+ * `{ lat, lng }` pair, which is what the map components already expect.
+ */
+function toLocationData(loc: AuthorLocationRow): AuthorLocationData {
   return {
-    id: author.id,
-    name: author.name,
-    bio: author.bio,
-    photoUrl: author.photoUrl,
-    birthYear: author.birthYear,
-    deathYear: author.deathYear,
-    openLibraryId: author.openLibraryId,
-    locations: author.locations.map((loc) => ({
-      id: loc.id,
-      name: loc.name,
-      type: loc.type,
-      description: loc.description,
-      coordinates: safeParseCoordinates(loc.coordinates),
-      yearStart: loc.yearStart,
-      yearEnd: loc.yearEnd,
-      addedBy: loc.addedBy,
-      createdAt: loc.createdAt,
-    })),
+    id: loc.id,
+    name: loc.name,
+    type: loc.type,
+    description: loc.description,
+    coordinates: { lat: loc.lat, lng: loc.lng },
+    yearStart: loc.yearStart,
+    yearEnd: loc.yearEnd,
+    addedBy: loc.addedBy,
+    createdAt: loc.createdAt,
   };
 }
 
-export async function getAuthorByName(name: string): Promise<AuthorWithLocations | null> {
-  const author = await prisma.author.findUnique({
-    where: { name },
-    include: {
-      locations: {
-        include: {
-          addedBy: {
-            select: { id: true, name: true },
-          },
-        },
-        orderBy: { createdAt: "desc" },
-      },
-    },
-  });
-
-  if (!author) return null;
-
+function toAuthorWithLocations(author: {
+  id: string;
+  name: string;
+  bio: string | null;
+  photoUrl: string | null;
+  birthYear: number | null;
+  deathYear: number | null;
+  openLibraryId: string | null;
+  locations: AuthorLocationRow[];
+}): AuthorWithLocations {
   return {
     id: author.id,
     name: author.name,
@@ -116,18 +82,42 @@ export async function getAuthorByName(name: string): Promise<AuthorWithLocations
     birthYear: author.birthYear,
     deathYear: author.deathYear,
     openLibraryId: author.openLibraryId,
-    locations: author.locations.map((loc) => ({
-      id: loc.id,
-      name: loc.name,
-      type: loc.type,
-      description: loc.description,
-      coordinates: safeParseCoordinates(loc.coordinates),
-      yearStart: loc.yearStart,
-      yearEnd: loc.yearEnd,
-      addedBy: loc.addedBy,
-      createdAt: loc.createdAt,
-    })),
+    locations: author.locations.map(toLocationData),
   };
+}
+
+/** Authors are created lazily the first time someone contributes a location. */
+async function getOrCreateAuthor(name: string): Promise<AuthorWithLocations> {
+  const existing = await prisma.author.findUnique({
+    where: { name },
+    include: {
+      locations: { include: locationInclude, orderBy: { createdAt: "desc" } },
+    },
+  });
+
+  if (existing) return toAuthorWithLocations(existing);
+
+  const created = await prisma.author.create({
+    data: { name },
+    include: {
+      locations: { include: locationInclude, orderBy: { createdAt: "desc" } },
+    },
+  });
+
+  return toAuthorWithLocations(created);
+}
+
+export async function getAuthorByName(
+  name: string
+): Promise<AuthorWithLocations | null> {
+  const author = await prisma.author.findUnique({
+    where: { name },
+    include: {
+      locations: { include: locationInclude, orderBy: { createdAt: "desc" } },
+    },
+  });
+
+  return author ? toAuthorWithLocations(author) : null;
 }
 
 export async function addAuthorLocation(
@@ -142,7 +132,6 @@ export async function addAuthorLocation(
     yearEnd?: number;
   }
 ) {
-  // Get or create the author first
   const author = await getOrCreateAuthor(authorName);
 
   return prisma.authorLocation.create({
@@ -152,15 +141,12 @@ export async function addAuthorLocation(
       name: data.name,
       type: data.type,
       description: data.description ?? null,
-      coordinates: JSON.stringify(data.coordinates),
+      lat: data.coordinates.lat,
+      lng: data.coordinates.lng,
       yearStart: data.yearStart ?? null,
       yearEnd: data.yearEnd ?? null,
     },
-    include: {
-      addedBy: {
-        select: { id: true, name: true },
-      },
-    },
+    include: locationInclude,
   });
 }
 
@@ -170,35 +156,19 @@ export async function deleteAuthorLocation(locationId: string, userId: string) {
     select: { addedById: true },
   });
 
-  if (!location || location.addedById !== userId) {
-    throw new Error("Not authorized to delete this location");
+  if (!location) {
+    throw new NotFoundError("Location not found");
+  }
+
+  if (location.addedById !== userId) {
+    throw new AuthorizationError(
+      "You can only remove locations you contributed"
+    );
   }
 
   return prisma.authorLocation.delete({
     where: { id: locationId },
   });
-}
-
-export async function getAllAuthorLocationsForMap() {
-  const locations = await prisma.authorLocation.findMany({
-    include: {
-      author: {
-        select: {
-          id: true,
-          name: true,
-          photoUrl: true,
-        },
-      },
-    },
-  });
-
-  return locations.map((loc) => ({
-    id: loc.id,
-    name: loc.name,
-    type: loc.type,
-    coordinates: safeParseCoordinates(loc.coordinates),
-    author: loc.author,
-  }));
 }
 
 export async function getBooksForAuthor(authorName: string) {

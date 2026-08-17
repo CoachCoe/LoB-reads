@@ -12,6 +12,8 @@ interface MapClientProps {
   crowdsourcedBookLocations: CrowdsourcedLocation[];
   crowdsourcedAuthorLocations: AuthorMapLocation[];
   initialFictionalWorlds: FictionalWorldWithBooks[];
+  currentUserId: string | null;
+  canModerate: boolean;
 }
 
 export default function MapClient({
@@ -19,6 +21,8 @@ export default function MapClient({
   crowdsourcedBookLocations,
   crowdsourcedAuthorLocations,
   initialFictionalWorlds,
+  currentUserId,
+  canModerate,
 }: MapClientProps) {
   const [showSettings, setShowSettings] = useState(true);
   const [showAuthors, setShowAuthors] = useState(true);
@@ -48,11 +52,11 @@ export default function MapClient({
   return (
     <div className="h-[calc(100vh-4rem)] flex flex-col">
       {/* Controls */}
-      <div className="bg-white border-b border-gray-200 px-4 py-3">
+      <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 py-3">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-xl font-bold text-gray-900">Explore Books</h1>
-            <p className="text-sm text-gray-500">
+            <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100">Explore Books</h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
               Discover where stories take place and where authors call home
             </p>
           </div>
@@ -64,7 +68,7 @@ export default function MapClient({
               className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
                 showSettings
                   ? "bg-[#3B82F6] text-white"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
               }`}
             >
               {showSettings ? (
@@ -82,7 +86,7 @@ export default function MapClient({
               className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
                 showAuthors
                   ? "bg-[#22C55E] text-white"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                  : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
               }`}
             >
               {showAuthors ? (
@@ -101,7 +105,7 @@ export default function MapClient({
                 className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
                   showCrowdsourced
                     ? "bg-amber-500 text-white"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
                 }`}
               >
                 {showCrowdsourced ? (
@@ -129,13 +133,13 @@ export default function MapClient({
       {/* Map Container */}
       <div className="flex-1 relative">
         {books.length === 0 ? (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-50 dark:bg-gray-800">
             <div className="text-center px-4">
               <MapPin className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-              <h2 className="text-xl font-semibold text-gray-700 mb-2">
+              <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">
                 No locations yet
               </h2>
-              <p className="text-gray-500 max-w-md">
+              <p className="text-gray-500 dark:text-gray-400 max-w-md">
                 Books with location data will appear on the map. Start adding
                 books to your library to see where stories take place!
               </p>
@@ -157,29 +161,29 @@ export default function MapClient({
             showCrowdsourced={showCrowdsourced}
           />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center bg-gray-50">
-            <div className="animate-pulse text-gray-500">Loading map...</div>
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-50 dark:bg-gray-800">
+            <div className="animate-pulse text-gray-500 dark:text-gray-400">Loading map...</div>
           </div>
         )}
       </div>
 
       {/* Legend */}
       {(books.length > 0 || crowdsourcedCount > 0) && (
-        <div className="absolute bottom-4 left-4 bg-white rounded-lg shadow-lg border border-gray-200 p-3 z-[1000]">
-          <p className="text-xs font-semibold text-gray-700 mb-2">Legend</p>
+        <div className="absolute bottom-4 left-4 bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 p-3 z-[1000]">
+          <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">Legend</p>
           <div className="space-y-1.5">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-[#3B82F6]" />
-              <span className="text-xs text-gray-600">Book Setting</span>
+              <span className="text-xs text-gray-600 dark:text-gray-400">Book Setting</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 rounded-full bg-[#22C55E]" />
-              <span className="text-xs text-gray-600">Author Origin</span>
+              <span className="text-xs text-gray-600 dark:text-gray-400">Author Origin</span>
             </div>
             {crowdsourcedCount > 0 && (
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-amber-500" />
-                <span className="text-xs text-gray-600">Community Added</span>
+                <span className="text-xs text-gray-600 dark:text-gray-400">Community Added</span>
               </div>
             )}
           </div>
@@ -192,6 +196,8 @@ export default function MapClient({
         isOpen={showFictionalPanel}
         onClose={() => setShowFictionalPanel(false)}
         onWorldsUpdate={setFictionalWorlds}
+        currentUserId={currentUserId}
+        canModerate={canModerate}
       />
     </div>
   );

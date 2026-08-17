@@ -1,36 +1,33 @@
 import prisma from "@/lib/prisma";
-import { UserWithRelations } from "@/types";
+import { ValidationError } from "@/lib/errors";
 
-export async function getUserById(userId: string): Promise<UserWithRelations | null> {
-  return prisma.user.findUnique({
-    where: { id: userId },
-    include: {
-      _count: {
-        select: {
-          followers: true,
-          following: true,
-          reviews: true,
-        },
-      },
-    },
-  });
-}
-
-export async function getUserByEmail(email: string) {
-  return prisma.user.findUnique({
-    where: { email },
-  });
-}
+/**
+ * Fields that may be shown to anyone. Profiles and shelves are public, so this
+ * is the boundary that keeps `email` and `passwordHash` out of responses —
+ * previously the whole row was returned and the route stripped only the hash,
+ * which meant every user's email address was readable via the API.
+ */
+const publicUserSelect = {
+  id: true,
+  name: true,
+  avatarUrl: true,
+  bio: true,
+  createdAt: true,
+} as const;
 
 export async function getUserProfile(userId: string) {
-  const user = await prisma.user.findUnique({
+  return prisma.user.findUnique({
     where: { id: userId },
-    include: {
+    select: {
+      ...publicUserSelect,
       shelves: {
         where: { isDefault: true },
-        include: {
+        select: {
+          id: true,
+          name: true,
+          isDefault: true,
           shelfItems: {
-            include: { book: true },
+            select: { id: true, book: true },
             orderBy: { addedAt: "desc" },
             take: 5,
           },
@@ -38,7 +35,16 @@ export async function getUserProfile(userId: string) {
         },
       },
       reviews: {
-        include: { book: true },
+        select: {
+          id: true,
+          rating: true,
+          content: true,
+          createdAt: true,
+          updatedAt: true,
+          userId: true,
+          bookId: true,
+          book: true,
+        },
         orderBy: { createdAt: "desc" },
         take: 5,
       },
@@ -51,8 +57,15 @@ export async function getUserProfile(userId: string) {
       },
     },
   });
+}
 
-  return user;
+/** Used to clean up the previous blob when an avatar is replaced. */
+export async function getUserAvatarUrl(userId: string): Promise<string | null> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { avatarUrl: true },
+  });
+  return user?.avatarUrl ?? null;
 }
 
 export async function updateUserProfile(
@@ -66,12 +79,13 @@ export async function updateUserProfile(
   return prisma.user.update({
     where: { id: userId },
     data,
+    select: publicUserSelect,
   });
 }
 
 export async function followUser(followerId: string, followingId: string) {
   if (followerId === followingId) {
-    throw new Error("Cannot follow yourself");
+    throw new ValidationError("Cannot follow yourself");
   }
 
   return prisma.follow.create({
@@ -97,30 +111,6 @@ export async function isFollowing(followerId: string, followingId: string) {
     },
   });
   return !!follow;
-}
-
-export async function getUserFollowers(userId: string) {
-  return prisma.follow.findMany({
-    where: { followingId: userId },
-    include: {
-      follower: {
-        select: { id: true, name: true, avatarUrl: true, bio: true },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-}
-
-export async function getUserFollowing(userId: string) {
-  return prisma.follow.findMany({
-    where: { followerId: userId },
-    include: {
-      following: {
-        select: { id: true, name: true, avatarUrl: true, bio: true },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-  });
 }
 
 export async function getActivityFeed(userId: string, limit = 20) {

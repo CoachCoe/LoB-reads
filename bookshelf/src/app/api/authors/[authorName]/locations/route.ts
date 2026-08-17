@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAuthorByName, addAuthorLocation, deleteAuthorLocation } from "@/server/authors";
+import {
+  getAuthorByName,
+  addAuthorLocation,
+  deleteAuthorLocation,
+} from "@/server/authors";
 import { getCurrentUser } from "@/lib/session";
+import { errorResponse, parseBody, unauthorized } from "@/lib/api";
+import { createAuthorLocationSchema } from "@/lib/schemas";
+import { ValidationError } from "@/lib/errors";
 
 export async function GET(
   request: NextRequest,
@@ -8,20 +15,12 @@ export async function GET(
 ) {
   try {
     const { authorName } = await params;
-    const decodedName = decodeURIComponent(authorName);
-    const author = await getAuthorByName(decodedName);
+    const author = await getAuthorByName(decodeURIComponent(authorName));
 
-    if (!author) {
-      return NextResponse.json({ locations: [] });
-    }
-
-    return NextResponse.json({ locations: author.locations });
+    // An author with no page yet simply has no locations.
+    return NextResponse.json({ locations: author?.locations ?? [] });
   } catch (error) {
-    console.error("Error fetching author locations:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch locations" },
-      { status: 500 }
-    );
+    return errorResponse("Error fetching author locations", error);
   }
 }
 
@@ -32,59 +31,36 @@ export async function POST(
   try {
     const user = await getCurrentUser();
     if (!user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return unauthorized();
     }
 
     const { authorName } = await params;
-    const decodedName = decodeURIComponent(authorName);
-    const body = await request.json();
-    const { name, type, description, coordinates, yearStart, yearEnd } = body;
-
-    if (!name || typeof name !== "string") {
-      return NextResponse.json(
-        { error: "Location name is required" },
-        { status: 400 }
-      );
-    }
-
-    if (!type || typeof type !== "string") {
-      return NextResponse.json(
-        { error: "Location type is required" },
-        { status: 400 }
-      );
-    }
+    const data = await parseBody(request, createAuthorLocationSchema);
 
     if (
-      !coordinates ||
-      typeof coordinates.lat !== "number" ||
-      typeof coordinates.lng !== "number" ||
-      coordinates.lat < -90 ||
-      coordinates.lat > 90 ||
-      coordinates.lng < -180 ||
-      coordinates.lng > 180
+      data.yearStart != null &&
+      data.yearEnd != null &&
+      data.yearEnd < data.yearStart
     ) {
-      return NextResponse.json(
-        { error: "Valid coordinates are required (lat: -90 to 90, lng: -180 to 180)" },
-        { status: 400 }
-      );
+      throw new ValidationError("End year cannot be before start year");
     }
 
-    const location = await addAuthorLocation(decodedName, user.id, {
-      name,
-      type,
-      description,
-      coordinates,
-      yearStart,
-      yearEnd,
-    });
+    const location = await addAuthorLocation(
+      decodeURIComponent(authorName),
+      user.id,
+      {
+        name: data.name,
+        type: data.type,
+        description: data.description ?? undefined,
+        coordinates: data.coordinates,
+        yearStart: data.yearStart ?? undefined,
+        yearEnd: data.yearEnd ?? undefined,
+      }
+    );
 
     return NextResponse.json(location, { status: 201 });
   } catch (error) {
-    console.error("Error adding author location:", error);
-    return NextResponse.json(
-      { error: "Failed to add location" },
-      { status: 500 }
-    );
+    return errorResponse("Error adding author location", error);
   }
 }
 
@@ -92,24 +68,19 @@ export async function DELETE(request: NextRequest) {
   try {
     const user = await getCurrentUser();
     if (!user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return unauthorized();
     }
 
     const { searchParams } = new URL(request.url);
     const locationId = searchParams.get("locationId");
 
     if (!locationId) {
-      return NextResponse.json(
-        { error: "Location ID is required" },
-        { status: 400 }
-      );
+      throw new ValidationError("Location ID is required");
     }
 
     await deleteAuthorLocation(locationId, user.id);
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("Error deleting author location:", error);
-    const message = error instanceof Error ? error.message : "Failed to delete location";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return errorResponse("Error deleting author location", error);
   }
 }

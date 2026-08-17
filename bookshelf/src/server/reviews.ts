@@ -1,29 +1,9 @@
 import prisma from "@/lib/prisma";
-
-export async function getBookReviews(bookId: string) {
-  return prisma.review.findMany({
-    where: { bookId },
-    include: {
-      user: {
-        select: { id: true, name: true, avatarUrl: true },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-}
-
-export async function getUserReviews(userId: string) {
-  return prisma.review.findMany({
-    where: { userId },
-    include: {
-      book: true,
-      user: {
-        select: { id: true, name: true, avatarUrl: true },
-      },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-}
+import {
+  AuthorizationError,
+  NotFoundError,
+  ValidationError,
+} from "@/lib/errors";
 
 export async function getUserReviewForBook(userId: string, bookId: string) {
   return prisma.review.findUnique({
@@ -40,7 +20,7 @@ export async function createOrUpdateReview(
   content?: string | null
 ) {
   if (rating < 1 || rating > 5) {
-    throw new Error("Rating must be between 1 and 5");
+    throw new ValidationError("Rating must be between 1 and 5");
   }
 
   return prisma.review.upsert({
@@ -68,10 +48,15 @@ export async function createOrUpdateReview(
 export async function deleteReview(reviewId: string, userId: string) {
   const review = await prisma.review.findUnique({
     where: { id: reviewId },
+    select: { userId: true },
   });
 
-  if (!review || review.userId !== userId) {
-    throw new Error("Review not found");
+  if (!review) {
+    throw new NotFoundError("Review not found");
+  }
+
+  if (review.userId !== userId) {
+    throw new AuthorizationError("You can only delete your own review");
   }
 
   return prisma.review.delete({

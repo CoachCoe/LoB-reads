@@ -5,36 +5,22 @@ import { X, Upload, BookOpen, Map, Sparkles, Trash2, Plus, Edit2, ChevronLeft } 
 import Image from "next/image";
 import Link from "next/link";
 
-interface FictionalWorldMap {
-  id: string;
-  imageUrl: string;
-  title: string;
-  description: string | null;
-  createdAt: Date;
-}
-
-interface FictionalWorld {
-  id: string;
-  name: string;
-  description: string | null;
-  mapImageUrl: string | null; // deprecated
-  maps: FictionalWorldMap[];
-  _count: {
-    books: number;
-  };
-  books: {
-    id: string;
-    title: string;
-    author: string;
-    coverUrl: string | null;
-  }[];
-}
+import type {
+  FictionalWorldMap,
+  FictionalWorldWithBooks as FictionalWorld,
+} from "@/server/fictional-worlds";
+import { useToast } from "@/components/providers/ToastProvider";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 interface FictionalWorldsPanelProps {
   worlds: FictionalWorld[];
   isOpen: boolean;
   onClose: () => void;
   onWorldsUpdate: (worlds: FictionalWorld[]) => void;
+  /** Null when signed out. Uploading and editing require a session. */
+  currentUserId: string | null;
+  /** Moderators may remove any map, not only their own uploads. */
+  canModerate: boolean;
 }
 
 export default function FictionalWorldsPanel({
@@ -42,6 +28,8 @@ export default function FictionalWorldsPanel({
   isOpen,
   onClose,
   onWorldsUpdate,
+  currentUserId,
+  canModerate,
 }: FictionalWorldsPanelProps) {
   const [selectedWorld, setSelectedWorld] = useState<FictionalWorld | null>(null);
   const [viewingMap, setViewingMap] = useState<FictionalWorldMap | null>(null);
@@ -50,6 +38,8 @@ export default function FictionalWorldsPanel({
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [mapPendingDelete, setMapPendingDelete] = useState<FictionalWorldMap | null>(null);
+  const { showToast } = useToast();
 
   // Form state
   const [uploadTitle, setUploadTitle] = useState("");
@@ -97,20 +87,20 @@ export default function FictionalWorldsPanel({
         onWorldsUpdate(updatedWorlds);
         setSelectedWorld({ ...selectedWorld, maps: [newMap, ...selectedWorld.maps] });
         resetUploadForm();
+        showToast("Map uploaded");
       } else {
         const error = await response.json();
-        alert(error.error || "Failed to upload image");
+        showToast(error.error || "Failed to upload image", "error");
       }
     } catch (error) {
       console.error("Upload error:", error);
-      alert("Failed to upload image");
+      showToast("Failed to upload image", "error");
     } finally {
       setIsUploading(false);
     }
   };
 
   const handleDeleteMap = async (mapId: string) => {
-    if (!confirm("Are you sure you want to delete this map?")) return;
     if (!selectedWorld) return;
 
     setIsDeleting(mapId);
@@ -129,15 +119,17 @@ export default function FictionalWorldsPanel({
         if (viewingMap?.id === mapId) {
           setViewingMap(null);
         }
+        showToast("Map deleted");
       } else {
         const error = await response.json();
-        alert(error.error || "Failed to delete map");
+        showToast(error.error || "Failed to delete map", "error");
       }
     } catch (error) {
       console.error("Delete error:", error);
-      alert("Failed to delete map");
+      showToast("Failed to delete map", "error");
     } finally {
       setIsDeleting(null);
+      setMapPendingDelete(null);
     }
   };
 
@@ -171,13 +163,14 @@ export default function FictionalWorldsPanel({
           setViewingMap(updatedMap);
         }
         setEditingMap(null);
+        showToast("Map updated");
       } else {
         const error = await response.json();
-        alert(error.error || "Failed to update map");
+        showToast(error.error || "Failed to update map", "error");
       }
     } catch (error) {
       console.error("Update error:", error);
-      alert("Failed to update map");
+      showToast("Failed to update map", "error");
     } finally {
       setIsSaving(false);
     }
@@ -186,10 +179,8 @@ export default function FictionalWorldsPanel({
   if (!isOpen) return null;
 
   // Get thumbnail for world list (first map image)
-  const getWorldThumbnail = (world: FictionalWorld) => {
-    if (world.maps.length > 0) return world.maps[0].imageUrl;
-    return world.mapImageUrl; // fallback to deprecated field
-  };
+  const getWorldThumbnail = (world: FictionalWorld) =>
+    world.maps[0]?.imageUrl ?? null;
 
   return (
     <div className="absolute inset-0 z-[1001] flex">
@@ -207,6 +198,7 @@ export default function FictionalWorldsPanel({
                   setSelectedWorld(null);
                   resetUploadForm();
                 }}
+                aria-label="Back to all fictional worlds"
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors mr-1"
               >
                 <ChevronLeft className="h-5 w-5 text-gray-500" />
@@ -219,6 +211,7 @@ export default function FictionalWorldsPanel({
           </div>
           <button
             onClick={onClose}
+            aria-label="Close fictional worlds panel"
             className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
           >
             <X className="h-5 w-5 text-gray-500" />
@@ -472,24 +465,35 @@ export default function FictionalWorldsPanel({
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setEditingMap(viewingMap)}
-                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-                  title="Edit"
-                >
-                  <Edit2 className="h-4 w-4 text-gray-500" />
-                </button>
-                <button
-                  onClick={() => handleDeleteMap(viewingMap.id)}
-                  disabled={isDeleting === viewingMap.id}
-                  className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                  title="Delete"
-                >
-                  <Trash2 className="h-4 w-4 text-red-500" />
-                </button>
+                {/* Maps are community-editable, so any signed-in user may
+                    correct the details. */}
+                {currentUserId && (
+                  <button
+                    onClick={() => setEditingMap(viewingMap)}
+                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                    title="Edit"
+                    aria-label={`Edit details for ${viewingMap.title}`}
+                  >
+                    <Edit2 className="h-4 w-4 text-gray-500" />
+                  </button>
+                )}
+                {/* Deletion is destructive, so it matches the API rule:
+                    uploader or moderator only. */}
+                {(canModerate || viewingMap.addedById === currentUserId) && (
+                  <button
+                    onClick={() => setMapPendingDelete(viewingMap)}
+                    disabled={isDeleting === viewingMap.id}
+                    className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                    title="Delete"
+                    aria-label={`Delete map ${viewingMap.title}`}
+                  >
+                    <Trash2 className="h-4 w-4 text-red-500" />
+                  </button>
+                )}
                 <button
                   onClick={() => setViewingMap(null)}
                   className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                  aria-label="Close map viewer"
                 >
                   <X className="h-5 w-5 text-gray-500" />
                 </button>
@@ -562,6 +566,23 @@ export default function FictionalWorldsPanel({
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={mapPendingDelete !== null}
+        title="Delete this map?"
+        message={
+          mapPendingDelete
+            ? `"${mapPendingDelete.title}" will be removed for everyone. This cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete map"
+        destructive
+        busy={isDeleting === mapPendingDelete?.id}
+        onConfirm={() => {
+          if (mapPendingDelete) handleDeleteMap(mapPendingDelete.id);
+        }}
+        onCancel={() => setMapPendingDelete(null)}
+      />
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { getCoverUrl, getISBNCoverUrl, normalizeOpenLibraryBook } from "@/lib/openlibrary";
+import { getCoverUrl, normalizeOpenLibraryBook } from "@/lib/openlibrary";
 
 describe("OpenLibrary utility functions", () => {
   describe("getCoverUrl", () => {
@@ -18,20 +18,6 @@ describe("OpenLibrary utility functions", () => {
       );
       expect(getCoverUrl(12345, "L")).toBe(
         "https://covers.openlibrary.org/b/id/12345-L.jpg"
-      );
-    });
-  });
-
-  describe("getISBNCoverUrl", () => {
-    it("returns correct URL with default size (M)", () => {
-      expect(getISBNCoverUrl("978-0-123456-47-2")).toBe(
-        "https://covers.openlibrary.org/b/isbn/978-0-123456-47-2-M.jpg"
-      );
-    });
-
-    it("returns correct URL with specified size", () => {
-      expect(getISBNCoverUrl("978-0-123456-47-2", "L")).toBe(
-        "https://covers.openlibrary.org/b/isbn/978-0-123456-47-2-L.jpg"
       );
     });
   });

@@ -28,6 +28,8 @@ export default async function MapPage() {
       crowdsourcedBookLocations={crowdsourcedBooks}
       crowdsourcedAuthorLocations={crowdsourcedAuthors}
       initialFictionalWorlds={fictionalWorlds}
+      currentUserId={user.id}
+      canModerate={user.isModerator}
     />
   );
 }

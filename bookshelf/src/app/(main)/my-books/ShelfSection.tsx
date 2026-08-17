@@ -100,6 +100,7 @@ export default function ShelfSection({ shelf }: ShelfSectionProps) {
                 disabled={removingBook === item.bookId}
                 className="absolute top-2 right-2 p-1.5 bg-[var(--card-bg)] rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/10"
                 title="Remove from shelf"
+                aria-label={`Remove ${item.book.title} from this shelf`}
               >
                 <X className="h-4 w-4 text-[var(--foreground-secondary)] hover:text-red-500" />
               </button>

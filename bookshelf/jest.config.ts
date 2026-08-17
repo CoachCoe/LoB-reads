@@ -9,6 +9,13 @@ const createJestConfig = nextJest({
 const config: Config = {
   coverageProvider: "v8",
   testEnvironment: "jsdom",
+  // Without this, --coverage only measures files the tests happen to import,
+  // which reports a flattering number for an almost-uncovered codebase.
+  collectCoverageFrom: [
+    "src/**/*.{ts,tsx}",
+    "!src/types/**",
+    "!src/**/*.d.ts",
+  ],
   setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/src/$1",

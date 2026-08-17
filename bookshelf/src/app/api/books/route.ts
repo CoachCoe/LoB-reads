@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { createBook, searchLocalBooks } from "@/server/books";
 import { searchBooks, normalizeOpenLibraryBook } from "@/lib/openlibrary";
+import { errorResponse, parseBody, unauthorized } from "@/lib/api";
+import { createBookSchema } from "@/lib/schemas";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -33,8 +35,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(results);
   } catch (error) {
-    console.error("Book search error:", error);
-    return NextResponse.json({ error: "Search failed" }, { status: 500 });
+    return errorResponse("Book search error", error);
   }
 }
 
@@ -42,35 +43,14 @@ export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
 
   if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return unauthorized();
   }
 
   try {
-    const body = await request.json();
-    const { title, author, isbn, description, coverUrl, pageCount, publishedDate, genres, openLibraryId } = body;
-
-    if (!title || !author) {
-      return NextResponse.json(
-        { error: "Title and author are required" },
-        { status: 400 }
-      );
-    }
-
-    const book = await createBook({
-      title,
-      author,
-      isbn,
-      description,
-      coverUrl,
-      pageCount,
-      publishedDate,
-      genres,
-      openLibraryId,
-    });
-
+    const data = await parseBody(request, createBookSchema);
+    const book = await createBook(data);
     return NextResponse.json(book, { status: 201 });
   } catch (error) {
-    console.error("Create book error:", error);
-    return NextResponse.json({ error: "Failed to create book" }, { status: 500 });
+    return errorResponse("Create book error", error);
   }
 }

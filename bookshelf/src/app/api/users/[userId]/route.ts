@@ -9,16 +9,15 @@ export async function GET(
 ) {
   try {
     const { userId } = await params;
+    // getUserProfile selects public fields only — email and passwordHash
+    // never leave the query layer, so there is nothing to strip here.
     const user = await getUserProfile(userId);
 
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Don't expose password hash - destructure to omit it from response
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { passwordHash, ...safeUser } = user;
-    return NextResponse.json(safeUser);
+    return NextResponse.json(user);
   } catch (error) {
     console.error("Get user error:", error);
     return NextResponse.json({ error: "Failed to fetch user" }, { status: 500 });
@@ -46,10 +45,7 @@ export async function PATCH(
 
     const user = await updateUserProfile(userId, { name, bio, avatarUrl });
 
-    // Don't expose password hash - destructure to omit it from response
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { passwordHash, ...safeUser } = user;
-    return NextResponse.json(safeUser);
+    return NextResponse.json(user);
   } catch (error) {
     console.error("Update user error:", error);
     return NextResponse.json({ error: "Failed to update user" }, { status: 500 });

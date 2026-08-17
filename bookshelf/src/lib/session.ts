@@ -6,10 +6,3 @@ export async function getCurrentUser() {
   return session?.user;
 }
 
-export async function requireAuth() {
-  const user = await getCurrentUser();
-  if (!user) {
-    throw new Error("Unauthorized");
-  }
-  return user;
-}

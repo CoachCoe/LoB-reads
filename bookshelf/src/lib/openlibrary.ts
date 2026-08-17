@@ -47,33 +47,9 @@ export async function getBookByISBN(isbn: string): Promise<OpenLibraryBook | nul
   };
 }
 
-export async function getWorkDetails(workKey: string) {
-  // workKey format: /works/OL12345W
-  const response = await fetch(`${BASE_URL}${workKey}.json`);
-
-  if (!response.ok) {
-    throw new Error("Failed to fetch work details");
-  }
-
-  const data = await response.json();
-
-  return {
-    title: data.title,
-    description: typeof data.description === "string"
-      ? data.description
-      : data.description?.value || null,
-    covers: data.covers || [],
-    subjects: data.subjects || [],
-  };
-}
-
 export function getCoverUrl(coverId: number | undefined, size: "S" | "M" | "L" = "M"): string | null {
   if (!coverId) return null;
   return `https://covers.openlibrary.org/b/id/${coverId}-${size}.jpg`;
-}
-
-export function getISBNCoverUrl(isbn: string, size: "S" | "M" | "L" = "M"): string {
-  return `https://covers.openlibrary.org/b/isbn/${isbn}-${size}.jpg`;
 }
 
 // Convert Open Library book to our format

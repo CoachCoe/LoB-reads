@@ -79,43 +79,85 @@ export function getShelfDisplayName(
   }
 }
 
-// Parse a single CSV line handling quoted fields
-function parseCSVLine(line: string): string[] {
-  const result: string[] = [];
-  let current = "";
+/**
+ * Split CSV text into records of fields.
+ *
+ * This walks the whole document as one character stream rather than splitting
+ * on newlines first. Goodreads exports include a "My Review" column, and a
+ * multi-paragraph review contains literal newlines inside its quoted field —
+ * splitting on "\n" first tore those records in half and shifted every column
+ * after the review, so the affected book silently lost its shelf and read date.
+ */
+function parseCSV(content: string): string[][] {
+  const records: string[][] = [];
+  let record: string[] = [];
+  let field = "";
   let inQuotes = false;
 
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
+  // Strip a UTF-8 BOM, which would otherwise become part of the first header.
+  const text = content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
+
+  const pushField = () => {
+    record.push(field);
+    field = "";
+  };
+
+  const pushRecord = () => {
+    pushField();
+    // Ignore blank lines, including the trailing newline at end of file.
+    if (record.some((value) => value.trim() !== "")) {
+      records.push(record);
+    }
+    record = [];
+  };
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+
+    if (inQuotes) {
+      if (char === '"') {
+        if (text[i + 1] === '"') {
+          field += '"'; // Escaped quote
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += char;
+      }
+      continue;
+    }
 
     if (char === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        // Escaped quote
-        current += '"';
-        i++;
-      } else {
-        inQuotes = !inQuotes;
-      }
-    } else if (char === "," && !inQuotes) {
-      result.push(current);
-      current = "";
+      inQuotes = true;
+    } else if (char === ",") {
+      pushField();
+    } else if (char === "\n") {
+      pushRecord();
+    } else if (char === "\r") {
+      // Handle CRLF; a lone CR is treated as a line break too.
+      if (text[i + 1] === "\n") i++;
+      pushRecord();
     } else {
-      current += char;
+      field += char;
     }
   }
 
-  result.push(current);
-  return result;
+  // Final record, when the file does not end with a newline.
+  if (field !== "" || record.length > 0) {
+    pushRecord();
+  }
+
+  return records;
 }
 
 export function parseGoodreadsCSV(csvContent: string): GoodreadsBook[] {
-  const lines = csvContent.split("\n");
-  if (lines.length < 2) return [];
+  const records = parseCSV(csvContent);
+  if (records.length < 2) return [];
 
   // Parse header row to find column indices
-  const headers = parseCSVLine(lines[0]);
   const columnIndex: Record<string, number> = {};
-  headers.forEach((header, index) => {
+  records[0].forEach((header, index) => {
     columnIndex[header.trim()] = index;
   });
 
@@ -129,11 +171,8 @@ export function parseGoodreadsCSV(csvContent: string): GoodreadsBook[] {
 
   const books: GoodreadsBook[] = [];
 
-  for (let i = 1; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (!line) continue;
-
-    const values = parseCSVLine(line);
+  for (let i = 1; i < records.length; i++) {
+    const values = records[i];
 
     const title = values[columnIndex["Title"]]?.trim();
     const author = values[columnIndex["Author"]]?.trim();

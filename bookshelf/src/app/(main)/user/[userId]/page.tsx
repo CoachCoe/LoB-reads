@@ -41,27 +41,27 @@ export default async function UserProfilePage({ params }: Props) {
           size="xl"
         />
         <div className="flex-1 text-center sm:text-left">
-          <h1 className="text-2xl font-bold text-gray-900">{user.name}</h1>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{user.name}</h1>
           {user.bio && (
-            <p className="text-gray-600 mt-2">{user.bio}</p>
+            <p className="text-gray-600 dark:text-gray-400 mt-2">{user.bio}</p>
           )}
 
           {/* Stats */}
           <div className="flex items-center justify-center sm:justify-start gap-6 mt-4 text-sm">
             <div className="flex items-center gap-1">
-              <BookOpen className="h-4 w-4 text-gray-400" />
+              <BookOpen className="h-4 w-4 text-gray-400 dark:text-gray-500" />
               <span className="font-medium">{booksRead}</span>
-              <span className="text-gray-500">books read</span>
+              <span className="text-gray-500 dark:text-gray-400">books read</span>
             </div>
             <div className="flex items-center gap-1">
-              <Star className="h-4 w-4 text-gray-400" />
+              <Star className="h-4 w-4 text-gray-400 dark:text-gray-500" />
               <span className="font-medium">{user._count?.reviews || 0}</span>
-              <span className="text-gray-500">reviews</span>
+              <span className="text-gray-500 dark:text-gray-400">reviews</span>
             </div>
             <div className="flex items-center gap-1">
-              <Users className="h-4 w-4 text-gray-400" />
+              <Users className="h-4 w-4 text-gray-400 dark:text-gray-500" />
               <span className="font-medium">{user._count?.followers || 0}</span>
-              <span className="text-gray-500">followers</span>
+              <span className="text-gray-500 dark:text-gray-400">followers</span>
             </div>
           </div>
 
@@ -70,7 +70,7 @@ export default async function UserProfilePage({ params }: Props) {
             {isOwnProfile ? (
               <Link
                 href="/settings"
-                className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
+                className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
               >
                 Edit Profile
               </Link>
@@ -83,13 +83,13 @@ export default async function UserProfilePage({ params }: Props) {
 
       {/* Shelves preview */}
       <section className="mb-8">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Bookshelves</h2>
+        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4">Bookshelves</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {user.shelves.map((shelf) => (
             <Card key={shelf.id}>
               <CardContent>
-                <h3 className="font-medium text-gray-900">{shelf.name}</h3>
-                <p className="text-sm text-gray-500">
+                <h3 className="font-medium text-gray-900 dark:text-gray-100">{shelf.name}</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
                   {shelf._count?.shelfItems || 0} books
                 </p>
                 {shelf.shelfItems.length > 0 && (
@@ -118,7 +118,7 @@ export default async function UserProfilePage({ params }: Props) {
       {/* Recent reviews */}
       {user.reviews.length > 0 && (
         <section>
-          <h2 className="text-xl font-bold text-gray-900 mb-4">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4">
             Recent Reviews
           </h2>
           <div className="space-y-4">

@@ -1,13 +1,5 @@
 import prisma from "@/lib/prisma";
-
-export async function getReadingProgress(userId: string, bookId: string) {
-  return prisma.readingProgress.findUnique({
-    where: {
-      userId_bookId: { userId, bookId },
-    },
-    include: { book: true },
-  });
-}
+import { NotFoundError } from "@/lib/errors";
 
 export async function getUserCurrentlyReading(userId: string) {
   return prisma.readingProgress.findMany({
@@ -30,7 +22,7 @@ export async function updateReadingProgress(
   });
 
   if (!book) {
-    throw new Error("Book not found");
+    throw new NotFoundError("Book not found");
   }
 
   // If current page equals or exceeds page count, mark as finished
@@ -79,7 +71,7 @@ export async function finishReading(userId: string, bookId: string) {
   });
 
   if (!book) {
-    throw new Error("Book not found");
+    throw new NotFoundError("Book not found");
   }
 
   const progress = await prisma.readingProgress.upsert({

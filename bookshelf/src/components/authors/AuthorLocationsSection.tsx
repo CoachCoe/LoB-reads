@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { useCrowdsourcedLocations } from "@/components/locations/useCrowdsourcedLocations";
 import { MapPin, Plus, X, Globe, Trash2, Home, Briefcase, Heart } from "lucide-react";
 import { AuthorLocationData } from "@/server/authors";
 
@@ -8,6 +10,10 @@ interface AuthorLocationsSectionProps {
   authorName: string;
   currentUserId?: string;
 }
+
+/** This endpoint wraps the list; the book endpoint returns a bare array. */
+const extractLocations = (payload: unknown) =>
+  (payload as { locations?: AuthorLocationData[] }).locations ?? [];
 
 const LOCATION_TYPES = [
   { value: "birthplace", label: "Birthplace", icon: Heart, color: "text-pink-500" },
@@ -20,10 +26,20 @@ export default function AuthorLocationsSection({
   authorName,
   currentUserId,
 }: AuthorLocationsSectionProps) {
-  const [locations, setLocations] = useState<AuthorLocationData[]>([]);
-  const [loading, setLoading] = useState(true);
+  const {
+    locations,
+    loading,
+    submitting,
+    pendingDelete,
+    setPendingDelete,
+    addLocation,
+    removeLocation,
+  } = useCrowdsourcedLocations<AuthorLocationData>({
+    basePath: `/api/authors/${encodeURIComponent(authorName)}/locations`,
+    extractList: extractLocations,
+  });
+
   const [showAddForm, setShowAddForm] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
 
   // Form state
   const [name, setName] = useState("");
@@ -34,73 +50,22 @@ export default function AuthorLocationsSection({
   const [yearStart, setYearStart] = useState("");
   const [yearEnd, setYearEnd] = useState("");
 
-  const fetchLocations = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/authors/${encodeURIComponent(authorName)}/locations`);
-      if (res.ok) {
-        const data = await res.json();
-        setLocations(data.locations || []);
-      }
-    } catch (error) {
-      console.error("Failed to fetch locations:", error);
-    } finally {
-      setLoading(false);
-    }
-  }, [authorName]);
-
-  useEffect(() => {
-    fetchLocations();
-  }, [fetchLocations]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !lat || !lng || submitting) return;
+    if (!name.trim() || !lat || !lng) return;
 
-    setSubmitting(true);
-    try {
-      const body: Record<string, unknown> = {
-        name: name.trim(),
-        type,
-        description: description.trim() || undefined,
-        coordinates: {
-          lat: parseFloat(lat),
-          lng: parseFloat(lng),
-        },
-      };
+    const body: Record<string, unknown> = {
+      name: name.trim(),
+      type,
+      description: description.trim() || undefined,
+      coordinates: { lat: parseFloat(lat), lng: parseFloat(lng) },
+    };
 
-      if (yearStart) body.yearStart = parseInt(yearStart);
-      if (yearEnd) body.yearEnd = parseInt(yearEnd);
+    if (yearStart) body.yearStart = parseInt(yearStart);
+    if (yearEnd) body.yearEnd = parseInt(yearEnd);
 
-      const res = await fetch(`/api/authors/${encodeURIComponent(authorName)}/locations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      if (res.ok) {
-        resetForm();
-        fetchLocations();
-      }
-    } catch (error) {
-      console.error("Failed to add location:", error);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleDelete = async (locationId: string) => {
-    if (!confirm("Remove this location?")) return;
-
-    try {
-      const res = await fetch(
-        `/api/authors/${encodeURIComponent(authorName)}/locations?locationId=${locationId}`,
-        { method: "DELETE" }
-      );
-      if (res.ok) {
-        setLocations(locations.filter((l) => l.id !== locationId));
-      }
-    } catch (error) {
-      console.error("Failed to delete location:", error);
+    if (await addLocation(body)) {
+      resetForm();
     }
   };
 
@@ -149,6 +114,7 @@ export default function AuthorLocationsSection({
             <button
               type="button"
               onClick={resetForm}
+              aria-label="Cancel adding a location"
               className="text-[var(--foreground-secondary)] hover:text-[var(--foreground)]"
             >
               <X className="h-5 w-5" />
@@ -314,9 +280,10 @@ export default function AuthorLocationsSection({
                 </div>
                 {currentUserId === location.addedBy.id && (
                   <button
-                    onClick={() => handleDelete(location.id)}
+                    onClick={() => setPendingDelete(location)}
                     className="text-[var(--foreground-secondary)] hover:text-red-500 p-1"
                     title="Remove location"
+                    aria-label={`Remove location ${location.name}`}
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -339,6 +306,22 @@ export default function AuthorLocationsSection({
           )}
         </div>
       )}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Remove this location?"
+        message={
+          pendingDelete
+            ? `"${pendingDelete.name}" will be removed from this page.`
+            : ""
+        }
+        confirmLabel="Remove"
+        destructive
+        onConfirm={() => {
+          if (pendingDelete) removeLocation(pendingDelete.id);
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 }

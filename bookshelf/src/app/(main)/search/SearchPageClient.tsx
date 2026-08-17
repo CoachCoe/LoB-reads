@@ -121,16 +121,16 @@ export default function SearchPageClient({
       {/* Search form */}
       <form onSubmit={handleSubmit} className="mb-8">
         <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 dark:text-gray-500" />
           <input
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search for books by title, author, or ISBN..."
-            className="w-full pl-12 pr-4 py-3 text-lg border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
+            className="w-full pl-12 pr-4 py-3 text-lg border border-gray-300 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500"
           />
           {isSearching && (
-            <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 animate-spin" />
+            <Loader2 className="absolute right-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400 dark:text-gray-500 animate-spin" />
           )}
         </div>
       </form>
@@ -146,7 +146,7 @@ export default function SearchPageClient({
                 className={`px-3 py-1 rounded-full text-sm transition-colors ${
                   selectedGenre === genre
                     ? "bg-amber-600 text-white"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700"
                 }`}
               >
                 {genre}
@@ -158,13 +158,13 @@ export default function SearchPageClient({
 
       {/* Tabs */}
       {query && (
-        <div className="flex gap-4 mb-6 border-b border-gray-200">
+        <div className="flex gap-4 mb-6 border-b border-gray-200 dark:border-gray-700">
           <button
             onClick={() => setActiveTab("local")}
             className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors ${
               activeTab === "local"
                 ? "border-amber-600 text-amber-600"
-                : "border-transparent text-gray-500 hover:text-gray-700"
+                : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700"
             }`}
           >
             In Library ({localBooks.length})
@@ -174,7 +174,7 @@ export default function SearchPageClient({
             className={`pb-3 px-1 text-sm font-medium border-b-2 transition-colors ${
               activeTab === "openlibrary"
                 ? "border-amber-600 text-amber-600"
-                : "border-transparent text-gray-500 hover:text-gray-700"
+                : "border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700"
             }`}
           >
             Open Library ({openLibraryBooks.length})
@@ -204,7 +204,7 @@ export default function SearchPageClient({
             />
           ))}
           {openLibraryBooks.length === 0 && query && (
-            <div className="col-span-full text-center py-12 text-gray-500">
+            <div className="col-span-full text-center py-12 text-gray-500 dark:text-gray-400">
               No results from Open Library
             </div>
           )}
@@ -226,7 +226,7 @@ function OpenLibraryBookCard({
   isLoggedIn: boolean;
 }) {
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4">
+    <div className="bg-white dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
       <div className="flex gap-4">
         {book.coverUrl ? (
           <Image
@@ -243,12 +243,12 @@ function OpenLibraryBookCard({
           </div>
         )}
         <div className="flex-1 min-w-0">
-          <h3 className="font-medium text-gray-900 line-clamp-2">
+          <h3 className="font-medium text-gray-900 dark:text-gray-100 line-clamp-2">
             {book.title}
           </h3>
-          <p className="text-sm text-gray-500 truncate">{book.author}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 truncate">{book.author}</p>
           {book.publishedDate && (
-            <p className="text-xs text-gray-400">{book.publishedDate}</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500">{book.publishedDate}</p>
           )}
           {book.genres.length > 0 && (
             <div className="flex flex-wrap gap-1 mt-2">

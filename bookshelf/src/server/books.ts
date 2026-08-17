@@ -1,35 +1,40 @@
 import prisma from "@/lib/prisma";
 import { BookWithRelations } from "@/types";
+import { getAverageRating } from "./reviews";
+
+/** A popular book can accumulate thousands of reviews; show the newest page. */
+export const BOOK_REVIEWS_PAGE_SIZE = 20;
 
 export async function getBookById(bookId: string): Promise<BookWithRelations | null> {
-  const book = await prisma.book.findUnique({
-    where: { id: bookId },
-    include: {
-      reviews: {
-        include: {
-          user: {
-            select: { id: true, name: true, avatarUrl: true },
+  // The average comes from an aggregate rather than from summing every review
+  // in JavaScript, so the page no longer loads the entire review table for a
+  // popular book just to display one number.
+  const [book, rating] = await Promise.all([
+    prisma.book.findUnique({
+      where: { id: bookId },
+      include: {
+        reviews: {
+          include: {
+            user: {
+              select: { id: true, name: true, avatarUrl: true },
+            },
           },
+          orderBy: { createdAt: "desc" },
+          take: BOOK_REVIEWS_PAGE_SIZE,
         },
-        orderBy: { createdAt: "desc" },
+        _count: {
+          select: { reviews: true, shelfItems: true },
+        },
       },
-      _count: {
-        select: { reviews: true, shelfItems: true },
-      },
-    },
-  });
+    }),
+    getAverageRating(bookId),
+  ]);
 
   if (!book) return null;
 
-  // Calculate average rating
-  const avgRating =
-    book.reviews.length > 0
-      ? book.reviews.reduce((sum, r) => sum + r.rating, 0) / book.reviews.length
-      : 0;
-
   return {
     ...book,
-    averageRating: Math.round(avgRating * 10) / 10,
+    averageRating: Math.round(rating.average * 10) / 10,
   };
 }
 
@@ -41,20 +46,6 @@ export async function searchLocalBooks(query: string, limit = 20) {
         { author: { contains: query, mode: "insensitive" } },
         { isbn: { contains: query, mode: "insensitive" } },
       ],
-    },
-    include: {
-      _count: {
-        select: { reviews: true, shelfItems: true },
-      },
-    },
-    take: limit,
-  });
-}
-
-export async function getBooksByGenre(genre: string, limit = 20) {
-  return prisma.book.findMany({
-    where: {
-      genres: { has: genre },
     },
     include: {
       _count: {
@@ -95,17 +86,20 @@ export async function getPopularBooks(limit = 10) {
   return popularBookIds.map((p) => books.find((b) => b.id === p.bookId)!).filter(Boolean);
 }
 
-export async function getAllGenres() {
-  const books = await prisma.book.findMany({
-    select: { genres: true },
-  });
+/**
+ * Genres are a String[] column, so there is no way to select distinct values
+ * through the Prisma query API — unnesting in SQL keeps the work in the
+ * database instead of reading every book row into memory on each search-page
+ * render, which is what this used to do.
+ */
+export async function getAllGenres(): Promise<string[]> {
+  const rows = await prisma.$queryRaw<{ genre: string }[]>`
+    SELECT DISTINCT unnest(genres) AS genre
+    FROM books
+    ORDER BY genre ASC
+  `;
 
-  const genreSet = new Set<string>();
-  books.forEach((book) => {
-    book.genres.forEach((genre) => genreSet.add(genre));
-  });
-
-  return Array.from(genreSet).sort();
+  return rows.map((row) => row.genre);
 }
 
 export async function createBook(data: {

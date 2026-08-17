@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronLeft, ChevronRight, Share2, BookOpen, Star, Clock, Trophy, Heart } from "lucide-react";
 import { WrappedStats } from "@/server/wrapped";
 import Button from "@/components/ui/Button";
+import { useToast } from "@/components/providers/ToastProvider";
 
 interface WrappedExperienceProps {
   stats: WrappedStats;
@@ -28,6 +29,7 @@ const GRADIENTS = [
 
 export default function WrappedExperience({ stats, userName }: WrappedExperienceProps) {
   const [currentSlide, setCurrentSlide] = useState(0);
+  const { showToast } = useToast();
 
   const slides = [
     // Intro slide
@@ -281,7 +283,7 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
       }
     } else {
       await navigator.clipboard.writeText(shareText);
-      alert("Copied to clipboard!");
+      showToast("Copied to clipboard");
     }
   };
 
@@ -295,7 +297,7 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
             className="h-1 flex-1 rounded-full bg-white/30 overflow-hidden"
           >
             <div
-              className={`h-full bg-white transition-all duration-300 ${
+              className={`h-full bg-white dark:bg-gray-900 transition-all duration-300 ${
                 index < currentSlide
                   ? "w-full"
                   : index === currentSlide
@@ -321,6 +323,7 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
         <button
           onClick={prevSlide}
           disabled={currentSlide === 0}
+          aria-label="Previous slide"
           className="p-2 rounded-full bg-white/20 disabled:opacity-30 hover:bg-white/30 transition-colors"
         >
           <ChevronLeft className="h-6 w-6" />
@@ -331,7 +334,7 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
             <Button
               onClick={handleShare}
               variant="secondary"
-              className="flex items-center gap-2 bg-white text-gray-900 hover:bg-gray-100"
+              className="flex items-center gap-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800"
             >
               <Share2 className="h-4 w-4" />
               Share
@@ -342,6 +345,7 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
         <button
           onClick={nextSlide}
           disabled={currentSlide === slides.length - 1}
+          aria-label="Next slide"
           className="p-2 rounded-full bg-white/20 disabled:opacity-30 hover:bg-white/30 transition-colors"
         >
           <ChevronRight className="h-6 w-6" />

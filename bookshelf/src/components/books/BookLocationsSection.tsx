@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { useCrowdsourcedLocations } from "@/components/locations/useCrowdsourcedLocations";
 import { MapPin, Plus, X, Sparkles, Globe, Trash2 } from "lucide-react";
 import { BookLocationData } from "@/server/book-locations";
 import { FictionalWorldWithBooks } from "@/server/fictional-worlds";
@@ -10,6 +12,9 @@ interface BookLocationsSectionProps {
   currentUserId?: string;
 }
 
+/** The endpoint returns a bare array; the author endpoint wraps it. */
+const extractLocations = (payload: unknown) => payload as BookLocationData[];
+
 const LOCATION_TYPES = [
   { value: "setting", label: "Primary Setting", description: "Where the main story takes place" },
   { value: "mentioned", label: "Mentioned Location", description: "A place referenced in the book" },
@@ -17,11 +22,21 @@ const LOCATION_TYPES = [
 ];
 
 export default function BookLocationsSection({ bookId, currentUserId }: BookLocationsSectionProps) {
-  const [locations, setLocations] = useState<BookLocationData[]>([]);
+  const {
+    locations,
+    loading,
+    submitting,
+    pendingDelete,
+    setPendingDelete,
+    addLocation,
+    removeLocation,
+  } = useCrowdsourcedLocations<BookLocationData>({
+    basePath: `/api/books/${bookId}/locations`,
+    extractList: extractLocations,
+  });
+
   const [fictionalWorlds, setFictionalWorlds] = useState<FictionalWorldWithBooks[]>([]);
-  const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
 
   // Form state
   const [name, setName] = useState("");
@@ -32,88 +47,46 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
 
-  const fetchLocations = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/books/${bookId}/locations`);
-      if (res.ok) {
-        const data = await res.json();
-        setLocations(data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch locations:", error);
-    } finally {
-      setLoading(false);
-    }
-  }, [bookId]);
-
-  const fetchFictionalWorlds = useCallback(async () => {
-    try {
-      const res = await fetch("/api/fictional-worlds");
-      if (res.ok) {
-        const data = await res.json();
-        setFictionalWorlds(data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch fictional worlds:", error);
-    }
-  }, []);
-
+  // Loaded once for the "fictional world" picker. The cancelled flag stops a
+  // late response from setting state after the component has unmounted.
   useEffect(() => {
-    fetchLocations();
-    fetchFictionalWorlds();
-  }, [fetchLocations, fetchFictionalWorlds]);
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const res = await fetch("/api/fictional-worlds");
+        if (res.ok && !cancelled) {
+          setFictionalWorlds(await res.json());
+        }
+      } catch (error) {
+        console.error("Failed to fetch fictional worlds:", error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || submitting) return;
+    if (!name.trim()) return;
 
-    setSubmitting(true);
-    try {
-      const body: Record<string, unknown> = {
-        name: name.trim(),
-        type,
-        description: description.trim() || undefined,
-        isFictional,
-      };
+    const body: Record<string, unknown> = {
+      name: name.trim(),
+      type,
+      description: description.trim() || undefined,
+      isFictional,
+    };
 
-      if (isFictional && fictionalWorldId) {
-        body.fictionalWorldId = fictionalWorldId;
-      } else if (!isFictional && lat && lng) {
-        body.coordinates = {
-          lat: parseFloat(lat),
-          lng: parseFloat(lng),
-        };
-      }
-
-      const res = await fetch(`/api/books/${bookId}/locations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      if (res.ok) {
-        resetForm();
-        fetchLocations();
-      }
-    } catch (error) {
-      console.error("Failed to add location:", error);
-    } finally {
-      setSubmitting(false);
+    if (isFictional && fictionalWorldId) {
+      body.fictionalWorldId = fictionalWorldId;
+    } else if (!isFictional && lat && lng) {
+      body.coordinates = { lat: parseFloat(lat), lng: parseFloat(lng) };
     }
-  };
 
-  const handleDelete = async (locationId: string) => {
-    if (!confirm("Remove this location?")) return;
-
-    try {
-      const res = await fetch(`/api/books/${bookId}/locations?locationId=${locationId}`, {
-        method: "DELETE",
-      });
-      if (res.ok) {
-        setLocations(locations.filter((l) => l.id !== locationId));
-      }
-    } catch (error) {
-      console.error("Failed to delete location:", error);
+    if (await addLocation(body)) {
+      resetForm();
     }
   };
 
@@ -160,6 +133,7 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
             <button
               type="button"
               onClick={resetForm}
+              aria-label="Cancel adding a location"
               className="text-[var(--foreground-secondary)] hover:text-[var(--foreground)]"
             >
               <X className="h-5 w-5" />
@@ -333,9 +307,10 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
               </div>
               {currentUserId === location.addedBy.id && (
                 <button
-                  onClick={() => handleDelete(location.id)}
+                  onClick={() => setPendingDelete(location)}
                   className="text-[var(--foreground-secondary)] hover:text-red-500 p-1"
                   title="Remove location"
+                  aria-label={`Remove location ${location.name}`}
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
@@ -357,6 +332,22 @@ export default function BookLocationsSection({ bookId, currentUserId }: BookLoca
           )}
         </div>
       )}
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="Remove this location?"
+        message={
+          pendingDelete
+            ? `"${pendingDelete.name}" will be removed from this page.`
+            : ""
+        }
+        confirmLabel="Remove"
+        destructive
+        onConfirm={() => {
+          if (pendingDelete) removeLocation(pendingDelete.id);
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
     </div>
   );
 }
