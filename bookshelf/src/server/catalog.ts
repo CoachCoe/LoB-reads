@@ -45,6 +45,11 @@ export interface WorkDetail {
   title: string;
   subtitle: string | null;
   description: string | null;
+  /**
+   * Set when the description came from a third party rather than Open Library.
+   * The UI must attribute it: cached content may not be presented as our own.
+   */
+  descriptionSource?: string | null;
   firstPublishYear: number | null;
   subjects: string[];
   editionCount: number;
@@ -132,20 +137,29 @@ export async function countWorkMatches(query: string): Promise<number> {
 }
 
 export async function getWorkByKey(olKey: string): Promise<WorkDetail | null> {
+  // Canonical description wins; third-party enrichment fills the gap. Expired
+  // enrichment is ignored rather than shown — the licence under which it was
+  // cached has a shelf life, and so does the value.
   const [work] = await prisma.$queryRaw<
-    Array<Omit<WorkDetail, "authors" | "editions">>
+    Array<Omit<WorkDetail, "authors" | "editions"> & { descriptionSource: string | null }>
   >`
     SELECT
-      ol_key               AS "olKey",
-      title,
-      subtitle,
-      description,
-      first_publish_year   AS "firstPublishYear",
-      subjects,
-      edition_count        AS "editionCount",
-      cover_edition_key    AS "coverEditionKey"
-    FROM catalog.works
-    WHERE ol_key = ${olKey}
+      w.ol_key             AS "olKey",
+      w.title,
+      w.subtitle,
+      coalesce(w.description, e.value #>> '{}') AS description,
+      CASE WHEN w.description IS NULL AND e.value #>> '{}' IS NOT NULL
+           THEN e.source ELSE NULL END          AS "descriptionSource",
+      w.first_publish_year AS "firstPublishYear",
+      w.subjects,
+      w.edition_count      AS "editionCount",
+      w.cover_edition_key  AS "coverEditionKey"
+    FROM catalog.works w
+    LEFT JOIN catalog.enrichment e
+      ON e.entity_type = 'work' AND e.entity_key = w.ol_key
+     AND e.field = 'description'
+     AND (e.expires_at IS NULL OR e.expires_at > now())
+    WHERE w.ol_key = ${olKey}
   `;
 
   if (!work) return null;
@@ -217,17 +231,22 @@ export async function getOtherWorksByAuthor(
 }
 
 /**
- * Cover image URL for a work or edition.
+ * Cover image URL.
  *
- * Prefer the `id` form: we already hold `cover_id`, and the `isbn` form is
- * more aggressively rate limited. These are hotlinked for now; before any real
- * traffic they should be fetched once and served from our own storage, misses
- * cached included.
+ * Prefers a copy stored in our own object storage, falling back to hotlinking
+ * Open Library for anything the cover worker has not reached yet. Pass
+ * `storedUrl` wherever it is available; the fallback exists so a fresh catalog
+ * still shows covers before the first backfill has run.
+ *
+ * The `id` form rather than `isbn`: we already hold cover_id, and the isbn form
+ * is more aggressively rate limited.
  */
 export function coverUrl(
   coverId: number | null | undefined,
-  size: "S" | "M" | "L" = "M"
+  size: "S" | "M" | "L" = "M",
+  storedUrl?: string | null
 ): string | null {
+  if (storedUrl) return storedUrl;
   return coverId ? `https://covers.openlibrary.org/b/id/${coverId}-${size}.jpg` : null;
 }
 

@@ -11,6 +11,7 @@ import {
 } from "@/server/catalog";
 import WorkCard from "@/components/catalog/WorkCard";
 import EditionList from "./EditionList";
+import { enqueue } from "@/server/enrichment";
 
 interface Props {
   params: Promise<{ olKey: string }>;
@@ -41,6 +42,19 @@ export default async function WorkPage({ params }: Props) {
 
   if (!work) {
     notFound();
+  }
+
+  // A missing description queues a backfill. This is a single INSERT with an
+  // ON CONFLICT — no outbound request happens here, and none ever should: a
+  // page render that calls a third party inherits that third party's latency
+  // and downtime.
+  if (!work.description) {
+    await enqueue({
+      entityType: "work",
+      entityKey: work.olKey,
+      field: "description",
+      source: "google_books",
+    });
   }
 
   const primaryAuthor = work.authors[0];
@@ -123,9 +137,18 @@ export default async function WorkPage({ params }: Props) {
           </dl>
 
           {work.description && (
-            <p className="mt-5 max-w-prose whitespace-pre-line text-gray-700 dark:text-gray-300">
-              {work.description}
-            </p>
+            <div className="mt-5">
+              <p className="max-w-prose whitespace-pre-line text-gray-700 dark:text-gray-300">
+                {work.description}
+              </p>
+              {/* Cached third-party content is attributed, never presented as
+                  ours. That is a licence condition, not a courtesy. */}
+              {work.descriptionSource === "google_books" && (
+                <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+                  Description via Google Books
+                </p>
+              )}
+            </div>
           )}
 
           {work.subjects.length > 0 && (

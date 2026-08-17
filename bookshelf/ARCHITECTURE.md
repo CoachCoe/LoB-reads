@@ -142,6 +142,46 @@ Covered by `__tests__/integration/exclusive-shelves.test.ts`. Note that a
 single racing test is not enough: with the index dropped it still passed,
 because it happened not to interleave. The ten-round version is what fails.
 
+## Enrichment
+
+Open Library's descriptions are missing or one-line on most records. A
+queue-driven worker fills them from Google Books.
+
+**Nothing in a request path ever calls a third party.** Serving a work with no
+description performs one INSERT with an ON CONFLICT and returns; the worker
+picks it up out of band. This is enforced by a test that replaces `fetch` with
+a throw and renders the page. It is easy to satisfy today and easy to break
+later with "just fetch it inline when it's missing", which works locally and
+inherits someone else's latency and downtime in production.
+
+Results go to `catalog.enrichment` and never to `catalog.works`. That keeps the
+monthly rebuild authoritative and makes purging a source one DELETE. Every row
+carries an expiry, because the content is cached under someone else's licence
+rather than owned — and the UI attributes it.
+
+Confirmed absences are cached too. A large share of books genuinely have no
+description anywhere, and re-asking forever is how access gets revoked.
+
+    npm run enrich:backfill   # queue the works most likely to be read
+    npm run enrich:worker     # drain the queue
+    npm run enrich:covers     # fetch cover images into object storage
+
+Google Books needs `GOOGLE_BOOKS_API_KEY`. Keyless requests are answered with
+429 from any shared address — verified against the live endpoint — so without
+one the worker backs off immediately and makes no progress.
+
+### Covers
+
+Fetched once and stored in our own object storage rather than hotlinked. Two
+traps, both verified live:
+
+- **A missing cover does not 404.** It answers HTTP 200 with a 43-byte 1×1
+  transparent GIF, so `response.ok` is true and naive code stores it as a book
+  cover. `?default=false` gives a real 404. There is a byte-length floor as a
+  second line of defence.
+- **Misses must be cached.** Many editions have no cover; re-requesting them
+  forever is what gets an address blocked.
+
 ## Known limitations
 
 - **Rate limiting is per-process** (`src/lib/rate-limit.ts`). Correct for a
@@ -151,9 +191,13 @@ because it happened not to interleave. The ten-round version is what fails.
 - **The `acquire` ingest step is unverified against the live endpoint** —
   it was written where openlibrary.org was unreachable. Start with the
   authors dump (~500MB) rather than editions (~9.2GB).
-- **Covers are hotlinked from covers.openlibrary.org.** They should be fetched
-  once and served from our own storage, misses cached included, before any
-  real traffic. That is M4.
+- **Covers fall back to hotlinking** for anything `enrich:covers` has not
+  reached yet, so a fresh catalog still shows images before the first backfill.
+- **Timestamps are `timestamptz`.** Prisma's default `DateTime` maps to
+  `timestamp without time zone`; Prisma then writes UTC while SQL `now()`
+  returns local time, so comparisons between them are wrong by the server's
+  offset. Guarded by a test asserting no naive timestamp columns exist. Keep
+  `@db.Timestamptz(6)` on new DateTime fields.
 - **Postgres 14 locally, 16 in CI and on RDS.** Nothing currently depends on
   15+ features, but the versions should be aligned.
 
@@ -164,6 +208,6 @@ because it happened not to interleave. The ten-round version is what fails.
 | M1 | Ingest to sliced catalog | Done |
 | M2 | Search and detail pages on `catalog.works` | Done |
 | M3 | Users, shelves, ratings repointed at `work_key` | Done |
-| M4 | Enrichment worker and covers | Next |
-| M5 | Social layer, seeded rating graph | |
+| M4 | Enrichment worker and covers | Done |
+| M5 | Social layer, seeded rating graph | Next |
 | M6 | Goodreads import against the catalog | |

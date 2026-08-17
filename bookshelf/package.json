@@ -20,6 +20,9 @@
     "db:seed": "tsx prisma/seed.ts",
     "ingest:acquire": "tsx scripts/ingest/01-acquire.ts",
     "ingest": "tsx scripts/ingest/run.ts",
+    "enrich:backfill": "tsx scripts/enrich/backfill.ts",
+    "enrich:worker": "tsx scripts/enrich/worker.ts",
+    "enrich:covers": "tsx scripts/enrich/covers.ts",
     "db:reset": "prisma migrate reset"
   },
   "prisma": {

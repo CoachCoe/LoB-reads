@@ -28,8 +28,8 @@ model User {
   avatarUrl    String?
   bio          String?
   isModerator  Boolean  @default(false) // May remove any community-contributed map
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(6)
 
   // Relations
   shelves         Shelf[]
@@ -52,8 +52,8 @@ model FictionalWorld {
   id          String   @id @default(cuid())
   name        String   @unique // e.g., "Middle-earth", "Arrakis", "Macondo"
   description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
 
   // Relations
   works     WorkFictionalWorld[]
@@ -74,8 +74,8 @@ model FictionalWorldMap {
   description      String?
   addedById        String // Who uploaded it
   updatedById      String? // Who last edited it, if anyone
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @db.Timestamptz(6)
 
   // Relations
   fictionalWorld FictionalWorld @relation(fields: [fictionalWorldId], references: [id], onDelete: Cascade)
@@ -94,7 +94,7 @@ model WorkFictionalWorld {
   workKey   String   @map("work_key")
   worldId   String   @map("world_id")
   addedById String?  @map("added_by_id")
-  addedAt   DateTime @default(now()) @map("added_at")
+  addedAt   DateTime @default(now()) @map("added_at") @db.Timestamptz(6)
 
   world   FictionalWorld @relation(fields: [worldId], references: [id], onDelete: Cascade)
   addedBy User?          @relation(fields: [addedById], references: [id], onDelete: SetNull)
@@ -110,8 +110,8 @@ model Shelf {
   userId    String
   name      String
   isDefault Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
 
   // Relations
   user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -126,7 +126,7 @@ model ShelfItem {
   id      String   @id @default(cuid())
   shelfId String
   workKey String   @map("work_key") // catalog.works.ol_key — no FK by design
-  addedAt DateTime @default(now())
+  addedAt DateTime @default(now()) @db.Timestamptz(6)
 
   // Denormalized from the parent shelf. A partial unique index cannot contain
   // a subquery, so enforcing "one exclusive shelf per work per user" in the
@@ -154,8 +154,8 @@ model Review {
   workKey   String   @map("work_key")
   rating    Int      @db.SmallInt // 1-5
   content   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -178,10 +178,10 @@ model ReadingSession {
   editionKey  String?   @map("edition_key") // catalog.editions.ol_key, if known
   currentPage Int       @default(0)
   pageCount   Int?      @map("page_count") // snapshot, so history survives an ingest
-  startedAt   DateTime  @default(now()) @map("started_at")
-  finishedAt  DateTime? @map("finished_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
+  startedAt   DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt  DateTime? @map("finished_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -195,7 +195,7 @@ model Follow {
   id          String   @id @default(cuid())
   followerId  String
   followingId String
-  createdAt   DateTime @default(now())
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
 
   // Relations
   follower  User @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
@@ -222,8 +222,8 @@ model WorkLocation {
   lng              Float?
   isFictional      Boolean  @default(false) @map("is_fictional")
   fictionalWorldId String?  @map("fictional_world_id")
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   addedBy        User?           @relation(fields: [addedById], references: [id], onDelete: SetNull)
   fictionalWorld FictionalWorld? @relation(fields: [fictionalWorldId], references: [id], onDelete: SetNull)
@@ -245,8 +245,8 @@ model AuthorLocation {
   lng         Float
   yearStart   Int?     @map("year_start")
   yearEnd     Int?     @map("year_end")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   addedBy User? @relation(fields: [addedById], references: [id], onDelete: SetNull)
 
@@ -274,7 +274,7 @@ model CatalogAuthor {
   bio          String?
   photoId      BigInt?  @map("photo_id")
   wikidataId   String?  @map("wikidata_id")
-  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   works CatalogWorkAuthor[]
 
@@ -300,7 +300,7 @@ model CatalogWork {
   // express tsvector, and it is never read through the client.
   searchVector Unsupported("tsvector")? @map("search_vector")
 
-  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   authors  CatalogWorkAuthor[]
   editions CatalogEdition[]
@@ -338,7 +338,7 @@ model CatalogEdition {
   languages      String[] @default([])
   physicalFormat String?  @map("physical_format")
   coverId        BigInt?  @map("cover_id")
-  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   work CatalogWork? @relation(fields: [workKey], references: [olKey], onDelete: Cascade)
 
@@ -369,8 +369,8 @@ model CatalogEnrichment {
   source     String
   field      String // description | cover_url | genres
   value      Json
-  fetchedAt  DateTime  @default(now()) @map("fetched_at")
-  expiresAt  DateTime? @map("expires_at")
+  fetchedAt  DateTime  @default(now()) @map("fetched_at") @db.Timestamptz(6)
+  expiresAt  DateTime? @map("expires_at") @db.Timestamptz(6)
 
   @@id([entityType, entityKey, source, field])
   @@index([expiresAt])
@@ -382,9 +382,9 @@ model CatalogEnrichment {
 model IngestRun {
   id               String    @id @default(cuid())
   dumpType         String    @map("dump_type") // works | editions | authors
-  dumpPublished    DateTime? @map("dump_published")
-  startedAt        DateTime  @default(now()) @map("started_at")
-  completedAt      DateTime? @map("completed_at")
+  dumpPublished    DateTime? @map("dump_published") @db.Timestamptz(6)
+  startedAt        DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt      DateTime? @map("completed_at") @db.Timestamptz(6)
   linesRead        BigInt    @default(0) @map("lines_read")
   rowsStaged       BigInt    @default(0) @map("rows_staged")
   linesQuarantined BigInt    @default(0) @map("lines_quarantined")
@@ -408,7 +408,7 @@ model IngestRun {
 model StageAuthor {
   olKey        String    @id @map("ol_key")
   revision     Int?
-  lastModified DateTime? @map("last_modified")
+  lastModified DateTime? @map("last_modified") @db.Timestamptz(6)
   data         Json
 
   @@map("stage_authors")
@@ -418,7 +418,7 @@ model StageAuthor {
 model StageWork {
   olKey        String    @id @map("ol_key")
   revision     Int?
-  lastModified DateTime? @map("last_modified")
+  lastModified DateTime? @map("last_modified") @db.Timestamptz(6)
   data         Json
 
   @@map("stage_works")
@@ -428,9 +428,36 @@ model StageWork {
 model StageEdition {
   olKey        String    @id @map("ol_key")
   revision     Int?
-  lastModified DateTime? @map("last_modified")
+  lastModified DateTime? @map("last_modified") @db.Timestamptz(6)
   data         Json
 
   @@map("stage_editions")
+  @@schema("catalog")
+}
+
+/// Work queued for enrichment from a third-party source.
+///
+/// A database-backed queue rather than Redis: there is no Redis in the stack,
+/// the volume is low, and this survives a restart. It also means the queue is
+/// visible in the same place as everything else when something goes wrong.
+model EnrichmentJob {
+  id         String @id @default(cuid())
+  entityType String @map("entity_type") // work | edition
+  entityKey  String @map("entity_key")
+  field      String // description | cover_url
+  source     String // google_books | openlibrary_covers
+
+  status        String    @default("pending") // pending | running | done | failed
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now()) @map("next_attempt_at") @db.Timestamptz(6)
+  lastError     String?   @map("last_error")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt   DateTime? @map("completed_at") @db.Timestamptz(6)
+
+  // One outstanding job per thing-to-enrich. Re-queuing something already
+  // queued is a no-op rather than a duplicate.
+  @@unique([entityType, entityKey, field, source])
+  @@index([status, nextAttemptAt])
+  @@map("enrichment_queue")
   @@schema("catalog")
 }
