@@ -68,16 +68,20 @@ A modern reading tracker for book lovers. Track your library, discover new stori
 
    Required environment variables:
    ```env
-   DATABASE_URL="postgresql://..."
+   DATABASE_URL="postgresql://..."   # Pooled connection, used at runtime
+   DIRECT_URL="postgresql://..."     # Direct connection, used by prisma migrate
    NEXTAUTH_SECRET="your-secret"
    NEXTAUTH_URL="http://localhost:3000"
    BLOB_READ_WRITE_TOKEN="your-vercel-blob-token"  # For avatar and map uploads
    ```
 
+   Locally `DATABASE_URL` and `DIRECT_URL` are the same value. On hosted
+   Postgres they differ — see [DEPLOYMENT.md](./DEPLOYMENT.md).
+
 4. **Set up the database**
    ```bash
    npx prisma generate
-   npx prisma db push
+   npx prisma migrate dev
    ```
 
 5. **Seed the database (optional)**
@@ -135,7 +139,9 @@ src/
 - `npm test` - Run tests
 - `npm run test:watch` - Run tests in watch mode
 - `npm run test:coverage` - Run tests with coverage report
-- `npm run db:push` - Push schema to database
+- `npm run db:migrate` - Create and apply a migration in development
+- `npm run db:deploy` - Apply pending migrations (use this in deployments)
+- `npm run db:push` - Push schema without a migration (prototyping only)
 - `npm run db:seed` - Seed database with sample data
 
 ## API Routes
@@ -212,6 +218,11 @@ MIT
 ## Contributing
 
 Contributions are welcome! Please open an issue or submit a pull request.
+
+## Deployment
+
+See [DEPLOYMENT.md](./DEPLOYMENT.md) for hosting options, the two-connection-string
+setup Prisma needs on serverless, and the post-deploy checks.
 
 ---
 

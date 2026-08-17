@@ -14,9 +14,10 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # Prisma needs a syntactically valid URL to generate the client and for
+      # Prisma needs syntactically valid URLs to generate the client and for
       # `next build` to collect page data. Nothing here connects to a database.
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/bookshelf
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/bookshelf
       NEXTAUTH_SECRET: ci-placeholder-secret
       NEXTAUTH_URL: http://localhost:3000
 

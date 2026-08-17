@@ -4,7 +4,14 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  // Runtime queries go through the pooled connection. Serverless functions
+  // open a connection per invocation, which exhausts a direct Postgres
+  // connection limit quickly.
   url      = env("DATABASE_URL")
+  // Migrations and introspection need a direct connection — they use
+  // session-level features a transaction pooler does not support.
+  // Locally the two are the same value; see .env.example.
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
