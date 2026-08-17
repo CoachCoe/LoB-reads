@@ -46,3 +46,6 @@ next-env.d.ts
 # Open Library dumps and ingest byproducts — large, regenerable
 /data/raw
 /data/quarantine
+
+# Rating corpus — CC BY-SA 4.0, kept local. See ARCHITECTURE.md.
+/data/ratings

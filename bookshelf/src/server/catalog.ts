@@ -402,3 +402,63 @@ export async function findWorkKeyByTitleAuthor(
   `;
   return rows[0]?.olKey ?? null;
 }
+
+export interface RatingStats {
+  average: number;
+  count: number;
+}
+
+/**
+ * Community rating for a work, read from the precomputed table rather than
+ * aggregated per request. Null when nobody has rated it.
+ */
+export async function getWorkRating(
+  workKey: string
+): Promise<RatingStats | null> {
+  const rows = await prisma.$queryRaw<RatingStats[]>`
+    SELECT avg_rating AS average, rating_count AS count
+    FROM catalog.work_rating_stats WHERE work_key = ${workKey}
+  `;
+  return rows[0] ?? null;
+}
+
+/** Ratings for many works at once, for grids. */
+export async function getWorkRatings(
+  workKeys: string[]
+): Promise<Map<string, RatingStats>> {
+  const unique = [...new Set(workKeys)].filter(Boolean);
+  if (unique.length === 0) return new Map();
+
+  const rows = await prisma.$queryRaw<(RatingStats & { workKey: string })[]>`
+    SELECT work_key AS "workKey", avg_rating AS average, rating_count AS count
+    FROM catalog.work_rating_stats WHERE work_key = ANY(${unique})
+  `;
+  return new Map(rows.map((r) => [r.workKey, { average: r.average, count: r.count }]));
+}
+
+/**
+ * "Readers also enjoyed".
+ *
+ * Read from the precomputed similarity table — the co-occurrence self-join
+ * behind it is not something to run while someone waits for a page. Returns an
+ * empty list rather than throwing when a work has no neighbours yet, which is
+ * the normal state on a thin ratings graph.
+ */
+export async function getSimilarWorks(
+  workKey: string,
+  limit = 6
+): Promise<WorkSummary[]> {
+  return prisma.$queryRaw<WorkSummary[]>`
+    SELECT w.ol_key             AS "olKey",
+           w.title,
+           w.author_names       AS "authorNames",
+           w.first_publish_year AS "firstPublishYear",
+           e.cover_id::int      AS "coverId"
+    FROM catalog.work_similarity s
+    JOIN catalog.works w ON w.ol_key = s.similar_work_key
+    LEFT JOIN catalog.editions e ON e.ol_key = w.cover_edition_key
+    WHERE s.work_key = ${workKey}
+    ORDER BY s.score DESC, s.co_raters DESC
+    LIMIT ${limit}
+  `;
+}

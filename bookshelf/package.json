@@ -23,6 +23,8 @@
     "enrich:backfill": "tsx scripts/enrich/backfill.ts",
     "enrich:worker": "tsx scripts/enrich/worker.ts",
     "enrich:covers": "tsx scripts/enrich/covers.ts",
+    "social:load": "tsx scripts/social/load-ratings.ts",
+    "social:compute": "tsx scripts/social/compute-stats.ts",
     "db:reset": "prisma migrate reset"
   },
   "prisma": {

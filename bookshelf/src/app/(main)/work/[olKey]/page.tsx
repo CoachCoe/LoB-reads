@@ -6,9 +6,12 @@ import { BookOpen, Calendar, Layers } from "lucide-react";
 import {
   getWorkByKey,
   getOtherWorksByAuthor,
+  getSimilarWorks,
+  getWorkRating,
   coverUrl,
   EDITIONS_PAGE_SIZE,
 } from "@/server/catalog";
+import StarRating from "@/components/ui/StarRating";
 import WorkCard from "@/components/catalog/WorkCard";
 import EditionList from "./EditionList";
 import { enqueue } from "@/server/enrichment";
@@ -58,9 +61,13 @@ export default async function WorkPage({ params }: Props) {
   }
 
   const primaryAuthor = work.authors[0];
-  const alsoBy = primaryAuthor
-    ? await getOtherWorksByAuthor(primaryAuthor.olKey, work.olKey, 6)
-    : [];
+  const [alsoBy, alsoEnjoyed, rating] = await Promise.all([
+    primaryAuthor
+      ? getOtherWorksByAuthor(primaryAuthor.olKey, work.olKey, 6)
+      : Promise.resolve([]),
+    getSimilarWorks(work.olKey, 6),
+    getWorkRating(work.olKey),
+  ]);
 
   const coverEdition = work.editions.find(
     (e) => e.olKey === work.coverEditionKey
@@ -117,6 +124,19 @@ export default async function WorkPage({ params }: Props) {
                 </span>
               ))}
             </p>
+          )}
+
+          {rating && rating.count > 0 && (
+            <div className="mt-3 flex items-center gap-2">
+              <StarRating rating={Math.round(rating.average)} size="sm" />
+              <span className="text-sm tabular-nums text-gray-600 dark:text-gray-400">
+                {rating.average.toFixed(1)}
+              </span>
+              <span className="text-sm text-gray-500 dark:text-gray-400">
+                ({rating.count.toLocaleString()}{" "}
+                {rating.count === 1 ? "rating" : "ratings"})
+              </span>
+            </div>
           )}
 
           <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-500 dark:text-gray-400">
@@ -178,6 +198,19 @@ export default async function WorkPage({ params }: Props) {
           pageSize={EDITIONS_PAGE_SIZE}
         />
       </section>
+
+      {alsoEnjoyed.length > 0 && (
+        <section className="mt-10">
+          <h2 className="mb-3 text-xl font-bold text-gray-900 dark:text-gray-100">
+            Readers also enjoyed
+          </h2>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            {alsoEnjoyed.map((other) => (
+              <WorkCard key={other.olKey} {...other} />
+            ))}
+          </div>
+        </section>
+      )}
 
       {alsoBy.length > 0 && primaryAuthor && (
         <section className="mt-10">

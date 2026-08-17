@@ -153,6 +153,10 @@ export interface FeedItem {
   content?: string | null;
 }
 
+export async function getFollowingCount(userId: string): Promise<number> {
+  return prisma.follow.count({ where: { followerId: userId } });
+}
+
 export async function getActivityFeed(
   userId: string,
   limit = 20

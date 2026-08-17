@@ -18,6 +18,7 @@ import {
   Sun,
   Moon,
   Info,
+  Users,
 } from "lucide-react";
 import Avatar from "@/components/ui/Avatar";
 import Button from "@/components/ui/Button";
@@ -68,6 +69,13 @@ export default function Navbar() {
                 >
                   <BookMarked className="h-4 w-4" />
                   My Books
+                </Link>
+                <Link
+                  href="/feed"
+                  className="flex items-center gap-1.5 px-4 py-2 text-[var(--foreground-secondary)] hover:text-[var(--foreground)] rounded-full hover:bg-[var(--border-light)] transition-all text-sm font-medium"
+                >
+                  <Users className="h-4 w-4" />
+                  Feed
                 </Link>
                 <Link
                   href="/search"
@@ -262,6 +270,15 @@ export default function Navbar() {
               >
                 <BookMarked className="h-5 w-5" />
                 My Books
+              </Link>
+
+              <Link
+                href="/feed"
+                className="flex items-center gap-3 px-4 py-3 text-[var(--foreground)] hover:bg-[var(--border-light)] rounded-xl transition-all"
+                onClick={() => setIsMenuOpen(false)}
+              >
+                <Users className="h-5 w-5" />
+                Feed
               </Link>
               <Link
                 href="/search"

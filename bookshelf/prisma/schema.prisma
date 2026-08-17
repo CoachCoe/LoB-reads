@@ -3,7 +3,7 @@ generator client {
   // Three schemas, per the data-layer spec:
   //   catalog — rebuilt monthly from Open Library dumps, disposable
   //   app     — user-owned data, survives every ingest
-  //   seed    — synthetic/restricted data, added at M5
+  //   seed    — synthetic / restricted-licence, never served
   previewFeatures = ["multiSchema"]
 }
 
@@ -17,7 +17,7 @@ datasource db {
   // session-level features a transaction pooler does not support.
   // Locally the two are the same value; see .env.example.
   directUrl = env("DIRECT_URL")
-  schemas   = ["app", "catalog"]
+  schemas   = ["app", "catalog", "seed"]
 }
 
 model User {
@@ -459,5 +459,82 @@ model EnrichmentJob {
   @@unique([entityType, entityKey, field, source])
   @@index([status, nextAttemptAt])
   @@map("enrichment_queue")
+  @@schema("catalog")
+}
+
+// ---------------------------------------------------------------------------
+// seed — synthetic and externally-licensed data. NEVER served.
+//
+// Everything here exists so recommendations have a ratings graph to run on
+// before the app has real users. It is separated at the schema level rather
+// than by a boolean column so that purging it is one TRUNCATE, and so that
+// "is this ours to serve?" is answerable by looking at the table name.
+//
+// Gated behind ENABLE_SEED_DATA, default false. See ARCHITECTURE.md.
+// ---------------------------------------------------------------------------
+
+model SeedUser {
+  id          String  @id @default(cuid())
+  handle      String  @unique
+  /// Where this row came from: goodbooks-10k, synthetic, …
+  source      String
+  isSynthetic Boolean @default(true) @map("is_synthetic")
+
+  ratings SeedRating[]
+
+  @@map("users")
+  @@schema("seed")
+}
+
+model SeedRating {
+  userId      String   @map("user_id")
+  workKey     String   @map("work_key")
+  rating      Int      @db.SmallInt
+  source      String
+  isSynthetic Boolean  @default(true) @map("is_synthetic")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user SeedUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, workKey])
+  @@index([workKey])
+  @@map("ratings")
+  @@schema("seed")
+}
+
+// ---------------------------------------------------------------------------
+// Derived aggregates. Rebuilt by scripts/social/*, never edited by hand.
+// ---------------------------------------------------------------------------
+
+/// Community rating per work, from real reviews and — when enabled — seed data.
+model WorkRatingStats {
+  workKey     String   @id @map("work_key")
+  avgRating   Float    @map("avg_rating")
+  ratingCount Int      @map("rating_count")
+  /// How many of the ratings came from seed data, so the mix is auditable.
+  seedCount   Int      @default(0) @map("seed_count")
+  computedAt  DateTime @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  @@index([ratingCount])
+  @@map("work_rating_stats")
+  @@schema("catalog")
+}
+
+/// Precomputed item-item similarity: "readers also enjoyed".
+///
+/// Computed in batch rather than per request. The co-occurrence query is a
+/// self-join over the whole ratings matrix; at six million ratings that is not
+/// something to run while somebody waits for a page.
+model WorkSimilarity {
+  workKey        String   @map("work_key")
+  similarWorkKey String   @map("similar_work_key")
+  /// Cosine over co-raters, so popular books do not dominate every list.
+  score          Float
+  coRaters       Int      @map("co_raters")
+  computedAt     DateTime @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  @@id([workKey, similarWorkKey])
+  @@index([workKey, score])
+  @@map("work_similarity")
   @@schema("catalog")
 }

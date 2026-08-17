@@ -182,6 +182,43 @@ traps, both verified live:
 - **Misses must be cached.** Many editions have no cover; re-requesting them
   forever is what gets an address blocked.
 
+## Recommendations and the ratings graph
+
+"Readers also enjoyed" is item-item collaborative filtering, precomputed into
+`catalog.work_similarity`. The co-occurrence self-join behind it runs over the
+whole ratings matrix and is not something to run while someone waits.
+
+**Scored by cosine over co-raters, not raw co-occurrence.** Raw counts make the
+most-rated books everyone's neighbour, so every list comes out identical and
+useless. Dividing by `sqrt(raters_a * raters_b)` turns "many people read both"
+into "people who read A disproportionately read B". A test asserts this: swap
+the score for a raw count and it fails.
+
+Recommendations need a ratings graph before the app has users, which is what
+the `seed` schema is for.
+
+    npm run social:load -- --synthetic   # generated graph, no download
+    npm run social:load -- --download    # goodbooks-10k, ~100MB
+    ENABLE_SEED_DATA=true npm run social:compute
+
+### seed, and why it is a schema
+
+`seed.users` and `seed.ratings` hold synthetic and externally-licensed data.
+The separation is at schema level rather than a boolean column so that purging
+is one TRUNCATE, and so "is this ours to serve?" is answerable from the table
+name.
+
+`ENABLE_SEED_DATA` defaults to **false**. Without it only real reviews count,
+which on a new install means near-empty recommendations — correct, and better
+than presenting a borrowed corpus as your community's opinion.
+
+goodbooks-10k is **CC BY-SA 4.0** (this resolves an open question the data-layer
+spec left as "assume local-only"). Redistribution is permitted with attribution,
+unlike the UCSD Book Graph, which is academic-use-only. But ShareAlike is viral:
+anything derived from it and then distributed inherits the licence. Keeping it
+behind the flag and out of served responses means that question never has to be
+answered. Raw files are gitignored.
+
 ## Known limitations
 
 - **Rate limiting is per-process** (`src/lib/rate-limit.ts`). Correct for a
@@ -193,6 +230,9 @@ traps, both verified live:
   authors dump (~500MB) rather than editions (~9.2GB).
 - **Covers fall back to hotlinking** for anything `enrich:covers` has not
   reached yet, so a fresh catalog still shows images before the first backfill.
+- **ISBN logic exists twice**, as SQL for the ingest and TypeScript for the
+  corpus loader, which reads a CSV in Node. `isbn-parity.test.ts` asserts the
+  two agree, so changing one without the other fails loudly.
 - **Timestamps are `timestamptz`.** Prisma's default `DateTime` maps to
   `timestamp without time zone`; Prisma then writes UTC while SQL `now()`
   returns local time, so comparisons between them are wrong by the server's
@@ -209,5 +249,5 @@ traps, both verified live:
 | M2 | Search and detail pages on `catalog.works` | Done |
 | M3 | Users, shelves, ratings repointed at `work_key` | Done |
 | M4 | Enrichment worker and covers | Done |
-| M5 | Social layer, seeded rating graph | Next |
-| M6 | Goodreads import against the catalog | |
+| M5 | Social layer, seeded rating graph | Done |
+| M6 | Goodreads import against the catalog | Next |

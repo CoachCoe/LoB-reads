@@ -1,179 +1,143 @@
 import Link from "next/link";
 import Image from "next/image";
+import { BookOpen, Star, BookMarked, CheckCircle2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import Avatar from "@/components/ui/Avatar";
 import StarRating from "@/components/ui/StarRating";
-import { BookOpen, BookPlus, Star, Check } from "lucide-react";
+import { coverUrl } from "@/server/catalog";
+import type { FeedItem } from "@/server/users";
 
-interface Activity {
-  id: string;
-  type: "shelf_add" | "review" | "progress";
-  userId: string;
-  user: {
-    id: string;
-    name: string;
-    avatarUrl: string | null;
-  };
-  bookId?: string;
-  book?: {
-    id: string;
-    title: string;
-    author: string;
-    coverUrl: string | null;
-  };
-  shelfName?: string;
-  rating?: number;
-  content?: string | null;
-  currentPage?: number;
-  finishedAt?: Date | string | null;
-  createdAt: Date | string;
-}
-
-interface ActivityFeedProps {
-  activities: Activity[];
-}
-
-export default function ActivityFeed({ activities }: ActivityFeedProps) {
-  if (activities.length === 0) {
+/**
+ * What the people you follow have been doing.
+ *
+ * Each item names a work by key, hydrated from the catalog upstream. A work
+ * that has since left the catalog slice still renders — losing someone's
+ * activity because an ingest narrowed is worse than a placeholder.
+ */
+export default function ActivityFeed({ items }: { items: FeedItem[] }) {
+  if (items.length === 0) {
     return (
-      <div className="text-center py-8 text-[var(--foreground-secondary)]">
-        No activity yet
+      <div className="py-12 text-center">
+        <BookOpen
+          className="mx-auto mb-3 h-10 w-10 text-gray-300 dark:text-gray-600"
+          aria-hidden="true"
+        />
+        <p className="text-gray-600 dark:text-gray-400">Nothing here yet.</p>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-500">
+          Follow a few readers and their shelves, ratings and finished books
+          will show up here.
+        </p>
+        <Link
+          href="/search"
+          className="mt-4 inline-block rounded-lg bg-[#D4A017] px-5 py-2 text-sm font-medium text-white hover:bg-[#B8860B]"
+        >
+          Find books
+        </Link>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      {activities.map((activity) => (
-        <ActivityItem key={activity.id} activity={activity} />
+    <ul className="space-y-3">
+      {items.map((item) => (
+        <li key={item.id}>
+          <FeedRow item={item} />
+        </li>
       ))}
-    </div>
+    </ul>
   );
 }
 
-function ActivityItem({ activity }: { activity: Activity }) {
-  const getIcon = () => {
-    switch (activity.type) {
-      case "shelf_add":
-        return <BookPlus className="h-4 w-4 text-[#D4A017]" />;
-      case "review":
-        return <Star className="h-4 w-4 text-[#D4A017]" />;
-      case "progress":
-        return activity.finishedAt ? (
-          <Check className="h-4 w-4 text-green-500" />
-        ) : (
-          <BookOpen className="h-4 w-4 text-blue-500" />
-        );
-    }
-  };
+const ICONS = {
+  shelf_add: BookMarked,
+  review: Star,
+  finished: CheckCircle2,
+} as const;
 
-  const getMessage = () => {
-    switch (activity.type) {
-      case "shelf_add":
-        return (
-          <>
-            added{" "}
-            <Link
-              href={`/book/${activity.bookId}`}
-              className="font-medium hover:text-[#D4A017]"
-            >
-              {activity.book?.title}
-            </Link>{" "}
-            to {activity.shelfName}
-          </>
-        );
-      case "review":
-        return (
-          <>
-            reviewed{" "}
-            <Link
-              href={`/book/${activity.bookId}`}
-              className="font-medium hover:text-[#D4A017]"
-            >
-              {activity.book?.title}
-            </Link>
-          </>
-        );
-      case "progress":
-        return activity.finishedAt ? (
-          <>
-            finished reading{" "}
-            <Link
-              href={`/book/${activity.bookId}`}
-              className="font-medium hover:text-[#D4A017]"
-            >
-              {activity.book?.title}
-            </Link>
-          </>
-        ) : (
-          <>
-            updated progress on{" "}
-            <Link
-              href={`/book/${activity.bookId}`}
-              className="font-medium hover:text-[#D4A017]"
-            >
-              {activity.book?.title}
-            </Link>
-          </>
-        );
-    }
-  };
+function FeedRow({ item }: { item: FeedItem }) {
+  const Icon = ICONS[item.type];
+  const title = item.work?.title ?? "a book no longer in the catalog";
+  const cover = coverUrl(item.work?.coverId, "S");
 
   return (
-    <div className="bg-[var(--card-bg)] rounded-lg border border-[var(--card-border)] p-4">
-      <div className="flex gap-3">
-        <Link href={`/user/${activity.userId}`}>
-          <Avatar
-            src={activity.user.avatarUrl}
-            name={activity.user.name}
-            size="md"
+    <article className="flex gap-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+      <Avatar src={item.user.avatarUrl} name={item.user.name} size="sm" />
+
+      <div className="min-w-0 flex-1">
+        <p className="text-sm text-gray-700 dark:text-gray-300">
+          <Link
+            href={`/user/${item.user.id}`}
+            className="font-medium text-gray-900 hover:underline dark:text-gray-100"
+          >
+            {item.user.name}
+          </Link>{" "}
+          <Icon
+            className="inline h-3.5 w-3.5 align-[-2px] text-gray-400"
+            aria-hidden="true"
+          />{" "}
+          {item.type === "shelf_add" && (
+            <>
+              added{" "}
+              <WorkLink workKey={item.workKey} title={title} /> to{" "}
+              <span className="text-gray-600 dark:text-gray-400">
+                {item.shelfName}
+              </span>
+            </>
+          )}
+          {item.type === "review" && (
+            <>
+              rated <WorkLink workKey={item.workKey} title={title} />
+            </>
+          )}
+          {item.type === "finished" && (
+            <>
+              finished <WorkLink workKey={item.workKey} title={title} />
+            </>
+          )}
+        </p>
+
+        {item.type === "review" && item.rating !== undefined && (
+          <div className="mt-1">
+            <StarRating rating={item.rating} size="sm" />
+          </div>
+        )}
+
+        {item.content && (
+          <p className="mt-1 line-clamp-2 text-sm text-gray-600 dark:text-gray-400">
+            {item.content}
+          </p>
+        )}
+
+        <time
+          dateTime={item.createdAt.toISOString()}
+          className="mt-1 block text-xs text-gray-400 dark:text-gray-500"
+        >
+          {formatDistanceToNow(item.createdAt, { addSuffix: true })}
+        </time>
+      </div>
+
+      {cover && (
+        <Link href={`/work/${item.workKey}`} className="shrink-0">
+          <Image
+            src={cover}
+            alt=""
+            width={40}
+            height={60}
+            className="rounded object-cover"
           />
         </Link>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            {getIcon()}
-            <Link
-              href={`/user/${activity.userId}`}
-              className="font-medium text-[var(--foreground)] hover:text-[#D4A017]"
-            >
-              {activity.user.name}
-            </Link>
-            <span className="text-[var(--foreground-secondary)]">{getMessage()}</span>
-          </div>
-          <p className="text-xs text-[var(--foreground-secondary)] mt-1">
-            {formatDistanceToNow(new Date(activity.createdAt), {
-              addSuffix: true,
-            })}
-          </p>
+      )}
+    </article>
+  );
+}
 
-          {/* Show rating for reviews */}
-          {activity.type === "review" && activity.rating && (
-            <div className="mt-2">
-              <StarRating rating={activity.rating} size="sm" />
-              {activity.content && (
-                <p className="mt-1 text-sm text-[var(--foreground-secondary)] line-clamp-2">
-                  {activity.content}
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Show book cover */}
-          {activity.book?.coverUrl && (
-            <Link href={`/book/${activity.bookId}`} className="block mt-3">
-              <div className="w-16 h-24 relative rounded overflow-hidden">
-                <Image
-                  src={activity.book.coverUrl}
-                  alt={activity.book.title}
-                  fill
-                  className="object-cover"
-                  unoptimized
-                />
-              </div>
-            </Link>
-          )}
-        </div>
-      </div>
-    </div>
+function WorkLink({ workKey, title }: { workKey: string; title: string }) {
+  return (
+    <Link
+      href={`/work/${workKey}`}
+      className="font-medium text-[#0B6157] hover:underline dark:text-[#52B7A6]"
+    >
+      {title}
+    </Link>
   );
 }
