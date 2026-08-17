@@ -93,9 +93,10 @@ export async function getPopularBooks(limit = 10) {
  * render, which is what this used to do.
  */
 export async function getAllGenres(): Promise<string[]> {
+  // Schema-qualified: the app tables live in "app", not on the search_path.
   const rows = await prisma.$queryRaw<{ genre: string }[]>`
     SELECT DISTINCT unnest(genres) AS genre
-    FROM books
+    FROM app.books
     ORDER BY genre ASC
   `;
 

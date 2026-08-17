@@ -1,0 +1,20 @@
+# Which slice of Open Library the catalog keeps.
+#
+# The full dump is ~20M editions and needs roughly 150GB with indexes. The
+# defaults below yield a catalog large enough to stress search and pagination
+# but small enough to reindex on a laptop, and small enough to fit the 20GB
+# AWS RDS free tier.
+#
+# Nothing here is hardcoded in SQL — relax these and re-run 04-slice.sql to
+# widen or narrow the catalog. Set them all permissive for a full ingest.
+
+min_publish_year: 1900
+languages: [eng]
+require_isbn: true
+require_cover: false
+require_author: true          # the spec's M1 acceptance expects >=1 author
+min_editions_per_work: 1
+
+# Set true for a ~10K-work fixture suitable for tests and for the AWS free
+# tier. Requires the rating corpus to have been loaded (M5).
+must_appear_in_rating_corpus: false
