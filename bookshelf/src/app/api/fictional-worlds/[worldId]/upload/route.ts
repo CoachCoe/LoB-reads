@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { put } from "@vercel/blob";
 import { getCurrentUser } from "@/lib/session";
 import { getFictionalWorldById, addMapToWorld } from "@/server/fictional-worlds";
 import { validateImageFile, sanitizeFilename } from "@/lib/file-validation";
 import { checkLimit, LIMITS } from "@/lib/rate-limit";
+import { putObject, isStorageConfigured } from "@/lib/storage";
 
 interface RouteParams {
   params: Promise<{ worldId: string }>;
@@ -61,16 +61,22 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
-    // Upload to Vercel Blob with sanitized filename
+    if (!isStorageConfigured()) {
+      console.error("Map upload attempted with S3_BUCKET unset");
+      return NextResponse.json(
+        { error: "Uploads are not available right now." },
+        { status: 503 }
+      );
+    }
+
+    // Store with a sanitized filename under a per-world prefix
     const safeName = sanitizeFilename(file.name);
-    const filename = `fictional-worlds/${worldId}/${Date.now()}-${safeName}`;
-    const blob = await put(filename, file, {
-      access: "public",
-    });
+    const key = `fictional-worlds/${worldId}/${Date.now()}-${safeName}`;
+    const { url } = await putObject(key, file);
 
     // Create the map entry in the database
     const map = await addMapToWorld(worldId, user.id, {
-      imageUrl: blob.url,
+      imageUrl: url,
       title: title.trim(),
       description: description?.trim() || null,
     });

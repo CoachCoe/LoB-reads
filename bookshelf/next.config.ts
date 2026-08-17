@@ -1,5 +1,16 @@
 import type { NextConfig } from "next";
 
+/**
+ * Uploads are served from CloudFront. The hostname is environment-specific, so
+ * it is read from CDN_URL rather than hardcoded — this must be set at build
+ * time as well as runtime, because both the image config and the CSP below
+ * are baked into the build.
+ */
+const cdnOrigin = process.env.CDN_URL
+  ? new URL(process.env.CDN_URL).origin
+  : undefined;
+const cdnHostname = cdnOrigin ? new URL(cdnOrigin).hostname : undefined;
+
 const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
@@ -18,11 +29,16 @@ const nextConfig: NextConfig = {
         hostname: "api.dicebear.com",
         pathname: "/**",
       },
-      {
-        protocol: "https",
-        hostname: "*.public.blob.vercel-storage.com",
-        pathname: "/**",
-      },
+      // User uploads (avatars, fictional-world maps), served via CloudFront.
+      ...(cdnHostname
+        ? [
+            {
+              protocol: "https" as const,
+              hostname: cdnHostname,
+              pathname: "/**",
+            },
+          ]
+        : []),
     ],
   },
   async headers() {
@@ -60,9 +76,9 @@ const nextConfig: NextConfig = {
               "default-src 'self'",
               "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
               "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: blob: https://covers.openlibrary.org https://archive.org https://api.dicebear.com https://*.public.blob.vercel-storage.com https://*.tile.openstreetmap.org",
+              `img-src 'self' data: blob: https://covers.openlibrary.org https://archive.org https://api.dicebear.com https://*.tile.openstreetmap.org${cdnOrigin ? ` ${cdnOrigin}` : ""}`,
               "font-src 'self'",
-              "connect-src 'self' https://openlibrary.org https://*.public.blob.vercel-storage.com",
+              `connect-src 'self' https://openlibrary.org${cdnOrigin ? ` ${cdnOrigin}` : ""}`,
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",

@@ -37,7 +37,7 @@ A modern reading tracker for book lovers. Track your library, discover new stori
 - **Database**: PostgreSQL with Prisma ORM
 - **Authentication**: NextAuth.js
 - **Maps**: Leaflet.js with React-Leaflet
-- **Storage**: Vercel Blob
+- **Storage**: Amazon S3 behind CloudFront
 - **External APIs**: Open Library
 - **Testing**: Jest with React Testing Library
 
@@ -72,7 +72,8 @@ A modern reading tracker for book lovers. Track your library, discover new stori
    DIRECT_URL="postgresql://..."     # Direct connection, used by prisma migrate
    NEXTAUTH_SECRET="your-secret"
    NEXTAUTH_URL="http://localhost:3000"
-   BLOB_READ_WRITE_TOKEN="your-vercel-blob-token"  # For avatar and map uploads
+   S3_BUCKET="your-upload-bucket"                  # Avatar and map uploads
+   CDN_URL="https://xxxx.cloudfront.net"           # Also required at build time
    ```
 
    Locally `DATABASE_URL` and `DIRECT_URL` are the same value. On hosted
@@ -221,9 +222,10 @@ Contributions are welcome! Please open an issue or submit a pull request.
 
 ## Deployment
 
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for hosting options, the two-connection-string
-setup Prisma needs on serverless, and the post-deploy checks.
+Targets the AWS free tier: EC2 for the app, RDS or self-hosted Postgres, S3 +
+CloudFront for uploads. See [DEPLOYMENT.md](./DEPLOYMENT.md) — note that
+`next build` will not fit in a t3.micro's memory, so builds run in CI.
 
 ---
 
-Built with Next.js and deployed on Vercel.
+Built with Next.js.

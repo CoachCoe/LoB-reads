@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { put, del } from "@vercel/blob";
+
 import { getCurrentUser } from "@/lib/session";
 import { getUserAvatarUrl, updateUserProfile } from "@/server/users";
 import { validateImageFile, sanitizeFilename } from "@/lib/file-validation";
+import { putObject, deleteObjectByUrl, isStorageConfigured } from "@/lib/storage";
 import { checkLimit, LIMITS } from "@/lib/rate-limit";
 
 interface RouteParams {
   params: Promise<{ userId: string }>;
 }
-
-/** Only blobs we uploaded are ours to delete. */
-const BLOB_HOST_SUFFIX = ".public.blob.vercel-storage.com";
 
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
@@ -42,6 +40,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
+    if (!isStorageConfigured()) {
+      console.error("Avatar upload attempted with S3_BUCKET unset");
+      return NextResponse.json(
+        { error: "Uploads are not available right now." },
+        { status: 503 }
+      );
+    }
+
     // Validate file with magic byte checking
     const validation = await validateImageFile(file);
     if (!validation.valid) {
@@ -50,41 +56,31 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     const previousAvatarUrl = await getUserAvatarUrl(userId);
 
-    // Upload to Vercel Blob with sanitized filename
+    // Store with a sanitized filename under a per-user prefix
     const safeName = sanitizeFilename(file.name);
-    const filename = `avatars/${userId}/${Date.now()}-${safeName}`;
-    const blob = await put(filename, file, {
-      access: "public",
-    });
+    const key = `avatars/${userId}/${Date.now()}-${safeName}`;
+    const { url } = await putObject(key, file);
 
-    // Update user profile with new avatar URL
-    await updateUserProfile(userId, { avatarUrl: blob.url });
+    await updateUserProfile(userId, { avatarUrl: url });
 
-    // Replacing an avatar used to orphan the old blob, which accumulated
+    // Replacing an avatar used to orphan the old object, which accumulated
     // storage cost forever. Best-effort: a failure here must not fail the
-    // upload the user already completed.
-    if (previousAvatarUrl && isOwnedBlob(previousAvatarUrl)) {
+    // upload the user already completed. deleteObjectByUrl ignores URLs that
+    // aren't ours, so an external DiceBear avatar is left alone.
+    if (previousAvatarUrl) {
       try {
-        await del(previousAvatarUrl);
-      } catch (blobError) {
-        console.error("Failed to delete previous avatar blob:", blobError);
+        await deleteObjectByUrl(previousAvatarUrl);
+      } catch (storageError) {
+        console.error("Failed to delete previous avatar:", storageError);
       }
     }
 
-    return NextResponse.json({ url: blob.url });
+    return NextResponse.json({ url });
   } catch (error) {
     console.error("Error uploading avatar:", error);
     return NextResponse.json(
       { error: "Failed to upload avatar" },
       { status: 500 }
     );
-  }
-}
-
-function isOwnedBlob(url: string): boolean {
-  try {
-    return new URL(url).hostname.endsWith(BLOB_HOST_SUFFIX);
-  } catch {
-    return false;
   }
 }

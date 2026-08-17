@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { del } from "@vercel/blob";
 import { getCurrentUser } from "@/lib/session";
 import { getMapById, deleteMap, updateMap } from "@/server/fictional-worlds";
 import { errorResponse, parseBody, unauthorized } from "@/lib/api";
+import { deleteObjectByUrl } from "@/lib/storage";
 import { updateMapSchema } from "@/lib/schemas";
 
 interface RouteParams {
@@ -35,12 +35,12 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    // Delete from Vercel Blob
+    // Remove the stored image. Best-effort: the DB row matters more, and an
+    // orphaned object is cheaper than a map that cannot be deleted.
     try {
-      await del(map.imageUrl);
-    } catch (blobError) {
-      console.error("Error deleting from blob storage:", blobError);
-      // Continue anyway - the DB delete is more important
+      await deleteObjectByUrl(map.imageUrl);
+    } catch (storageError) {
+      console.error("Error deleting map image from storage:", storageError);
     }
 
     await deleteMap(mapId);
