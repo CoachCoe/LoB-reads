@@ -87,23 +87,6 @@ export async function getPopularBooks(limit = 10) {
 }
 
 /**
- * Genres are a String[] column, so there is no way to select distinct values
- * through the Prisma query API — unnesting in SQL keeps the work in the
- * database instead of reading every book row into memory on each search-page
- * render, which is what this used to do.
- */
-export async function getAllGenres(): Promise<string[]> {
-  // Schema-qualified: the app tables live in "app", not on the search_path.
-  const rows = await prisma.$queryRaw<{ genre: string }[]>`
-    SELECT DISTINCT unnest(genres) AS genre
-    FROM app.books
-    ORDER BY genre ASC
-  `;
-
-  return rows.map((row) => row.genre);
-}
-
-/**
  * Bulk lookup for the Goodreads import. One query for the whole file rather
  * than one per row — a 500-book export otherwise means 500 round trips.
  */

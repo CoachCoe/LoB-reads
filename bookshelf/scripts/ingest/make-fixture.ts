@@ -15,17 +15,25 @@
  *     if not escaped
  *
  *   npx tsx scripts/ingest/make-fixture.ts
+ *   npx tsx scripts/ingest/make-fixture.ts --scale 5000
+ *
+ * --scale adds N generated works on top, so search ranking and latency can be
+ * measured against a catalog of realistic size. The twenty titles in
+ * known-books.ts are always included: they are what the M2 acceptance check
+ * searches for, and each ships with distractor titles designed to outrank it
+ * if the ranking is naive.
  */
 
 import { gzipSync } from "node:zlib";
 import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { RAW_DIR, DUMPS } from "./dumps";
+import { KNOWN_BOOKS } from "./known-books";
 
 const tsv = (type: string, key: string, rev: number, json: unknown) =>
   [type, key, String(rev), "2024-01-01T00:00:00.000000", JSON.stringify(json)].join("\t");
 
-const authors = [
+const authors: string[] = [
   tsv("/type/author", "/authors/OL34184A", 5, {
     key: "/authors/OL34184A",
     name: "J. R. R. Tolkien",
@@ -64,7 +72,7 @@ const authors = [
   "/type/author\t/authors/OL66666A\t1",
 ];
 
-const works = [
+const works: string[] = [
   tsv("/type/work", "/works/OL45804W", 14, {
     key: "/works/OL45804W",
     title: "The Hobbit",
@@ -111,7 +119,7 @@ const works = [
   }),
 ];
 
-const editions = [
+const editions: string[] = [
   tsv("/type/edition", "/books/OL7353617M", 3, {
     key: "/books/OL7353617M",
     title: "The Hobbit",
@@ -173,6 +181,158 @@ const editions = [
     type: { key: "/type/edition" },
   }),
 ];
+
+// ---------------------------------------------------------------------------
+// Scaled fixture: the twenty known titles, their distractors, and filler
+// ---------------------------------------------------------------------------
+
+const scaleIndex = process.argv.indexOf("--scale");
+const scale = scaleIndex !== -1 ? Number(process.argv[scaleIndex + 1]) : 0;
+
+/**
+ * A syntactically valid ISBN-13 with a correct check digit. Random digits
+ * produce a valid check digit only about one time in ten, and normalize
+ * discards the rest — which silently shrinks the fixture by 90%.
+ */
+function isbn13(body12: string): string {
+  let total = 0;
+  for (let i = 0; i < 12; i++) {
+    total += Number(body12[i]) * (i % 2 === 0 ? 1 : 3);
+  }
+  return body12 + String((10 - (total % 10)) % 10);
+}
+
+/** Deterministic pseudo-random, so a fixture is reproducible across runs. */
+function seeded(seed: number) {
+  let state = seed;
+  return () => {
+    state = (state * 1664525 + 1013904223) % 4294967296;
+    return state / 4294967296;
+  };
+}
+
+const SUBJECT_POOL = [
+  "Fiction", "Science Fiction", "Fantasy", "Mystery", "Romance", "History",
+  "Biography", "Poetry", "Horror", "Adventure", "Literary Fiction", "Essays",
+];
+const TITLE_WORDS = [
+  "Shadow", "River", "Winter", "Garden", "Silence", "Machine", "Empire",
+  "Letter", "House", "Bridge", "Compass", "Harvest", "Lantern", "Mirror",
+  "Orchard", "Signal", "Threshold", "Voyage", "Windmill", "Cathedral",
+];
+
+if (scale > 0) {
+  const random = seeded(42);
+  const pick = <T,>(xs: T[]) => xs[Math.floor(random() * xs.length)];
+
+  // The twenty acceptance titles, each with a real author record.
+  for (const book of KNOWN_BOOKS) {
+    authors.push(
+      tsv("/type/author", `/authors/${book.authorKey}`, 1, {
+        key: `/authors/${book.authorKey}`,
+        name: book.author,
+        type: { key: "/type/author" },
+      })
+    );
+    works.push(
+      tsv("/type/work", `/works/${book.workKey}`, 1, {
+        key: `/works/${book.workKey}`,
+        title: book.title,
+        authors: [
+          { type: { key: "/type/author_role" }, author: { key: `/authors/${book.authorKey}` } },
+        ],
+        subjects: book.subjects,
+        first_publish_date: String(book.year),
+        type: { key: "/type/work" },
+      })
+    );
+    editions.push(
+      tsv("/type/edition", `/books/${book.workKey}E`, 1, {
+        key: `/books/${book.workKey}E`,
+        title: book.title,
+        works: [{ key: `/works/${book.workKey}` }],
+        publishers: ["A Publisher"],
+        publish_date: String(book.year),
+        number_of_pages: 200 + Math.floor(random() * 400),
+        isbn_13: [isbn13("978" + String(100000000 + Math.floor(random() * 899999999)))],
+        languages: [{ key: "/languages/eng" }],
+        covers: [1000 + Math.floor(random() * 9000)],
+        type: { key: "/type/edition" },
+      })
+    );
+
+    // Distractors: sequels and namesakes that must not outrank the original.
+    (book.distractors ?? []).forEach((title, i) => {
+      const key = `${book.workKey}D${i}`;
+      works.push(
+        tsv("/type/work", `/works/${key}`, 1, {
+          key: `/works/${key}`,
+          title,
+          authors: [
+            { type: { key: "/type/author_role" }, author: { key: `/authors/${book.authorKey}` } },
+          ],
+          subjects: book.subjects,
+          first_publish_date: String(book.year + 2),
+          type: { key: "/type/work" },
+        })
+      );
+      editions.push(
+        tsv("/type/edition", `/books/${key}E`, 1, {
+          key: `/books/${key}E`,
+          title,
+          works: [{ key: `/works/${key}` }],
+          publish_date: String(book.year + 2),
+          isbn_13: [isbn13("979" + String(100000000 + Math.floor(random() * 899999999)))],
+          languages: [{ key: "/languages/eng" }],
+          type: { key: "/type/edition" },
+        })
+      );
+    });
+  }
+
+  // Filler, so ranking has to discriminate against volume rather than a
+  // handful of rows, and so latency is measured against a realistic index.
+  for (let i = 0; i < scale; i++) {
+    const authorKey = `OLF${String(i % Math.max(1, Math.floor(scale / 4))).padStart(6, "0")}A`;
+    const workKey = `OLF${String(i).padStart(6, "0")}W`;
+
+    if (i < Math.max(1, Math.floor(scale / 4))) {
+      authors.push(
+        tsv("/type/author", `/authors/${authorKey}`, 1, {
+          key: `/authors/${authorKey}`,
+          name: `${pick(TITLE_WORDS)} ${pick(["Ashcroft", "Bell", "Cortez", "Duval", "Egan", "Farrow"])}`,
+          type: { key: "/type/author" },
+        })
+      );
+    }
+
+    const title = `The ${pick(TITLE_WORDS)} of ${pick(TITLE_WORDS)}${i % 7 === 0 ? ` ${pick(TITLE_WORDS)}` : ""}`;
+    works.push(
+      tsv("/type/work", `/works/${workKey}`, 1, {
+        key: `/works/${workKey}`,
+        title,
+        authors: [
+          { type: { key: "/type/author_role" }, author: { key: `/authors/${authorKey}` } },
+        ],
+        subjects: [pick(SUBJECT_POOL), pick(SUBJECT_POOL)],
+        first_publish_date: String(1900 + Math.floor(random() * 125)),
+        type: { key: "/type/work" },
+      })
+    );
+    editions.push(
+      tsv("/type/edition", `/books/${workKey}E`, 1, {
+        key: `/books/${workKey}E`,
+        title,
+        works: [{ key: `/works/${workKey}` }],
+        publish_date: String(1900 + Math.floor(random() * 125)),
+        number_of_pages: 120 + Math.floor(random() * 500),
+        isbn_13: [isbn13("978" + String(100000000 + i).slice(0, 9))],
+        languages: [{ key: "/languages/eng" }],
+        type: { key: "/type/edition" },
+      })
+    );
+  }
+}
 
 mkdirSync(RAW_DIR, { recursive: true });
 

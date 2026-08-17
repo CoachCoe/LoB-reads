@@ -12,7 +12,7 @@ the thing most likely to confuse a reader, so it comes first.
 | --- | --- | --- |
 | Source | Created by the app | Open Library monthly dumps |
 | Status | **Legacy, being replaced** | **Target** |
-| Read by | 4 modules in `src/server` | Nothing yet |
+| Read by | Home page, shelves, reviews | Search, work detail |
 | Models | One row per book | Work and Edition split |
 
 `app.books` conflates a *work* with an *edition*: `isbn` sits on the same row
@@ -20,8 +20,14 @@ as `title` and `author`, so two printings of *Dune* are two unrelated rows with
 ratings split between them. That is the Goodreads data-quality complaint, and
 fixing it is the point of the catalog.
 
-**Do not add features against `app.books`.** M2 moves search and book detail
-onto `catalog.works`; M3 repoints shelves, ratings and reviews at `work_key`.
+**Do not add features against `app.books`.** Search and work detail already
+read the catalog — `/search` and `/work/[olKey]`. What still points at
+`app.books` is the home page and everything user-owned: shelves, reviews,
+reading progress. M3 repoints those at `work_key`, after which `app.books`
+goes away.
+
+Until then a catalog work cannot be shelved: shelving needs an `app.books`
+row, and most of the catalog has none. That is the visible seam.
 
 ## Schemas
 
@@ -102,6 +108,23 @@ Authorization is tested against a real database rather than a mock, because
 what is being tested *is* a query. A mock would assert that our mock returns
 what we told it to.
 
+## Search
+
+`src/server/catalog.ts`. Full-text over a weighted `tsvector` (title A, author
+B, subtitle C, subjects D), with trigram similarity carrying typos that FTS
+cannot match at all.
+
+Ranking is not `ts_rank` alone. Relevance scoring puts "Dune Messiah" level
+with "Dune" for the query *dune*, so exact-title and prefix matches carry most
+of the weight and relevance only breaks ties. Edition count contributes a
+logarithmic nudge, never enough to let a sequel outrank the original.
+
+`unaccent()` is applied on both sides. Indexing the unaccented form and
+querying the raw form matches nothing — silently.
+
+Queries go through `websearch_to_tsquery`, which tolerates the punctuation
+users actually type. `to_tsquery` raises a syntax error on an apostrophe.
+
 ## Known limitations
 
 - **Rate limiting is per-process** (`src/lib/rate-limit.ts`). Correct for a
@@ -119,8 +142,8 @@ what we told it to.
 | | | Status |
 | --- | --- | --- |
 | M1 | Ingest to sliced catalog | Done |
-| M2 | Search and detail pages on `catalog.works` | Next |
-| M3 | Users, shelves, ratings repointed at `work_key` | |
+| M2 | Search and detail pages on `catalog.works` | Done |
+| M3 | Users, shelves, ratings repointed at `work_key` | Next |
 | M4 | Enrichment worker and covers | |
 | M5 | Social layer, seeded rating graph | |
 | M6 | Goodreads import against the catalog | |
