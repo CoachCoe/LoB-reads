@@ -8,9 +8,16 @@ import { Prisma } from "@prisma/client";
  * `similarity()` and a weighted expression that Prisma cannot express, and the
  * `search_vector` column has no Prisma type at all.
  *
- * `unaccent()` is applied on BOTH sides. The index stores the unaccented form,
- * so querying the raw form matches nothing — searching "Miserables" would miss
- * "Les Misérables" entirely, silently.
+ * Accents are folded on BOTH sides, or "Miserables" silently misses "Les
+ * Misérables". The stored side is folded at write time by the trigger, into
+ * `search_vector` and the `*_norm` columns; the query side folds the user's
+ * input with `unaccent()` here.
+ *
+ * Comparisons therefore go against `title_norm` / `author_names_norm`, never
+ * `unaccent(lower(title))`. They are equal in meaning but not to the planner:
+ * a function of a column cannot use that column's index, and `unaccent()` is
+ * STABLE so no expression index can stand in. Wrapping the column is how the
+ * fuzzy path silently became a sequential scan once already.
  */
 
 export interface WorkSearchResult {
@@ -100,17 +107,17 @@ export async function searchWorks(
       w.cover_edition_key                        AS "coverEditionKey",
       e.cover_id::int                            AS "coverId",
       (
-          (CASE WHEN unaccent(lower(w.title)) = q.norm THEN ${W_EXACT} ELSE 0 END)
-        + (CASE WHEN unaccent(lower(w.title)) LIKE q.norm || '%' THEN ${W_PREFIX} ELSE 0 END)
+          (CASE WHEN w.title_norm = q.norm THEN ${W_EXACT} ELSE 0 END)
+        + (CASE WHEN w.title_norm LIKE q.norm || '%' THEN ${W_PREFIX} ELSE 0 END)
         + ts_rank_cd(w.search_vector, q.tsq) * ${W_FTS}
-        + similarity(unaccent(lower(w.title)), q.norm) * ${W_TRIGRAM}
+        + similarity(w.title_norm, q.norm) * ${W_TRIGRAM}
         + ln(1 + w.edition_count) * ${W_POPULARITY}
       )::double precision                        AS rank
     FROM catalog.works w
     CROSS JOIN q
     LEFT JOIN catalog.editions e ON e.ol_key = w.cover_edition_key
     WHERE w.search_vector @@ q.tsq
-       OR unaccent(lower(w.title)) % q.norm
+       OR w.title_norm % q.norm
     ORDER BY rank DESC, w.edition_count DESC, w.ol_key
     LIMIT ${limit} OFFSET ${offset}
   `;
@@ -131,7 +138,7 @@ export async function countWorkMatches(query: string): Promise<number> {
     FROM catalog.works w
     CROSS JOIN q
     WHERE w.search_vector @@ q.tsq
-       OR unaccent(lower(w.title)) % q.norm
+       OR w.title_norm % q.norm
   `;
   return Number(rows[0]?.count ?? 0);
 }
@@ -394,8 +401,8 @@ export async function findWorkKeyByTitleAuthor(
   const rows = await prisma.$queryRaw<{ olKey: string }[]>`
     SELECT ol_key AS "olKey"
     FROM catalog.works
-    WHERE unaccent(lower(title)) = unaccent(lower(${title}))
-      AND unaccent(lower(coalesce(author_names, ''))) LIKE
+    WHERE title_norm = unaccent(lower(${title}))
+      AND coalesce(author_names_norm, '') LIKE
           '%' || unaccent(lower(${author})) || '%'
     ORDER BY edition_count DESC
     LIMIT 1

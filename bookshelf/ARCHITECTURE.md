@@ -114,8 +114,29 @@ with "Dune" for the query *dune*, so exact-title and prefix matches carry most
 of the weight and relevance only breaks ties. Edition count contributes a
 logarithmic nudge, never enough to let a sequel outrank the original.
 
-`unaccent()` is applied on both sides. Indexing the unaccented form and
-querying the raw form matches nothing — silently.
+Accents are folded on both sides, or "Miserables" misses "Les Misérables"
+silently. The stored side is folded at write time by the trigger on
+`catalog.works`, which maintains `search_vector` and two normalized columns,
+`title_norm` and `author_names_norm`; the query side folds user input with
+`unaccent()`.
+
+Those normalized columns exist so the trigram indexes are reachable. Comparing
+`unaccent(lower(title))` against the query is equivalent in meaning but not to
+the planner — a function of a column cannot use that column's index, and
+`unaccent()` is `STABLE` rather than `IMMUTABLE`, so an expression index is not
+allowed either. Postgres reports nothing: results stay correct and every fuzzy
+lookup becomes a sequential scan. Comparisons therefore go against the `_norm`
+columns, and `__tests__/integration/search-indexes.test.ts` asserts the query
+plan rather than the results, with the wrapped form kept as a negative control.
+
+Two related failures are worth remembering, because they share a cause —
+database objects that Prisma does not know about. `prisma migrate diff`
+generates a `DROP` for any index in the database but absent from
+`schema.prisma`, which is how these three GIN indexes disappeared during M3;
+and a hand-edit to an applied migration once removed the import tables from the
+history entirely, so only the already-migrated development database still had
+them. Anything the schema can declare is declared there, and a fresh database
+built from migrations is checked against the datamodel rather than assumed.
 
 Queries go through `websearch_to_tsquery`, which tolerates the punctuation
 users actually type. `to_tsquery` raises a syntax error on an apostrophe.

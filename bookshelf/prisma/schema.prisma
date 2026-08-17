@@ -41,6 +41,7 @@ model User {
   workLocations   WorkLocation[] // Locations this user contributed
   authorLocations AuthorLocation[] // Author locations this user contributed
   worldLinks      WorkFictionalWorld[]
+  importSessions  ImportSession[]
   mapsUploaded    FictionalWorldMap[]  @relation("MapUploader")
   mapsEdited      FictionalWorldMap[]  @relation("MapEditor")
 
@@ -300,12 +301,28 @@ model CatalogWork {
   // express tsvector, and it is never read through the client.
   searchVector Unsupported("tsvector")? @map("search_vector")
 
+  // Also trigger-maintained: `unaccent(lower(...))` of the two columns above.
+  // Search matches on the normalized form, and an index on the raw column
+  // cannot answer a query about a function of it. An expression index is not
+  // an option either — `unaccent()` is STABLE, not IMMUTABLE, so Postgres
+  // rejects it in an index. Normalizing on write is what makes the trigram
+  // indexes below reachable at all.
+  titleNorm       String? @map("title_norm")
+  authorNamesNorm String? @map("author_names_norm")
+
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   authors  CatalogWorkAuthor[]
   editions CatalogEdition[]
 
   @@index([firstPublishYear])
+  // Declared here, not hand-written in a migration. Hand-written indexes are
+  // invisible to `prisma migrate diff`, which then generates a DROP for them —
+  // exactly how these three were silently lost in the M3 migration, leaving
+  // every search on a sequential scan.
+  @@index([searchVector], type: Gin)
+  @@index([titleNorm(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@index([authorNamesNorm(ops: raw("gin_trgm_ops"))], type: Gin)
   @@map("works")
   @@schema("catalog")
 }
@@ -537,4 +554,62 @@ model WorkSimilarity {
   @@index([workKey, score])
   @@map("work_similarity")
   @@schema("catalog")
+}
+
+/// One upload of a Goodreads export.
+///
+/// The import outlives its request. Previously the result was a JSON blob in
+/// the response — a reader saw "matched 78%" once and had no way to find out
+/// which 22% went missing, or to do anything about it.
+model ImportSession {
+  id          String    @id @default(cuid())
+  userId      String    @map("user_id")
+  filename    String
+  status      String    @default("processing") // processing | review | complete
+  totalRows   Int       @default(0) @map("total_rows")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rows ImportRow[]
+
+  @@index([userId, createdAt])
+  @@map("import_sessions")
+  @@schema("app")
+}
+
+/// A single line of the export, with what became of it.
+///
+/// Kept whether or not it matched. An unmatched row is a question for the
+/// reader, not a statistic.
+model ImportRow {
+  id        String @id @default(cuid())
+  sessionId String @map("session_id")
+  rowNumber Int    @map("row_number")
+
+  // As it appeared in the file, so the reader recognises what they are judging.
+  title          String
+  author         String
+  isbn13         String?
+  myRating       Int?      @map("my_rating") @db.SmallInt
+  exclusiveShelf String?   @map("exclusive_shelf")
+  dateRead       DateTime? @map("date_read") @db.Timestamptz(6)
+
+  /// matched | needs_review | confirmed | skipped | failed
+  status    String  @default("needs_review")
+  /// How it was resolved: isbn | title_author | confirmed_by_user
+  matchedBy String? @map("matched_by")
+  workKey   String? @map("work_key")
+
+  /// Fuzzy candidates for a row needing review: [{workKey, title, author, score}]
+  candidates Json?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  session ImportSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, rowNumber])
+  @@index([sessionId, status])
+  @@map("import_rows")
+  @@schema("app")
 }

@@ -16,6 +16,8 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
+    "db:deploy:test": "scripts/db/with-test-db.sh migrate deploy",
+    "db:status:test": "scripts/db/with-test-db.sh migrate status",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
     "ingest:acquire": "tsx scripts/ingest/01-acquire.ts",
