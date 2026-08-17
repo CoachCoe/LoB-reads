@@ -150,3 +150,21 @@ export async function getUserReadingStats(userId: string) {
     pagesRead,
   };
 }
+
+/**
+ * Records a completed read from an import, where the finish date is known but
+ * no page-by-page progress exists. Upserts so re-importing the same export is
+ * safe.
+ */
+export async function recordFinishedRead(
+  userId: string,
+  bookId: string,
+  finishedAt: Date,
+  pageCount: number | null
+) {
+  return prisma.readingProgress.upsert({
+    where: { userId_bookId: { userId, bookId } },
+    create: { userId, bookId, currentPage: pageCount ?? 0, finishedAt },
+    update: { currentPage: pageCount ?? 0, finishedAt },
+  });
+}

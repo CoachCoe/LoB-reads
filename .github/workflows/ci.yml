@@ -13,13 +13,32 @@ jobs:
   check:
     runs-on: ubuntu-latest
 
+    # Integration tests exercise real queries and constraints, so they need a
+    # real database. Without this the authorization layer cannot be tested at
+    # all, which is how it went unguarded in the first place.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: bookshelf_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
     env:
-      # Prisma needs syntactically valid URLs to generate the client and for
-      # `next build` to collect page data. Nothing here connects to a database.
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/bookshelf
-      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/bookshelf
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/bookshelf_test
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/bookshelf_test
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/bookshelf_test
       NEXTAUTH_SECRET: ci-placeholder-secret
       NEXTAUTH_URL: http://localhost:3000
+      # Baked into next.config.ts for the image allowlist and the CSP.
+      CDN_URL: https://cdn.example.invalid
 
     steps:
       - uses: actions/checkout@v4
@@ -42,8 +61,28 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
-      - name: Test
-        run: npx jest --ci
+      # Proves the migration chain applies to an empty database. A migration
+      # that cannot be applied used to pass CI, because CI never applied one.
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+
+      - name: Verify schema matches migrations
+        run: npx prisma migrate status
+
+      - name: Unit tests
+        run: npx jest --selectProjects unit --ci
+
+      - name: Integration tests
+        # Serial: they share one database and truncate between tests.
+        run: npx jest --selectProjects integration --ci --runInBand
+
+      # The seed is the only fixture for local development; a broken one is a
+      # broken onboarding experience.
+      - name: Seed
+        run: npm run db:seed
+
+      - name: Ingest pipeline (fixture)
+        run: npm run ingest -- --fixture
 
       - name: Build
         run: npx next build

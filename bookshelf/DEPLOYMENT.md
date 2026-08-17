@@ -140,19 +140,23 @@ npm run start          # listens on 3000
 Put nginx or an ALB in front for TLS. Keep it alive with systemd or pm2 — a
 bare `npm start` dies with the SSH session.
 
-### Deploying to a database that predates the baseline migration
+### Databases that predate the baseline
 
-The baseline migration creates every table from scratch and fails on a database
-that already holds the old schema. Use the tested upgrade script:
+There are none, by design. The baseline migration is the starting point for
+every environment, and `prisma migrate deploy` takes an empty database to
+current in one step.
 
-```bash
-pg_dump "$DIRECT_URL" > backup.sql          # do this first
-psql "$DIRECT_URL" -f prisma/manual/001_legacy_to_baseline.sql
-DIRECT_URL="…" npx prisma migrate resolve --applied 20260816230833_init
-```
+An earlier revision carried a hand-written upgrade script for a database
+holding the pre-baseline schema. It was removed once no such database existed:
+it could not be exercised by any test, and it silently rotted when a later
+migration moved every table from `public` into `app` — the documented
+procedure would have left a database believing it was current while missing
+two of the three migrations.
 
-Read that file first — two steps are marked `REVIEW` because they are
-judgement calls.
+If a legacy database ever does surface, recover the script from git
+(`git show 099ddc0:bookshelf/prisma/manual/001_legacy_to_baseline.sql`) and
+treat it as a starting point rather than a working tool: it predates both the
+schema move and the catalog tables.
 
 ## 5. Known limitation: rate limiting
 

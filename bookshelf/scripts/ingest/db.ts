@@ -7,7 +7,7 @@ import { Client } from "pg";
  * `.env.local`, which may point at a deployed database; a bulk ingest should
  * never be aimed at one by accident.
  */
-config({ path: ".env" });
+config({ path: ".env", quiet: true });
 
 export function connectionString(): string {
   const url = process.env.DIRECT_URL ?? process.env.DATABASE_URL;

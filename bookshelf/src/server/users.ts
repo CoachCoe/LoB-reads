@@ -15,6 +15,35 @@ const publicUserSelect = {
   createdAt: true,
 } as const;
 
+/** Every new account starts with these three; order is the display order. */
+const DEFAULT_SHELVES = ["Want to Read", "Currently Reading", "Read"];
+
+export async function findUserByEmail(email: string) {
+  return prisma.user.findUnique({ where: { email }, select: { id: true } });
+}
+
+/**
+ * Creates the account and its default shelves in one transaction. Creating
+ * them separately could leave an account that exists but has no shelves,
+ * which nothing repairs and which blocks re-registering the address.
+ */
+export async function createUserWithDefaultShelves(data: {
+  email: string;
+  passwordHash: string;
+  name: string;
+  avatarUrl: string;
+}) {
+  return prisma.user.create({
+    data: {
+      ...data,
+      shelves: {
+        create: DEFAULT_SHELVES.map((name) => ({ name, isDefault: true })),
+      },
+    },
+    select: { id: true, email: true, name: true },
+  });
+}
+
 export async function getUserProfile(userId: string) {
   return prisma.user.findUnique({
     where: { id: userId },

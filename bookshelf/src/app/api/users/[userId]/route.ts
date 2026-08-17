@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getUserProfile, updateUserProfile } from "@/server/users";
+import { errorResponse, parseBody, unauthorized } from "@/lib/api";
+import { updateProfileSchema } from "@/lib/schemas";
 
 export async function GET(
   request: Request,
@@ -31,7 +33,7 @@ export async function PATCH(
   const session = await getServerSession(authOptions);
 
   if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return unauthorized();
   }
 
   const { userId } = await params;
@@ -41,13 +43,12 @@ export async function PATCH(
   }
 
   try {
-    const { name, bio, avatarUrl } = await request.json();
+    const { name, bio, avatarUrl } = await parseBody(request, updateProfileSchema);
 
     const user = await updateUserProfile(userId, { name, bio, avatarUrl });
 
     return NextResponse.json(user);
   } catch (error) {
-    console.error("Update user error:", error);
-    return NextResponse.json({ error: "Failed to update user" }, { status: 500 });
+    return errorResponse("Update user error", error);
   }
 }

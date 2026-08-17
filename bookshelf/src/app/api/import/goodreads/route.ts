@@ -6,13 +6,14 @@ import {
   ImportResult,
   getShelfDisplayName,
 } from "@/lib/goodreads";
-import { createBook } from "@/server/books";
+import { createBook, findBooksByIsbns } from "@/server/books";
 import { getUserShelfSummaries, addBookToShelf } from "@/server/shelves";
 import { createOrUpdateReview } from "@/server/reviews";
+import { recordFinishedRead } from "@/server/progress";
 import { getBookByISBN, normalizeOpenLibraryBook } from "@/lib/openlibrary";
 import { mapWithConcurrency } from "@/lib/concurrency";
 import { errorResponse, unauthorized } from "@/lib/api";
-import prisma from "@/lib/prisma";
+import { ValidationError } from "@/lib/errors";
 import type { Book } from "@prisma/client";
 
 /** CSV file size ceiling. */
@@ -61,9 +62,10 @@ export async function POST(request: NextRequest) {
     try {
       parsed = parseGoodreadsCSV(await file.text());
     } catch (error) {
-      return NextResponse.json(
-        { error: error instanceof Error ? error.message : "Failed to parse CSV" },
-        { status: 400 }
+      // parseGoodreadsCSV only raises messages we wrote, and they name the
+      // missing column — genuinely useful to the person fixing their export.
+      throw new ValidationError(
+        error instanceof Error ? error.message : "Failed to parse CSV"
       );
     }
 
@@ -126,19 +128,12 @@ export async function POST(request: NextRequest) {
 
         if (grBook.dateRead && grBook.exclusiveShelf === "read") {
           try {
-            await prisma.readingProgress.upsert({
-              where: { userId_bookId: { userId, bookId: book.id } },
-              create: {
-                userId,
-                bookId: book.id,
-                currentPage: book.pageCount || 0,
-                finishedAt: grBook.dateRead,
-              },
-              update: {
-                finishedAt: grBook.dateRead,
-                currentPage: book.pageCount || 0,
-              },
-            });
+            await recordFinishedRead(
+              userId,
+              book.id,
+              grBook.dateRead,
+              book.pageCount
+            );
           } catch {
             // Progress is a nice-to-have; the book is already imported.
           }
@@ -180,9 +175,7 @@ async function resolveBooks(
 
   const isbns = [...new Set(books.map(isbnFor).filter((v): v is string => !!v))];
 
-  const existing = isbns.length
-    ? await prisma.book.findMany({ where: { isbn: { in: isbns } } })
-    : [];
+  const existing = await findBooksByIsbns(isbns);
   const bookByIsbn = new Map(existing.map((b) => [b.isbn!, b]));
 
   return mapWithConcurrency(books, LOOKUP_CONCURRENCY, async (grBook) => {

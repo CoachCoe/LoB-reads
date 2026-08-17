@@ -33,6 +33,36 @@ export const coordinatesSchema = z.object({
   lng: z.number().min(-180).max(180),
 });
 
+/**
+ * Registration. The password rules are stricter than a length check because
+ * this is the only credential the account has.
+ */
+export const registerSchema = z.object({
+  email: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .max(254, "Email address is too long") // RFC 5321
+    .refine((v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), {
+      message: "Please enter a valid email address",
+    }),
+  password: z
+    .string()
+    .min(8, "Password must be at least 8 characters")
+    .max(200, "Password is too long")
+    .refine((v) => /[a-zA-Z]/.test(v), {
+      message: "Password must contain at least one letter",
+    })
+    .refine((v) => /[0-9]/.test(v), {
+      message: "Password must contain at least one number",
+    }),
+  name: z
+    .string()
+    .trim()
+    .min(2, "Name must be at least 2 characters")
+    .max(100, "Name must be 100 characters or fewer"),
+});
+
 export const createShelfSchema = z.object({
   name: shortText("Shelf name"),
 });

@@ -103,6 +103,15 @@ export async function getAllGenres(): Promise<string[]> {
   return rows.map((row) => row.genre);
 }
 
+/**
+ * Bulk lookup for the Goodreads import. One query for the whole file rather
+ * than one per row — a 500-book export otherwise means 500 round trips.
+ */
+export async function findBooksByIsbns(isbns: string[]) {
+  if (isbns.length === 0) return [];
+  return prisma.book.findMany({ where: { isbn: { in: isbns } } });
+}
+
 export async function createBook(data: {
   title: string;
   author: string;
