@@ -4,10 +4,10 @@ import {
   addAuthorLocation,
   deleteAuthorLocation,
 } from "@/server/authors";
-import { getCurrentUser } from "@/lib/session";
-import { errorResponse, parseBody, unauthorized } from "@/lib/api";
-import { createAuthorLocationSchema } from "@/lib/schemas";
-import { ValidationError } from "@/lib/errors";
+import { getCurrentUser } from "@/lib/auth/session";
+import { errorResponse, parseBody, unauthorized } from "@/lib/http/api";
+import { createAuthorLocationSchema } from "@/lib/http/schemas";
+import { ValidationError } from "@/lib/http/errors";
 
 export async function GET(
   request: NextRequest,

@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser } from "@/lib/auth/session";
 import { getShelfById } from "@/server/shelves";
 import BookGrid from "@/components/books/BookGrid";
 import Avatar from "@/components/ui/Avatar";

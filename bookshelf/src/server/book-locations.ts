@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { AuthorizationError, NotFoundError } from "@/lib/errors";
+import { AuthorizationError, NotFoundError } from "@/lib/http/errors";
 
 export interface BookLocationData {
   id: string;

@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getUserProfile, isFollowing } from "@/server/users";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser } from "@/lib/auth/session";
 import Avatar from "@/components/ui/Avatar";
 import Card, { CardContent } from "@/components/ui/Card";
 import ReviewCard from "@/components/reviews/ReviewCard";

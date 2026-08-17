@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser } from "@/lib/auth/session";
 import prisma from "@/lib/prisma";
 import SettingsForm from "./SettingsForm";
 

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { authOptions } from "@/lib/auth/options";
 import { getShelfById, deleteShelf } from "@/server/shelves";
-import { errorResponse, unauthorized } from "@/lib/api";
+import { errorResponse, unauthorized } from "@/lib/http/api";
 
 // Shelves are public — this is intentionally unauthenticated. The query layer
 // returns only the owner's public fields alongside the books.

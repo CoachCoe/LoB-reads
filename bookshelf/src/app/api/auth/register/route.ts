@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { findUserByEmail, createUserWithDefaultShelves } from "@/server/users";
-import { errorResponse, parseBody } from "@/lib/api";
-import { registerSchema } from "@/lib/schemas";
+import { errorResponse, parseBody } from "@/lib/http/api";
+import { registerSchema } from "@/lib/http/schemas";
 import { checkLimit, getClientIp, LIMITS } from "@/lib/rate-limit";
 
 /** Work factor for password hashing. */

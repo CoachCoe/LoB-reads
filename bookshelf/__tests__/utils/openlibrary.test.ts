@@ -1,4 +1,4 @@
-import { getCoverUrl, normalizeOpenLibraryBook } from "@/lib/openlibrary";
+import { getCoverUrl, normalizeOpenLibraryBook } from "@/lib/sources/openlibrary";
 
 describe("OpenLibrary utility functions", () => {
   describe("getCoverUrl", () => {

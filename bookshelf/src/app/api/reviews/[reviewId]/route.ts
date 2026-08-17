@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { authOptions } from "@/lib/auth/options";
 import { deleteReview } from "@/server/reviews";
-import { errorResponse, unauthorized } from "@/lib/api";
+import { errorResponse, unauthorized } from "@/lib/http/api";
 
 export async function DELETE(
   request: Request,

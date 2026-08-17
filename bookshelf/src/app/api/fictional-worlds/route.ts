@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAllFictionalWorlds, createFictionalWorld } from "@/server/fictional-worlds";
-import { getCurrentUser } from "@/lib/session";
-import { errorResponse, parseBody, unauthorized } from "@/lib/api";
-import { createFictionalWorldSchema } from "@/lib/schemas";
+import { getCurrentUser } from "@/lib/auth/session";
+import { errorResponse, parseBody, unauthorized } from "@/lib/http/api";
+import { createFictionalWorldSchema } from "@/lib/http/schemas";
 
 export async function GET() {
   try {

@@ -3,7 +3,7 @@ import {
   AuthorizationError,
   NotFoundError,
   ValidationError,
-} from "@/lib/errors";
+} from "@/lib/http/errors";
 
 export async function getUserReviewForBook(userId: string, bookId: string) {
   return prisma.review.findUnique({

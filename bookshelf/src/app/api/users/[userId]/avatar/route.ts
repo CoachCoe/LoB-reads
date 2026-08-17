@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser } from "@/lib/auth/session";
 import { getUserAvatarUrl, updateUserProfile } from "@/server/users";
-import { validateImageFile, sanitizeFilename } from "@/lib/file-validation";
-import { putObject, deleteObjectByUrl, isStorageConfigured } from "@/lib/storage";
+import { validateImageFile, sanitizeFilename } from "@/lib/storage/file-validation";
+import { putObject, deleteObjectByUrl, isStorageConfigured } from "@/lib/storage/objects";
 import { checkLimit, LIMITS } from "@/lib/rate-limit";
 
 interface RouteParams {

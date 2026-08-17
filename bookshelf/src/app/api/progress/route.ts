@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { authOptions } from "@/lib/auth/options";
 import {
   getUserCurrentlyReading,
   updateReadingProgress,
   startReading,
   finishReading,
 } from "@/server/progress";
-import { errorResponse, parseBody, unauthorized } from "@/lib/api";
-import { updateProgressSchema } from "@/lib/schemas";
+import { errorResponse, parseBody, unauthorized } from "@/lib/http/api";
+import { updateProgressSchema } from "@/lib/http/schemas";
 
 export async function GET() {
   const session = await getServerSession(authOptions);

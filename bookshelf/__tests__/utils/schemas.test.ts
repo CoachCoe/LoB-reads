@@ -4,7 +4,7 @@ import {
   createAuthorLocationSchema,
   createBookLocationSchema,
   createShelfSchema,
-} from "@/lib/schemas";
+} from "@/lib/http/schemas";
 
 /**
  * These cover the gaps the audit found in the hand-rolled validation the

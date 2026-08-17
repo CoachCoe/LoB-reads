@@ -15,12 +15,12 @@ import { makeUser, makeFictionalWorld, makeMap } from "./factories";
  */
 
 const mockGetCurrentUser = jest.fn();
-jest.mock("@/lib/session", () => ({
+jest.mock("@/lib/auth/session", () => ({
   getCurrentUser: () => mockGetCurrentUser(),
 }));
 
 const mockDeleteObjectByUrl = jest.fn().mockResolvedValue(true);
-jest.mock("@/lib/storage", () => ({
+jest.mock("@/lib/storage/objects", () => ({
   deleteObjectByUrl: (url: string) => mockDeleteObjectByUrl(url),
   putObject: jest.fn(),
   isStorageConfigured: () => true,

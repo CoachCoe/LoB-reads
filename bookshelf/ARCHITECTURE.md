@@ -50,7 +50,11 @@ Two rules follow from that first line:
 src/app/(main)     Server components. Fetch via src/server, render.
 src/app/api        Route handlers. Thin: auth, parse, delegate, respond.
 src/server         All database access. Throws typed errors.
-src/lib            Shared plumbing — see below.
+src/lib/http       Request parsing, schemas, error-to-status mapping.
+src/lib/auth       NextAuth options, session access, email normalisation.
+src/lib/storage    Object storage and upload validation.
+src/lib/sources    Third-party integrations (Open Library, Goodreads CSV).
+src/lib/*.ts       Cross-cutting infra: prisma, rate-limit, concurrency.
 src/components     Presentation.
 scripts/ingest     Open Library pipeline. Raw SQL and COPY, not Prisma.
 ```
@@ -104,9 +108,6 @@ what we told it to.
   single long-lived instance; on serverless the effective limit becomes
   `limit × instances`. The interface is storage-agnostic so swapping in a
   shared store is one file.
-- **`src/lib` is flat and growing.** At thirteen files it is navigable; it
-  wants grouping into `http/`, `auth/`, `storage/`, `sources/` before it
-  reaches twenty-five.
 - **The `acquire` ingest step is unverified against the live endpoint** —
   it was written where openlibrary.org was unreachable. Start with the
   authors dump (~500MB) rather than editions (~9.2GB).

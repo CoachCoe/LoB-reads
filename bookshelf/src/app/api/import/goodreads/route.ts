@@ -1,19 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser } from "@/lib/auth/session";
 import {
   parseGoodreadsCSV,
   GoodreadsBook,
   ImportResult,
   getShelfDisplayName,
-} from "@/lib/goodreads";
+} from "@/lib/sources/goodreads";
 import { createBook, findBooksByIsbns } from "@/server/books";
 import { getUserShelfSummaries, addBookToShelf } from "@/server/shelves";
 import { createOrUpdateReview } from "@/server/reviews";
 import { recordFinishedRead } from "@/server/progress";
-import { getBookByISBN, normalizeOpenLibraryBook } from "@/lib/openlibrary";
+import { getBookByISBN, normalizeOpenLibraryBook } from "@/lib/sources/openlibrary";
 import { mapWithConcurrency } from "@/lib/concurrency";
-import { errorResponse, unauthorized } from "@/lib/api";
-import { ValidationError } from "@/lib/errors";
+import { errorResponse, unauthorized } from "@/lib/http/api";
+import { ValidationError } from "@/lib/http/errors";
 import type { Book } from "@prisma/client";
 
 /** CSV file size ceiling. */

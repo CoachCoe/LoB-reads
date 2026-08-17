@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser } from "@/lib/auth/session";
 import { getMapById, deleteMap, updateMap } from "@/server/fictional-worlds";
-import { errorResponse, parseBody, unauthorized } from "@/lib/api";
-import { deleteObjectByUrl } from "@/lib/storage";
-import { updateMapSchema } from "@/lib/schemas";
+import { errorResponse, parseBody, unauthorized } from "@/lib/http/api";
+import { deleteObjectByUrl } from "@/lib/storage/objects";
+import { updateMapSchema } from "@/lib/http/schemas";
 
 interface RouteParams {
   params: Promise<{ mapId: string }>;

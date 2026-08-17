@@ -12,6 +12,7 @@ import path from "node:path";
  */
 
 const API_DIR = "src/app/api";
+const SCHEMAS_FILE = path.join("src", "lib", "http", "schemas.ts");
 
 /** Recursively collect files matching a predicate. */
 function walk(dir: string, match: (file: string) => boolean): string[] {
@@ -95,7 +96,7 @@ describe("schema conventions", () => {
   it("uses every schema it defines", () => {
     // updateProfileSchema was written and left unwired for several commits,
     // leaving one route unvalidated while looking covered.
-    const source = read("src/lib/schemas.ts");
+    const source = read(SCHEMAS_FILE);
     const defined = [...source.matchAll(/export const (\w+Schema)\b/g)].map(
       (m) => m[1]
     );
@@ -103,7 +104,7 @@ describe("schema conventions", () => {
     expect(defined.length).toBeGreaterThan(5);
 
     const consumers = walk("src", (f) => /\.tsx?$/.test(f))
-      .filter((f: string) => !f.endsWith(path.join("lib", "schemas.ts")))
+      .filter((f: string) => f !== SCHEMAS_FILE)
       .map(read)
       .join("\n");
 

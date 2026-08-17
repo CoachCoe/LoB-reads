@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { authOptions } from "@/lib/auth/options";
 import { getUserProfile, updateUserProfile } from "@/server/users";
-import { errorResponse, parseBody, unauthorized } from "@/lib/api";
-import { updateProfileSchema } from "@/lib/schemas";
+import { errorResponse, parseBody, unauthorized } from "@/lib/http/api";
+import { updateProfileSchema } from "@/lib/http/schemas";
 
 export async function GET(
   request: Request,

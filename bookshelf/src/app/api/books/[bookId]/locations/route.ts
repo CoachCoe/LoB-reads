@@ -4,10 +4,10 @@ import {
   addBookLocation,
   deleteBookLocation,
 } from "@/server/book-locations";
-import { getCurrentUser } from "@/lib/session";
-import { errorResponse, parseBody, unauthorized } from "@/lib/api";
-import { createBookLocationSchema } from "@/lib/schemas";
-import { ValidationError } from "@/lib/errors";
+import { getCurrentUser } from "@/lib/auth/session";
+import { errorResponse, parseBody, unauthorized } from "@/lib/http/api";
+import { createBookLocationSchema } from "@/lib/http/schemas";
+import { ValidationError } from "@/lib/http/errors";
 
 export async function GET(
   request: NextRequest,

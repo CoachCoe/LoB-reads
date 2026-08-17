@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser } from "@/lib/auth/session";
 import { getPopularBooks, searchLocalBooks } from "@/server/books";
 import { getActivityFeed } from "@/server/users";
 import { getUserCurrentlyReading } from "@/server/progress";

@@ -4,7 +4,7 @@ import {
   AuthorizationError,
   NotFoundError,
   ValidationError,
-} from "@/lib/errors";
+} from "@/lib/http/errors";
 
 /**
  * How many books to load per shelf for the overview. `_count.shelfItems`

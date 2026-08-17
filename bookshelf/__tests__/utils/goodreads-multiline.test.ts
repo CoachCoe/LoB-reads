@@ -1,4 +1,4 @@
-import { parseGoodreadsCSV } from "@/lib/goodreads";
+import { parseGoodreadsCSV } from "@/lib/sources/goodreads";
 
 /**
  * Regression tests for the record-splitting bug: the parser used to split on

@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser } from "@/lib/auth/session";
 import { getUserShelves } from "@/server/shelves";
 import { getUserReadingStats } from "@/server/progress";
 import ShelfSection from "./ShelfSection";

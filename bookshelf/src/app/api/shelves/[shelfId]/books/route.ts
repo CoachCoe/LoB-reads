@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { authOptions } from "@/lib/auth/options";
 import { addBookToShelf, removeBookFromShelf } from "@/server/shelves";
-import { errorResponse, parseBody, unauthorized } from "@/lib/api";
-import { shelfBookSchema } from "@/lib/schemas";
+import { errorResponse, parseBody, unauthorized } from "@/lib/http/api";
+import { shelfBookSchema } from "@/lib/http/schemas";
 
 export async function POST(
   request: Request,

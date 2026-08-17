@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser } from "@/lib/auth/session";
 import { getFictionalWorldById, addMapToWorld } from "@/server/fictional-worlds";
-import { validateImageFile, sanitizeFilename } from "@/lib/file-validation";
+import { validateImageFile, sanitizeFilename } from "@/lib/storage/file-validation";
 import { checkLimit, LIMITS } from "@/lib/rate-limit";
-import { putObject, isStorageConfigured } from "@/lib/storage";
+import { putObject, isStorageConfigured } from "@/lib/storage/objects";
 
 interface RouteParams {
   params: Promise<{ worldId: string }>;

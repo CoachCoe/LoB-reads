@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { authOptions } from "@/lib/auth/options";
 import { getUserShelves, createShelf } from "@/server/shelves";
-import { errorResponse, parseBody, unauthorized } from "@/lib/api";
-import { createShelfSchema } from "@/lib/schemas";
+import { errorResponse, parseBody, unauthorized } from "@/lib/http/api";
+import { createShelfSchema } from "@/lib/http/schemas";
 
 export async function GET() {
   const session = await getServerSession(authOptions);

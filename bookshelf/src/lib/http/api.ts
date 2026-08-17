@@ -4,7 +4,7 @@ import {
   AuthorizationError,
   NotFoundError,
   ValidationError,
-} from "./errors";
+} from "@/lib/http/errors";
 
 /**
  * Single place where a thrown error becomes a response.

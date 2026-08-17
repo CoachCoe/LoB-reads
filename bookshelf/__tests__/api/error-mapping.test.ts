@@ -2,13 +2,13 @@
  * @jest-environment node
  */
 import { ZodError } from "zod";
-import { errorResponse } from "@/lib/api";
+import { errorResponse } from "@/lib/http/api";
 import {
   AuthorizationError,
   NotFoundError,
   ValidationError,
-} from "@/lib/errors";
-import { createReviewSchema } from "@/lib/schemas";
+} from "@/lib/http/errors";
+import { createReviewSchema } from "@/lib/http/schemas";
 
 /**
  * Before this mapping existed, every thrown error became a 500 and its raw

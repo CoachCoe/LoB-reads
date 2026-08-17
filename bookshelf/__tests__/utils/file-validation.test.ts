@@ -1,4 +1,4 @@
-import { sanitizeFilename } from "@/lib/file-validation";
+import { sanitizeFilename } from "@/lib/storage/file-validation";
 
 describe("sanitizeFilename", () => {
   it("should keep simple filenames unchanged", () => {

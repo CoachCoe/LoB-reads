@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { NotFoundError } from "@/lib/errors";
+import { NotFoundError } from "@/lib/http/errors";
 
 export async function getUserCurrentlyReading(userId: string) {
   return prisma.readingProgress.findMany({

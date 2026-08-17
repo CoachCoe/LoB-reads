@@ -1,9 +1,9 @@
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
-import prisma from "./prisma";
-import { normalizeEmail } from "./email";
-import { checkLimit, LIMITS } from "./rate-limit";
+import prisma from "@/lib/prisma";
+import { normalizeEmail } from "@/lib/auth/email";
+import { checkLimit, LIMITS } from "@/lib/rate-limit";
 
 /**
  * A real bcrypt hash of a value nothing can match, used only to equalise the

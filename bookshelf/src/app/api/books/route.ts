@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { authOptions } from "@/lib/auth/options";
 import { createBook, searchLocalBooks } from "@/server/books";
-import { searchBooks, normalizeOpenLibraryBook } from "@/lib/openlibrary";
-import { errorResponse, parseBody, unauthorized } from "@/lib/api";
-import { createBookSchema } from "@/lib/schemas";
+import { searchBooks, normalizeOpenLibraryBook } from "@/lib/sources/openlibrary";
+import { errorResponse, parseBody, unauthorized } from "@/lib/http/api";
+import { createBookSchema } from "@/lib/http/schemas";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);

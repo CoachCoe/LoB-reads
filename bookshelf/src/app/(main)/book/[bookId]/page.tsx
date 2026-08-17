@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getBookById } from "@/server/books";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser } from "@/lib/auth/session";
 import { getUserReviewForBook } from "@/server/reviews";
 import StarRating from "@/components/ui/StarRating";
 import Badge from "@/components/ui/Badge";

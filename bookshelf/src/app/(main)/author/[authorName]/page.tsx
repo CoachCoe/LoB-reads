@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { getAuthorByName, getBooksForAuthor } from "@/server/authors";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser } from "@/lib/auth/session";
 import { User, BookOpen, MapPin } from "lucide-react";
 import AuthorLocationsSection from "@/components/authors/AuthorLocationsSection";
 

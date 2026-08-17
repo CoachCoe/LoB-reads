@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser } from "@/lib/auth/session";
 import { getWrappedStats } from "@/server/wrapped";
 import WrappedExperience from "./WrappedExperience";
 

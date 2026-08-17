@@ -1,5 +1,5 @@
 import prisma from "@/lib/prisma";
-import { ValidationError } from "@/lib/errors";
+import { ValidationError } from "@/lib/http/errors";
 
 /**
  * Fields that may be shown to anyone. Profiles and shelves are public, so this

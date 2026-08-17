@@ -25,7 +25,7 @@ describe("keyFromUrl", () => {
       }
     }
 
-    const mod = await import("@/lib/storage");
+    const mod = await import("@/lib/storage/objects");
 
     for (const key of Object.keys(env)) {
       if (previous[key] === undefined) {

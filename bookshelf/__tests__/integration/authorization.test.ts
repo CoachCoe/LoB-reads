@@ -7,7 +7,7 @@ import {
 import { deleteReview, createOrUpdateReview } from "@/server/reviews";
 import { deleteBookLocation } from "@/server/book-locations";
 import { deleteAuthorLocation } from "@/server/authors";
-import { AuthorizationError, NotFoundError, ValidationError } from "@/lib/errors";
+import { AuthorizationError, NotFoundError, ValidationError } from "@/lib/http/errors";
 import { prisma } from "./setup";
 import {
   makeUser,
