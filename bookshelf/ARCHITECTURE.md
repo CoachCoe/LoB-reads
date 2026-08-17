@@ -67,7 +67,7 @@ that no raw error message reaches a response.
 **`src/server` owns queries and authorization.** Ownership checks live here, not
 in routes, so they cannot be forgotten per-endpoint. Functions throw
 `AuthorizationError`, `NotFoundError` or `ValidationError`; `errorResponse` in
-`src/lib/api.ts` is the single place those become HTTP statuses.
+`src/lib/http/api.ts` is the single place those become HTTP statuses.
 
 The one exception is the fictional-world map deletion rule, which needs the
 session's `isModerator` flag and therefore lives in the route. It is covered by
