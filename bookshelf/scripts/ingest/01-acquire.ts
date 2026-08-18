@@ -9,13 +9,15 @@
  *   npx tsx scripts/ingest/01-acquire.ts authors    # just one
  */
 
-import { createWriteStream } from "node:fs";
-import { mkdir, stat } from "node:fs/promises";
+import { createReadStream, createWriteStream } from "node:fs";
+import { mkdir, stat, readFile, writeFile, rm } from "node:fs/promises";
+import { createGunzip } from "node:zlib";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import path from "node:path";
 import { Agent, fetch as undiciFetch } from "undici";
 import { DUMPS, LOAD_ORDER, RAW_DIR, type Dump, type DumpType } from "./dumps";
+import { decideResume, type PartialMeta } from "./resume-policy";
 
 /**
  * Node's global fetch hard-codes a 10-second connect timeout and offers no way
@@ -52,6 +54,45 @@ async function sizeOnDisk(file: string): Promise<number> {
   } catch {
     return 0;
   }
+}
+
+/**
+ * What a partial file is a partial OF.
+ *
+ * Resuming means appending to bytes we did not fetch this run and have never
+ * checked. If those bytes came from a different publication of the dump — or
+ * from a failed attempt that wrote garbage — appending produces a file of
+ * exactly the right length and entirely wrong content.
+ *
+ * That is not hypothetical: the first real run resumed onto 11KB left by an
+ * earlier failure, finished at precisely the advertised 741.6MB, and was
+ * corrupt. The only hint was `gzip: trailing garbage ignored`, which is easy
+ * to miss and arrives long after the download.
+ *
+ * So a partial is only resumed when this sidecar says it belongs to the same
+ * remote object, and the sidecar persists after completion as the record that
+ * this exact file was checked. Without it, a finished-but-corrupt download is
+ * indistinguishable from a good one — the length matches either way, which is
+ * how the corrupt file was skipped as "already complete" on the next run.
+ */
+const metaPath = (target: string) => `${target}.meta.json`;
+
+async function readMeta(target: string): Promise<PartialMeta | null> {
+  try {
+    return JSON.parse(await readFile(metaPath(target), "utf8")) as PartialMeta;
+  } catch {
+    return null;
+  }
+}
+
+/** Stream the archive through gunzip, discarding output, to prove it is intact. */
+async function verifyGzip(file: string): Promise<void> {
+  await pipeline(createReadStream(file), createGunzip(), async function (source) {
+    // Consume and discard; a truncated or corrupt member throws here.
+    for await (const _chunk of source) {
+      void _chunk;
+    }
+  });
 }
 
 /**
@@ -109,20 +150,63 @@ async function download(dump: Dump): Promise<void> {
   const totalHeader = head.headers.get("content-length");
   const total = totalHeader ? Number(totalHeader) : undefined;
   const lastModified = head.headers.get("last-modified");
+  const etag = head.headers.get("etag");
 
-  if (total !== undefined && existing === total) {
+  const existingMeta = existing > 0 ? await readMeta(target) : null;
+  const remote = { etag, lastModified, total };
+  const decision = decideResume(existing, existingMeta, remote);
+
+  const writeMeta = (verified: boolean) =>
+    total === undefined
+      ? Promise.resolve()
+      : writeFile(
+          metaPath(target),
+          JSON.stringify({ etag, lastModified, total, verified } satisfies PartialMeta)
+        );
+
+  if (decision.action === "skip") {
     console.log(
-      `  ${dump.type}: already complete (${formatBytes(existing)})${
+      `  ${dump.type}: already complete and verified (${formatBytes(existing)})${
         lastModified ? `, published ${lastModified}` : ""
       }`
     );
     return;
   }
 
-  const resuming = existing > 0 && total !== undefined && existing < total;
+  if (decision.action === "verify") {
+    // Right length, unproven. Length is not integrity: a file stitched from
+    // two publications of the same dump has precisely this size.
+    console.log(
+      `  ${dump.type}: ${formatBytes(existing)} on disk but unverified — checking it decompresses…`
+    );
+    try {
+      await verifyGzip(target);
+      await writeMeta(true);
+      console.log(`  ${dump.type}: intact, keeping it`);
+      return;
+    } catch {
+      console.log(`  ${dump.type}: corrupt — discarding and downloading again`);
+      await rm(target, { force: true });
+      await rm(metaPath(target), { force: true });
+    }
+  }
+
+  if (decision.action === "restart" && existing > 0) {
+    console.log(
+      `    discarding ${formatBytes(existing)} that cannot be shown to belong to the current dump`
+    );
+    await rm(target, { force: true });
+    await rm(metaPath(target), { force: true });
+  }
+
+  const from = decision.action === "resume" ? decision.from : 0;
+  const resuming = from > 0;
+
+  await writeMeta(false);
+
   if (resuming) {
     console.log(
-      `  ${dump.type}: resuming at ${formatBytes(existing)} of ${formatBytes(total!)}`
+      `  ${dump.type}: resuming at ${formatBytes(from)} of ${formatBytes(total!)}`
     );
   } else {
     console.log(
@@ -133,7 +217,7 @@ async function download(dump: Dump): Promise<void> {
   }
 
   const response = await undiciFetch(dump.url, {
-    headers: resuming ? { Range: `bytes=${existing}-` } : {},
+    headers: resuming ? { Range: `bytes=${from}-` } : {},
     dispatcher: agent,
   });
 
@@ -148,7 +232,7 @@ async function download(dump: Dump): Promise<void> {
     console.log("    server ignored Range, restarting from zero");
   }
 
-  let written = append ? existing : 0;
+  let written = append ? from : 0;
   let lastLogged = Date.now();
 
   const source = Readable.fromWeb(response.body as never);
@@ -163,7 +247,33 @@ async function download(dump: Dump): Promise<void> {
 
   await pipeline(source, createWriteStream(target, { flags: append ? "a" : "w" }));
 
-  console.log(`  ${dump.type}: done, ${formatBytes(await sizeOnDisk(target))}`);
+  const finalSize = await sizeOnDisk(target);
+  if (total !== undefined && finalSize !== total) {
+    throw new Error(
+      `${dump.type}: expected ${total} bytes, got ${finalSize} — treating as incomplete`
+    );
+  }
+
+  // Length is not integrity. A resumed file can be exactly the right size and
+  // still be two different dumps stitched together, so prove it decompresses
+  // before anything downstream depends on it.
+  if (append) {
+    console.log("    verifying the resumed archive decompresses…");
+    try {
+      await verifyGzip(target);
+    } catch (error) {
+      await rm(target, { force: true });
+      await rm(metaPath(target), { force: true });
+      throw new Error(
+        `${dump.type}: resumed archive is corrupt (${
+          error instanceof Error ? error.message : String(error)
+        }); discarded it so the retry starts clean`
+      );
+    }
+  }
+
+  await writeMeta(append);
+  console.log(`  ${dump.type}: done, ${formatBytes(finalSize)}`);
 }
 
 async function main() {
