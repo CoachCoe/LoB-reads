@@ -12,6 +12,17 @@
 -- particular dump, which is the only place those assumptions can be confirmed:
 -- the shapes vary by publication, and the fixtures cannot represent them.
 
+-- How much data each check actually ran against.
+--
+-- A count of zero broken rows means nothing if the table is empty, and an
+-- empty staging table looks identical to a clean one in every query below.
+-- This prints first so the zeros can be read honestly.
+\echo '── rows available to check ─────────────'
+SELECT
+  (SELECT count(*) FROM catalog.stage_authors)  AS authors,
+  (SELECT count(*) FROM catalog.stage_works)    AS works,
+  (SELECT count(*) FROM catalog.stage_editions) AS editions;
+
 \echo '── authors ─────────────────────────────'
 
 -- (data->'photos'->0)::text::bigint
