@@ -240,6 +240,38 @@ anything derived from it and then distributed inherits the licence. Keeping it
 behind the flag and out of served responses means that question never has to be
 answered. Raw files are gitignored.
 
+## The catalog rebuild takes the catalog offline
+
+`03-normalize.sql` opens with `TRUNCATE catalog.works, catalog.editions,
+catalog.work_authors, catalog.authors CASCADE` and then rebuilds inside the
+same transaction. `TRUNCATE` takes `ACCESS EXCLUSIVE` and holds it until
+commit, so for the whole run **every read of those tables blocks** — search,
+work pages, shelf hydration, the lot. Not an error the app can catch and
+degrade around: the queries simply hang until the rebuild commits.
+
+This was measured, not inferred. During the first full ingest a bare
+`SELECT pg_relation_size('catalog.works')` sat waiting on a relation lock; the
+normalize transaction had been holding it for over three hours.
+
+The spec calls for a monthly rebuild, so as written that is a multi-hour
+outage every month.
+
+The fix is to build beside the live tables rather than through them: normalize
+into `works_new`, `editions_new` and so on, then swap in one short transaction
+
+    BEGIN;
+    ALTER TABLE works     RENAME TO works_old;
+    ALTER TABLE works_new RENAME TO works;
+    ...
+    COMMIT;
+
+which holds the exclusive lock for milliseconds instead of hours, and leaves
+the previous catalog in place to roll back to. It costs disk — both copies
+exist at once — which is a fair trade against the site being unavailable.
+
+Not yet implemented. It matters at deploy time, not for a local rebuild where
+nothing is reading the catalog.
+
 ## Known limitations
 
 - **Rate limiting is per-process** (`src/lib/rate-limit.ts`). Correct for a
