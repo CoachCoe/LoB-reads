@@ -23,12 +23,12 @@ import { connect } from "./db";
 import { encodeStageRow } from "./copy-format";
 import {
   DUMPS,
-  LOAD_ORDER,
   QUARANTINE_DIR,
   RAW_DIR,
   stripKeyPrefix,
   type DumpType,
 } from "./dumps";
+import { parseStageArgs } from "./args";
 
 const PROGRESS_EVERY = 500_000;
 
@@ -153,13 +153,7 @@ async function stageDump(
 }
 
 async function main() {
-  const args = process.argv.slice(2);
-  const limitIndex = args.indexOf("--limit");
-  const limit = limitIndex !== -1 ? Number(args[limitIndex + 1]) : undefined;
-  const requested = args.filter(
-    (a, i) => !a.startsWith("--") && i !== limitIndex + 1
-  ) as DumpType[];
-  const selected = requested.length > 0 ? requested : LOAD_ORDER;
+  const { selected, limit } = parseStageArgs(process.argv.slice(2));
 
   await mkdir(QUARANTINE_DIR, { recursive: true });
 

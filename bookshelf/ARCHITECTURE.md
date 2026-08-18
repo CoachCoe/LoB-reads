@@ -246,9 +246,15 @@ answered. Raw files are gitignored.
   single long-lived instance; on serverless the effective limit becomes
   `limit × instances`. The interface is storage-agnostic so swapping in a
   shared store is one file.
-- **The `acquire` ingest step is unverified against the live endpoint** —
-  it was written where openlibrary.org was unreachable. Start with the
-  authors dump (~740MB) rather than editions (~11.7GB).
+- **Dump downloads are resumable, and a resume is only as good as its
+  provenance.** `acquire` writes a `.meta.json` sidecar recording the etag,
+  last-modified and length a partial belongs to, and refuses to resume onto
+  bytes it cannot tie to the object the server is currently offering. It also
+  persists after completion as the record that the archive was checked, so a
+  complete-but-unverified file is decompressed rather than skipped on faith.
+  This exists because the first real download finished at exactly the
+  advertised length and was corrupt: it had resumed onto 11KB from an earlier
+  failure. Open Library republishes monthly, so a stale partial is routine.
 - **Covers fall back to hotlinking** for anything `enrich:covers` has not
   reached yet, so a fresh catalog still shows images before the first backfill.
 - **ISBN logic exists twice**, as SQL for the ingest and TypeScript for the
