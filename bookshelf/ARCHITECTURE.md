@@ -248,7 +248,7 @@ answered. Raw files are gitignored.
   shared store is one file.
 - **The `acquire` ingest step is unverified against the live endpoint** —
   it was written where openlibrary.org was unreachable. Start with the
-  authors dump (~500MB) rather than editions (~9.2GB).
+  authors dump (~740MB) rather than editions (~11.7GB).
 - **Covers fall back to hotlinking** for anything `enrich:covers` has not
   reached yet, so a fresh catalog still shows images before the first backfill.
 - **ISBN logic exists twice**, as SQL for the ingest and TypeScript for the

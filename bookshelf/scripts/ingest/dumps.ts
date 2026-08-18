@@ -6,6 +6,10 @@
  * low-volume lookups of records newer than the last dump.
  *
  * https://openlibrary.org/developers/dumps
+ *
+ * The URLs below are stable redirects: openlibrary.org answers with a 302 to
+ * archive.org, which serves the file. Archive.org honours Range, so a partial
+ * download resumes rather than restarting.
  */
 
 export type DumpType = "works" | "editions" | "authors";
@@ -14,7 +18,11 @@ export interface Dump {
   type: DumpType;
   url: string;
   file: string;
-  /** Rough gzipped size, for progress reporting only. */
+  /**
+   * Gzipped size, for progress reporting when a HEAD returns no
+   * content-length. Measured 2026-08-17 against the 2026-07-31 dump; these
+   * grow steadily, so treat them as a floor rather than a figure.
+   */
   approxBytes: number;
 }
 
@@ -23,19 +31,19 @@ export const DUMPS: Record<DumpType, Dump> = {
     type: "authors",
     url: "https://openlibrary.org/data/ol_dump_authors_latest.txt.gz",
     file: "ol_dump_authors_latest.txt.gz",
-    approxBytes: 500_000_000,
+    approxBytes: 777_000_000,
   },
   works: {
     type: "works",
     url: "https://openlibrary.org/data/ol_dump_works_latest.txt.gz",
     file: "ol_dump_works_latest.txt.gz",
-    approxBytes: 2_900_000_000,
+    approxBytes: 4_036_000_000,
   },
   editions: {
     type: "editions",
     url: "https://openlibrary.org/data/ol_dump_editions_latest.txt.gz",
     file: "ol_dump_editions_latest.txt.gz",
-    approxBytes: 9_200_000_000,
+    approxBytes: 12_548_000_000,
   },
 };
 

@@ -20,6 +20,7 @@ import path from "node:path";
 import type { Client } from "pg";
 import { from as copyFrom } from "pg-copy-streams";
 import { connect } from "./db";
+import { encodeStageRow } from "./copy-format";
 import {
   DUMPS,
   LOAD_ORDER,
@@ -37,18 +38,6 @@ function logProgress(type: DumpType, read: number, staged: number, bad: number) 
   console.log(
     `    ${read.toLocaleString()} read, ${staged.toLocaleString()} staged, ${bad.toLocaleString()} bad${pct}`
   );
-}
-
-/**
- * COPY ... FROM STDIN in text format. Tabs, newlines and backslashes inside a
- * value would otherwise be read as delimiters, so they are escaped.
- */
-function copyEscape(value: string): string {
-  return value
-    .replace(/\\/g, "\\\\")
-    .replace(/\t/g, "\\t")
-    .replace(/\n/g, "\\n")
-    .replace(/\r/g, "\\r");
 }
 
 interface StageResult {
@@ -129,13 +118,12 @@ async function stageDump(
       continue;
     }
 
-    const row =
-      [
-        copyEscape(stripKeyPrefix(rawKey)),
-        copyEscape(revision || "\\N"),
-        copyEscape(lastModified || "\\N"),
-        copyEscape(json),
-      ].join("\t") + "\n";
+    const row = encodeStageRow(
+      stripKeyPrefix(rawKey),
+      revision,
+      lastModified,
+      json
+    );
 
     await write(row);
     rowsStaged++;

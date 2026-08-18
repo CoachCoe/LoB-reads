@@ -14,7 +14,26 @@ import { mkdir, stat } from "node:fs/promises";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import path from "node:path";
+import { Agent, fetch as undiciFetch } from "undici";
 import { DUMPS, LOAD_ORDER, RAW_DIR, type Dump, type DumpType } from "./dumps";
+
+/**
+ * Node's global fetch hard-codes a 10-second connect timeout and offers no way
+ * to change it. openlibrary.org's TLS handshake from a home connection was
+ * measured between 0.1s and just over 10s, so the download failed on a coin
+ * flip — five consecutive attempts died before a byte of the 741MB arrived,
+ * while `curl` on the same machine succeeded, because curl simply waits.
+ *
+ * Hence an explicit dispatcher. The other two timeouts matter as much: these
+ * are multi-gigabyte transfers, and archive.org can stall mid-stream for
+ * longer than the defaults tolerate. All three are inactivity timeouts, not
+ * total-duration limits, so a slow-but-progressing download is never cut off.
+ */
+const agent = new Agent({
+  connect: { timeout: 60_000 },
+  headersTimeout: 120_000,
+  bodyTimeout: 300_000,
+});
 
 function formatBytes(bytes: number): string {
   const units = ["B", "KB", "MB", "GB"];
@@ -35,13 +54,54 @@ async function sizeOnDisk(file: string): Promise<number> {
   }
 }
 
+/**
+ * Attempts per dump before giving up.
+ *
+ * These are multi-gigabyte transfers from archive.org over tens of minutes, so
+ * a dropped connection is a normal event rather than an exceptional one — the
+ * first real run died on a 10-second connect timeout after 11KB. Because
+ * archive.org honours Range, a retry resumes from what is already on disk, so
+ * an attempt costs only the bytes still missing.
+ */
+const MAX_ATTEMPTS = 5;
+
+/** Backoff between attempts, capped. Jittered to avoid a synchronised retry. */
+function backoffMs(attempt: number): number {
+  return Math.min(30_000, 2 ** attempt * 1_000) + Math.random() * 1_000;
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function downloadWithRetry(dump: Dump): Promise<void> {
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      await download(dump);
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (attempt === MAX_ATTEMPTS) {
+        throw new Error(
+          `${dump.type}: giving up after ${MAX_ATTEMPTS} attempts — ${message}`
+        );
+      }
+      const wait = backoffMs(attempt);
+      console.log(
+        `    attempt ${attempt} failed (${message}); retrying in ${Math.round(
+          wait / 1000
+        )}s — the partial file is kept and resumed`
+      );
+      await sleep(wait);
+    }
+  }
+}
+
 async function download(dump: Dump): Promise<void> {
   const target = path.join(RAW_DIR, dump.file);
   const existing = await sizeOnDisk(target);
 
   // A HEAD tells us the full size, so a completed file can be skipped and a
   // partial one resumed rather than re-fetched.
-  const head = await fetch(dump.url, { method: "HEAD" });
+  const head = await undiciFetch(dump.url, { method: "HEAD", dispatcher: agent });
   if (!head.ok) {
     throw new Error(`HEAD ${dump.url} failed: ${head.status}`);
   }
@@ -72,8 +132,9 @@ async function download(dump: Dump): Promise<void> {
     );
   }
 
-  const response = await fetch(dump.url, {
+  const response = await undiciFetch(dump.url, {
     headers: resuming ? { Range: `bytes=${existing}-` } : {},
+    dispatcher: agent,
   });
 
   if (!response.ok || !response.body) {
@@ -121,7 +182,7 @@ async function main() {
   console.log(`Acquiring ${selected.length} dump(s) into ${RAW_DIR}/`);
 
   for (const type of selected) {
-    await download(DUMPS[type]);
+    await downloadWithRetry(DUMPS[type]);
   }
 }
 
