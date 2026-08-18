@@ -91,6 +91,12 @@ async function main() {
 
   tsx("scripts/ingest/02-stage.ts", limitArgs, "Stage: dumps → staging tables");
 
+  // Between staging and normalize, because normalize is one transaction over
+  // ~100 million rows: a cast that fails on a single record rolls back the
+  // whole thing after tens of minutes and reports a type, not a row. The
+  // 2026-07-31 dump had 933 editions with "covers": [null], which is enough.
+  psql(["-f", "scripts/ingest/preflight.sql"], "Pre-flight: check staged data against normalize's casts");
+
   psql(["-f", "scripts/ingest/03-normalize.sql"], "Normalize: jsonb → typed columns");
 
   psql(

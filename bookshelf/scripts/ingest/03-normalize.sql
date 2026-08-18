@@ -27,7 +27,13 @@ SET LOCAL work_mem = '256MB';
 SET LOCAL maintenance_work_mem = '2GB';
 
 -- Helper functions (clean_isbn, isbn10_to_13, is_valid_isbn13, text_value,
--- publish_year) are defined in the 20260817030000_catalog_functions migration.
+-- publish_year, jsonb_bigint) are defined in migrations, not here.
+--
+-- jsonb_bigint exists because Open Library emits JSON null inside the covers
+-- and photos arrays. A JSON null is not a SQL NULL: casting it to text gives
+-- the string 'null', and 'null'::bigint raises. Since this file is a single
+-- transaction over ~100 million rows, 933 such editions would abort the entire
+-- run after tens of minutes and report a type rather than a record.
 
 -- ---------------------------------------------------------------------------
 -- Authors
@@ -42,7 +48,7 @@ SELECT
   s.data ->> 'birth_date',
   s.data ->> 'death_date',
   catalog.text_value(s.data -> 'bio'),
-  (s.data -> 'photos' -> 0)::text::bigint
+  catalog.jsonb_bigint(s.data -> 'photos' -> 0)
 FROM catalog.stage_authors s
 WHERE s.data ->> 'name' IS NOT NULL
 ON CONFLICT (ol_key) DO NOTHING;
@@ -128,7 +134,7 @@ SELECT
                   FROM jsonb_array_elements(s.data -> 'languages') AS value)
        ELSE '{}'::text[] END,
   s.data ->> 'physical_format',
-  (s.data -> 'covers' -> 0)::text::bigint,
+  catalog.jsonb_bigint(s.data -> 'covers' -> 0),
   now()
 FROM catalog.stage_editions s
 LEFT JOIN LATERAL (

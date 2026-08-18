@@ -162,3 +162,62 @@ describe("catalog.works search vector", () => {
     );
   });
 });
+
+describe("catalog.jsonb_bigint", () => {
+  /**
+   * Open Library emits JSON null inside the covers and photos arrays — 933
+   * editions in the 2026-07-31 dump carry "covers": [null]. A JSON null is not
+   * a SQL NULL: casting it to text yields the string 'null', so
+   * `(data->'covers'->0)::text::bigint` raises
+   *
+   *   invalid input syntax for type bigint: "null"
+   *
+   * Normalize is a single transaction over ~100 million rows, so those 933
+   * rows would have rolled back the entire run after tens of minutes, naming a
+   * type rather than a record. Found by preflight.sql before it ran.
+   */
+  async function call(json: string): Promise<bigint | null> {
+    const [row] = await prisma.$queryRawUnsafe<{ v: bigint | null }[]>(
+      `SELECT catalog.jsonb_bigint($1::jsonb) AS v`,
+      json
+    );
+    return row.v;
+  }
+
+  it("reads a plain number", async () => {
+    expect(await call("12345")).toBe(BigInt(12345));
+  });
+
+  it("returns NULL for a JSON null rather than raising", async () => {
+    // The actual bug. Not merely wrong — it aborted the transaction.
+    expect(await call("null")).toBeNull();
+  });
+
+  it("returns NULL for a string, even a numeric-looking one", async () => {
+    expect(await call('"12345"')).toBeNull();
+  });
+
+  it("returns NULL for a fractional number", async () => {
+    // ::bigint rejects it, so the guard has to catch it first.
+    expect(await call("3.5")).toBeNull();
+  });
+
+  it("returns NULL for a number too wide for bigint", async () => {
+    expect(await call("99999999999999999999")).toBeNull();
+  });
+
+  it("returns NULL for an object or array", async () => {
+    expect(await call('{"a":1}')).toBeNull();
+    expect(await call("[1]")).toBeNull();
+  });
+
+  it("survives every cover value in a realistic mix", async () => {
+    // What normalize does, over the shapes the dump actually contains.
+    const [row] = await prisma.$queryRawUnsafe<{ n: bigint }[]>(`
+      SELECT count(catalog.jsonb_bigint(v)) AS n
+      FROM (VALUES ('123'::jsonb), ('null'::jsonb), ('"x"'::jsonb), ('4.5'::jsonb)) t(v)
+    `);
+    // Only the one valid number is counted; nothing raised.
+    expect(Number(row.n)).toBe(1);
+  });
+});
