@@ -25,7 +25,7 @@
  */
 
 import { gzipSync } from "node:zlib";
-import { writeFileSync, mkdirSync } from "node:fs";
+import { writeFileSync, mkdirSync, existsSync, rmSync } from "node:fs";
 import path from "node:path";
 import { RAW_DIR, DUMPS } from "./dumps";
 import { KNOWN_BOOKS } from "./known-books";
@@ -336,12 +336,36 @@ if (scale > 0) {
 
 mkdirSync(RAW_DIR, { recursive: true });
 
+/**
+ * Fixtures are written to the same filenames the real dumps download to, so
+ * generating them overwrites whatever is there. That is fine for a fixture and
+ * ruinous for a real dump: editions takes hours to fetch, and one `--fixture`
+ * run would replace 11.7GB with 116KB, silently, leaving a pipeline that still
+ * "works" on a thousandth of the data.
+ *
+ * A real download leaves a .meta.json sidecar. Its presence is the signal to
+ * stop and make the caller choose.
+ */
+const force = process.argv.includes("--force");
+
 for (const [type, lines] of [
   ["authors", authors],
   ["works", works],
   ["editions", editions],
 ] as const) {
   const file = path.join(RAW_DIR, DUMPS[type].file);
+
+  if (existsSync(`${file}.meta.json`) && !force) {
+    console.error(
+      `Refusing to overwrite ${file}: it is a real downloaded dump, not a fixture.\n` +
+        `Delete it and its .meta.json first, or pass --force if that is what you want.`
+    );
+    process.exit(1);
+  }
+
   writeFileSync(file, gzipSync(Buffer.from(lines.join("\n") + "\n")));
+  // Any sidecar here described the download just replaced; leaving it would
+  // claim this fixture had been verified as the real dump.
+  rmSync(`${file}.meta.json`, { force: true });
   console.log(`wrote ${file}  (${lines.length} lines)`);
 }
