@@ -96,15 +96,26 @@ async function verifyGzip(file: string): Promise<void> {
 }
 
 /**
- * Attempts per dump before giving up.
+ * Consecutive attempts that move no bytes before giving up.
  *
- * These are multi-gigabyte transfers from archive.org over tens of minutes, so
- * a dropped connection is a normal event rather than an exceptional one — the
- * first real run died on a 10-second connect timeout after 11KB. Because
- * archive.org honours Range, a retry resumes from what is already on disk, so
- * an attempt costs only the bytes still missing.
+ * Counting total attempts is the wrong model for a twelve-gigabyte transfer.
+ * The editions dump failed at 93.7% against a five-attempt cap: archive.org
+ * dropped the connection repeatedly, but every attempt still moved data before
+ * dying. Those are not failures in the sense the cap was built for — the
+ * download was progressing, just not in one unbroken stream.
+ *
+ * So what counts is attempts that achieve nothing. An attempt that transfers
+ * even a byte resets the counter, and the download continues; an attempt that
+ * cannot get past the connect keeps it climbing.
  */
-const MAX_ATTEMPTS = 5;
+const MAX_STALLED_ATTEMPTS = 6;
+
+/**
+ * Overall ceiling, so a connection that dribbles a few kilobytes per attempt
+ * cannot loop forever. Generous: a resumed attempt is cheap, and giving up on
+ * a nearly complete multi-hour download is expensive.
+ */
+const MAX_TOTAL_ATTEMPTS = 60;
 
 /** Backoff between attempts, capped. Jittered to avoid a synchronised retry. */
 function backoffMs(attempt: number): number {
@@ -114,26 +125,46 @@ function backoffMs(attempt: number): number {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function downloadWithRetry(dump: Dump): Promise<void> {
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+  const target = path.join(RAW_DIR, dump.file);
+  let stalled = 0;
+  let total = 0;
+
+  while (stalled < MAX_STALLED_ATTEMPTS && total < MAX_TOTAL_ATTEMPTS) {
+    const before = await sizeOnDisk(target);
+    total++;
+
     try {
       await download(dump);
       return;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (attempt === MAX_ATTEMPTS) {
-        throw new Error(
-          `${dump.type}: giving up after ${MAX_ATTEMPTS} attempts — ${message}`
+      const after = await sizeOnDisk(target);
+      const gained = after - before;
+
+      if (gained > 0) {
+        // Progress was made, so this is an interrupted transfer rather than a
+        // dead one. Start the stall count over.
+        stalled = 0;
+        console.log(
+          `    interrupted after ${formatBytes(gained)} (${message}); resuming`
+        );
+      } else {
+        stalled++;
+        console.log(
+          `    attempt ${total} moved nothing (${message}); ` +
+            `${MAX_STALLED_ATTEMPTS - stalled} stalled attempts left`
         );
       }
-      const wait = backoffMs(attempt);
-      console.log(
-        `    attempt ${attempt} failed (${message}); retrying in ${Math.round(
-          wait / 1000
-        )}s — the partial file is kept and resumed`
-      );
-      await sleep(wait);
+
+      if (stalled >= MAX_STALLED_ATTEMPTS || total >= MAX_TOTAL_ATTEMPTS) break;
+      await sleep(backoffMs(Math.min(stalled, 5)));
     }
   }
+
+  throw new Error(
+    `${dump.type}: giving up after ${total} attempts, ` +
+      `${stalled} of them without progress. The partial file is kept — rerun to resume.`
+  );
 }
 
 async function download(dump: Dump): Promise<void> {
