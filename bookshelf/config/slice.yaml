@@ -11,10 +11,16 @@
 min_publish_year: 1900
 languages: [eng]
 require_isbn: true
-require_cover: false
+require_cover: true           # editions without a cover are dropped
 require_author: true          # the spec's M1 acceptance expects >=1 author
 min_editions_per_work: 1
 
-# Set true for a ~10K-work fixture suitable for tests and for the AWS free
-# tier. Requires the rating corpus to have been loaded (M5).
+# NOT IMPLEMENTED. 04-slice.sql does not reference the rating corpus, and
+# run.ts never passes this through — setting it true silently does nothing, so
+# run.ts now refuses to start rather than pretend it applied.
+#
+# It is also not the lever it appears to be at present: the only corpus loaded
+# is the M5 seed fixture, 4,974 synthetic ratings covering 200 distinct works.
+# Filtering the catalog to those would leave 200 works, not the ~10K this
+# comment once promised. Loading a real ratings corpus comes first.
 must_appear_in_rating_corpus: false
