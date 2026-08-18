@@ -10,6 +10,22 @@
 
 BEGIN;
 
+-- Memory for this transaction only.
+--
+-- The server defaults are tuned for many small concurrent queries: work_mem
+-- 4MB, maintenance_work_mem 64MB. This transaction is the opposite workload —
+-- a handful of set-based passes over tens of millions of rows, with GROUP BY
+-- and DISTINCT ON over the whole edition table. At 4MB those sorts spill to
+-- disk almost immediately and the normalize step becomes IO-bound on temp
+-- files rather than on the work.
+--
+-- SET LOCAL, so it reverts at COMMIT and never touches the application's
+-- connections. Sized for a machine with room to spare; lower it if the ingest
+-- host is small, since work_mem is per sort node and parallel workers each
+-- get their own.
+SET LOCAL work_mem = '256MB';
+SET LOCAL maintenance_work_mem = '2GB';
+
 -- Helper functions (clean_isbn, isbn10_to_13, is_valid_isbn13, text_value,
 -- publish_year) are defined in the 20260817030000_catalog_functions migration.
 
