@@ -158,7 +158,36 @@ If a legacy database ever does surface, recover the script from git
 treat it as a starting point rather than a working tool: it predates both the
 schema move and the catalog tables.
 
-## 5. Known limitation: rate limiting
+## 5. Tuning the machine that runs the ingest
+
+The defaults are tuned for many small concurrent queries. The ingest is the
+opposite: a few passes over roughly a hundred million rows. Two settings
+dominate, and both were measured during the first full run rather than guessed.
+
+**`max_wal_size`.** At the 1GB default, the works insert triggered 562
+requested checkpoints and spent its time waiting on `IO/WALWrite`. Every
+checkpoint forces full-page writes for the next touch of each page, so a bulk
+load at this size is mostly writing pages twice. Raising it to 24GB dropped the
+rate from roughly 3.7 checkpoints per minute to 0.14, and the wait moved off
+WAL entirely.
+
+    ALTER SYSTEM SET max_wal_size = '24GB';
+    ALTER SYSTEM SET checkpoint_completion_target = '0.9';
+    SELECT pg_reload_conf();          -- no restart needed
+
+Both are reloadable and take no locks, so they can be applied to a run already
+in progress. Revert afterwards if the same server also serves the application —
+24GB of WAL is a lot of disk to keep for an OLTP workload.
+
+**Memory.** `03-normalize.sql` and `05-index.sql` set `work_mem` and
+`maintenance_work_mem` themselves, scoped to their own transaction or session.
+Lower those values if the ingest host is small; `work_mem` is per sort node and
+each parallel worker gets its own.
+
+Autovacuum on the staging tables is disabled by migration — they are UNLOGGED,
+written once and dropped, so vacuuming them only competes for IO.
+
+## 6. Known limitation: rate limiting
 
 `src/lib/rate-limit.ts` keeps state in process memory. That is correct for a
 single long-lived EC2 instance — which is exactly this deployment — so it works
@@ -170,7 +199,7 @@ The signature is storage-agnostic, so switching to a shared store is a change
 to that one file. Everything else — which routes are limited, the key format,
 the limits — stays as is.
 
-## 6. After deploying, verify
+## 7. After deploying, verify
 
 - `GET /api/users/<id>` returns no `email` and no `passwordHash`
 - `GET /api/shelves/<id>` works signed out and shows owner attribution
