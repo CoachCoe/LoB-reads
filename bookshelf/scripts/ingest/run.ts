@@ -109,14 +109,24 @@ async function main() {
   // 2026-07-31 dump had 933 editions with "covers": [null], which is enough.
   psql(["-f", "scripts/ingest/preflight.sql"], "Pre-flight: check staged data against normalize's casts");
 
-  psql(["-f", "scripts/ingest/03-normalize.sql"], "Normalize: jsonb → typed columns");
+  // Normalize applies the edition-level slice rules as it builds, so the same
+  // variables go to both steps. Passing them in one place keeps the two from
+  // drifting apart.
+  const sliceVars = [
+    "-v", `min_publish_year=${slice.min_publish_year}`,
+    "-v", `languages={${slice.languages.join(",")}}`,
+    "-v", `require_isbn=${slice.require_isbn}`,
+    "-v", `require_cover=${slice.require_cover}`,
+  ];
+
+  psql(
+    [...sliceVars, "-f", "scripts/ingest/03-normalize.sql"],
+    "Normalize: jsonb → typed columns"
+  );
 
   psql(
     [
-      "-v", `min_publish_year=${slice.min_publish_year}`,
-      "-v", `languages={${slice.languages.join(",")}}`,
-      "-v", `require_isbn=${slice.require_isbn}`,
-      "-v", `require_cover=${slice.require_cover}`,
+      ...sliceVars,
       "-v", `require_author=${slice.require_author}`,
       "-v", `min_editions=${slice.min_editions_per_work}`,
       "-f", "scripts/ingest/04-slice.sql",
