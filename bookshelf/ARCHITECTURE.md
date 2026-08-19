@@ -272,6 +272,47 @@ exist at once — which is a fair trade against the site being unavailable.
 Not yet implemented. It matters at deploy time, not for a local rebuild where
 nothing is reading the catalog.
 
+## Ingest performance, and what the first full run cost
+
+Numbers from the 2026-08 dump on a 64GB machine, recorded because none of this
+was knowable from the fixtures and two of the three findings were mistakes of
+mine.
+
+Staging is fast and predictable: 113.5 million records through COPY at roughly
+100k rows/sec, nothing quarantined, ~102GB of UNLOGGED staging tables.
+
+Normalize is where the time goes, and four separate things dominated it in
+turn:
+
+1. **Checkpoints.** At the 1GB `max_wal_size` default the works insert spent
+   its time in `IO/WALWrite` behind 562 requested checkpoints. Raising it to
+   24GB moved the wait off WAL entirely.
+2. **Autovacuum on staging.** A three-hour autovacuum ground `stage_editions`
+   while normalize needed the same disk. Now disabled by migration; the tables
+   are written once and dropped.
+3. **Stale statistics.** Nothing updates statistics inside a transaction, so
+   every statement planned against the catalog as it was before the TRUNCATE —
+   `catalog.authors` estimated at 1,269 rows when it held 15,380,614. The
+   `work_authors` insert ran over four hours; with `ANALYZE` after each bulk
+   insert it takes 38 minutes.
+4. **Building rows only to delete them.** The slice keeps 10.1% of editions, so
+   inserting all 56.6 million and letting `04-slice.sql` remove 51 million
+   meant writing ten rows for every one kept. The edition predicates now run
+   in normalize as well; 9.05M editions are built instead of 56.6M.
+
+One change of mine backfired. Disabling the `search_vector` trigger during the
+works insert did halve that statement — but it left the three GIN indexes
+empty, so the later `author_names` update had to build every GIN entry at once
+across 39 million rows while generating a dead tuple for each. That update
+became the longest statement in the run. The right pattern is the standard one
+for bulk loading: drop the GIN indexes before the load and rebuild them in
+`05-index.sql`, rather than moving when they are maintained.
+
+`auto_explain` is loaded inside the normalize transaction for this reason. A
+slow statement here cannot be EXPLAINed from another session and every table it
+touches is locked, so without it the only evidence is wait events — which is
+how hours went into guessing at a plan that the log would have shown outright.
+
 ## Known limitations
 
 - **Rate limiting is per-process** (`src/lib/rate-limit.ts`). Correct for a
