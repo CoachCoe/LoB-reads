@@ -25,12 +25,24 @@ WHERE (:'require_isbn' = 'true' AND e.isbn13 IS NULL)
       );
 
 -- Recount before filtering works on edition count.
+-- Only touch rows whose count actually changed.
+--
+-- Without the last predicate this rewrites every work — 41.5 million of them —
+-- whether or not the value differs. After a bulk load the pages have no free
+-- space, so none of those rewrites can be HOT, and each one therefore updates
+-- all three GIN indexes on the table. It ran for nearly two hours before being
+-- cancelled, doing nothing: normalize had already computed edition_count, and
+-- the DELETE above removed no editions because normalize now applies the same
+-- edition predicates as it builds.
+--
+-- IS DISTINCT FROM rather than <> so a NULL count is compared, not skipped.
 UPDATE catalog.works w SET edition_count = coalesce(c.n, 0)
 FROM (SELECT ol_key FROM catalog.works) all_w
 LEFT JOIN LATERAL (
   SELECT count(*) AS n FROM catalog.editions WHERE work_key = all_w.ol_key
 ) c ON true
-WHERE w.ol_key = all_w.ol_key;
+WHERE w.ol_key = all_w.ol_key
+  AND w.edition_count IS DISTINCT FROM coalesce(c.n, 0);
 
 DELETE FROM catalog.works w
 WHERE w.edition_count < :min_editions
