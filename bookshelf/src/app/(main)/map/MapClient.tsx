@@ -59,11 +59,7 @@ export default function MapClient({
             {/* Toggle for Book Settings */}
             <button
               onClick={() => setShowWorks(!showWorks)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                showWorks
-                  ? "bg-[#3B82F6] text-white"
-                  : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
-              }`}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${ showWorks ? "bg-[#3B82F6] text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700" }`}
             >
               {showWorks ? (
                 <Eye className="h-4 w-4" />
@@ -77,11 +73,7 @@ export default function MapClient({
             {/* Toggle for Author Origins */}
             <button
               onClick={() => setShowAuthors(!showAuthors)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                showAuthors
-                  ? "bg-[#22C55E] text-white"
-                  : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700"
-              }`}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${ showAuthors ? "bg-[#22C55E] text-white" : "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700" }`}
             >
               {showAuthors ? (
                 <Eye className="h-4 w-4" />

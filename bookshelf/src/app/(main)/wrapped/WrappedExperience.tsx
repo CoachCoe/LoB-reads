@@ -105,7 +105,7 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
                 {stats.topGenres.slice(1, 4).map((g) => (
                   <span
                     key={g.genre}
-                    className="px-3 py-1 bg-white/20 rounded-full text-sm"
+                    className="px-3 py-1 bg-white dark:bg-gray-900/20 rounded-full text-sm"
                   >
                     {g.genre}
                   </span>
@@ -138,7 +138,7 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
                 {stats.topAuthors.slice(1, 4).map((a) => (
                   <span
                     key={a.author}
-                    className="px-3 py-1 bg-white/20 rounded-full text-sm"
+                    className="px-3 py-1 bg-white dark:bg-gray-900/20 rounded-full text-sm"
                   >
                     {a.author}
                   </span>
@@ -163,7 +163,7 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
               return (
                 <div key={m.month} className="flex flex-col items-center">
                   <div
-                    className="w-6 md:w-8 bg-white/80 rounded-t transition-all duration-500"
+                    className="w-6 md:w-8 bg-white dark:bg-gray-900/80 rounded-t transition-all duration-500"
                     style={{ height: `${height}%`, minHeight: "4px" }}
                   />
                   <span className="text-xs mt-2 text-white/60">
@@ -198,7 +198,7 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
               {stats.topRatedBooks.slice(0, 3).map((book, index) => (
                 <div
                   key={book.title}
-                  className="flex items-center gap-4 bg-white/10 rounded-lg p-3"
+                  className="flex items-center gap-4 bg-white dark:bg-gray-900/10 rounded-lg p-3"
                 >
                   <span className="text-2xl font-bold opacity-60">
                     {index + 1}
@@ -232,19 +232,19 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
             {stats.year} in Review
           </h2>
           <div className="grid grid-cols-2 gap-4 max-w-sm mx-auto mb-8">
-            <div className="bg-white/10 rounded-lg p-4">
+            <div className="bg-white dark:bg-gray-900/10 rounded-lg p-4">
               <div className="text-3xl font-bold">{stats.booksRead}</div>
               <div className="text-sm text-white/70">Books</div>
             </div>
-            <div className="bg-white/10 rounded-lg p-4">
+            <div className="bg-white dark:bg-gray-900/10 rounded-lg p-4">
               <div className="text-3xl font-bold">{stats.pagesRead.toLocaleString()}</div>
               <div className="text-sm text-white/70">Pages</div>
             </div>
-            <div className="bg-white/10 rounded-lg p-4">
+            <div className="bg-white dark:bg-gray-900/10 rounded-lg p-4">
               <div className="text-3xl font-bold">{stats.reviewsWritten}</div>
               <div className="text-sm text-white/70">Reviews</div>
             </div>
-            <div className="bg-white/10 rounded-lg p-4">
+            <div className="bg-white dark:bg-gray-900/10 rounded-lg p-4">
               <div className="text-3xl font-bold">{stats.topGenres.length}</div>
               <div className="text-sm text-white/70">Genres</div>
             </div>
@@ -294,16 +294,10 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
         {slides.map((_, index) => (
           <div
             key={index}
-            className="h-1 flex-1 rounded-full bg-white/30 overflow-hidden"
+            className="h-1 flex-1 rounded-full bg-white dark:bg-gray-900/30 overflow-hidden"
           >
             <div
-              className={`h-full bg-white dark:bg-gray-900 transition-all duration-300 ${
-                index < currentSlide
-                  ? "w-full"
-                  : index === currentSlide
-                  ? "w-full"
-                  : "w-0"
-              }`}
+              className={`h-full bg-white dark:bg-gray-900 transition-all duration-300 ${ index < currentSlide ? "w-full" : index === currentSlide ? "w-full" : "w-0" }`}
             />
           </div>
         ))}
@@ -324,7 +318,7 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
           onClick={prevSlide}
           disabled={currentSlide === 0}
           aria-label="Previous slide"
-          className="p-2 rounded-full bg-white/20 disabled:opacity-30 hover:bg-white/30 transition-colors"
+          className="p-2 rounded-full bg-white dark:bg-gray-900/20 disabled:opacity-30 hover:bg-white/30 transition-colors"
         >
           <ChevronLeft className="h-6 w-6" />
         </button>
@@ -346,7 +340,7 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
           onClick={nextSlide}
           disabled={currentSlide === slides.length - 1}
           aria-label="Next slide"
-          className="p-2 rounded-full bg-white/20 disabled:opacity-30 hover:bg-white/30 transition-colors"
+          className="p-2 rounded-full bg-white dark:bg-gray-900/20 disabled:opacity-30 hover:bg-white/30 transition-colors"
         >
           <ChevronRight className="h-6 w-6" />
         </button>
@@ -371,7 +365,7 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
         {/* Close button */}
         <Link
           href="/"
-          className="p-2 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
+          className="p-2 rounded-full bg-white dark:bg-gray-900/20 hover:bg-white/30 transition-colors"
         >
           <span className="sr-only">Close</span>
           <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">

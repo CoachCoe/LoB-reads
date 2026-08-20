@@ -73,11 +73,7 @@ export default function ToastProvider({
         {toasts.map((toast) => (
           <div
             key={toast.id}
-            className={`pointer-events-auto flex items-start gap-2 rounded-lg border px-4 py-3 shadow-lg max-w-sm ${
-              toast.variant === "error"
-                ? "bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800 text-red-800 dark:text-red-200"
-                : "bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800 text-green-800 dark:text-green-200"
-            }`}
+            className={`pointer-events-auto flex items-start gap-2 rounded-lg border px-4 py-3 shadow-lg max-w-sm ${ toast.variant === "error" ? "bg-red-50 dark:bg-red-900/30 border-red-200 dark:border-red-800 text-red-800 dark:text-red-200" : "bg-green-50 dark:bg-green-900/30 border-green-200 dark:border-green-800 text-green-800 dark:text-green-200" }`}
           >
             {toast.variant === "error" ? (
               <AlertCircle className="h-5 w-5 flex-shrink-0" aria-hidden="true" />

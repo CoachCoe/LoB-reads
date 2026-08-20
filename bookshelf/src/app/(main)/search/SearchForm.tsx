@@ -25,7 +25,7 @@ export default function SearchForm({ initialQuery }: { initialQuery: string }) {
     >
       <div className="relative flex-1">
         <SearchIcon
-          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500"
           aria-hidden="true"
         />
         <input
@@ -35,7 +35,7 @@ export default function SearchForm({ initialQuery }: { initialQuery: string }) {
           onChange={(e) => setValue(e.target.value)}
           placeholder="Search by title, author or subject"
           aria-label="Search the book catalog"
-          className="w-full rounded-lg border border-gray-300 bg-white py-2.5 pl-9 pr-3 text-gray-900 placeholder-gray-400 focus:border-[#0B6157] focus:outline-none focus:ring-1 focus:ring-[#0B6157] dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100"
+          className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 py-2.5 pl-9 pr-3 text-gray-900 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:border-[#0B6157] focus:outline-none focus:ring-1 focus:ring-[#0B6157]"
         />
       </div>
       <button

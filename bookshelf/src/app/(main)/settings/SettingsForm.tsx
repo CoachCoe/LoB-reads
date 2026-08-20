@@ -155,7 +155,7 @@ export default function SettingsForm({ user }: SettingsFormProps) {
           <CardContent className="space-y-4">
             {/* Avatar */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Avatar
               </label>
               <div className="flex items-center gap-4">
@@ -194,7 +194,7 @@ export default function SettingsForm({ user }: SettingsFormProps) {
                     Generate Random Avatar
                   </Button>
 
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
                     Or paste a custom URL below
                   </p>
                 </div>
@@ -218,11 +218,11 @@ export default function SettingsForm({ user }: SettingsFormProps) {
             />
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Email
               </label>
-              <p className="text-gray-500">{user.email}</p>
-              <p className="text-xs text-gray-400 mt-1">
+              <p className="text-gray-500 dark:text-gray-400">{user.email}</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
                 Email cannot be changed
               </p>
             </div>
@@ -250,15 +250,15 @@ export default function SettingsForm({ user }: SettingsFormProps) {
           <h2 className="text-lg font-semibold">Import from Goodreads</h2>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
             Export your Goodreads library as a CSV file and import it here. Your
             books, ratings, shelves, and reading dates will be imported.
           </p>
 
           <div className="space-y-2">
-            <label className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-[#D4A017] transition-colors cursor-pointer">
-              <FileUp className="h-5 w-5 text-gray-400" />
-              <span className="text-sm text-gray-600">
+            <label className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:border-[#D4A017] transition-colors cursor-pointer">
+              <FileUp className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+              <span className="text-sm text-gray-600 dark:text-gray-400">
                 {isImporting ? "Importing..." : "Choose CSV file"}
               </span>
               <input
@@ -275,14 +275,14 @@ export default function SettingsForm({ user }: SettingsFormProps) {
               />
             </label>
 
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-gray-400 dark:text-gray-500">
               To export from Goodreads: My Books → Import and Export → Export
               Library
             </p>
           </div>
 
           {importResult && (
-            <div className="space-y-3 rounded-lg bg-gray-50 p-4 dark:bg-gray-800">
+            <div className="space-y-3 rounded-lg bg-gray-50 dark:bg-gray-800 p-4">
               <div className="flex flex-wrap items-center gap-4 text-sm">
                 <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
                   <CheckCircle className="h-4 w-4" aria-hidden="true" />
@@ -327,11 +327,7 @@ export default function SettingsForm({ user }: SettingsFormProps) {
 
       {message && (
         <div
-          className={`p-3 rounded-lg text-sm ${
-            message.includes("success")
-              ? "bg-green-50 text-green-600"
-              : "bg-red-50 text-red-600"
-          }`}
+          className={`p-3 rounded-lg text-sm ${ message.includes("success") ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600" }`}
         >
           {message}
         </div>

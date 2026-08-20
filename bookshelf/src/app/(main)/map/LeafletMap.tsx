@@ -88,10 +88,10 @@ export default function LeafletMap({
           >
             <Popup>
               <div className="min-w-[180px]">
-                <p className="text-sm font-semibold text-gray-900">
+                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
                   {location.name}
                 </p>
-                <p className="mt-0.5 text-xs capitalize text-gray-500">
+                <p className="mt-0.5 text-xs capitalize text-gray-500 dark:text-gray-400">
                   {location.type.replace("_", " ")}
                 </p>
                 <a
@@ -101,10 +101,10 @@ export default function LeafletMap({
                   {location.workTitle}
                 </a>
                 {location.workAuthor && (
-                  <p className="text-xs text-gray-500">{location.workAuthor}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{location.workAuthor}</p>
                 )}
                 {location.addedBy && (
-                  <p className="mt-2 text-xs text-gray-400">
+                  <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
                     Added by {location.addedBy}
                   </p>
                 )}
@@ -123,10 +123,10 @@ export default function LeafletMap({
           >
             <Popup>
               <div className="min-w-[180px]">
-                <p className="text-sm font-semibold text-gray-900">
+                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
                   {location.name}
                 </p>
-                <p className="mt-0.5 text-xs capitalize text-gray-500">
+                <p className="mt-0.5 text-xs capitalize text-gray-500 dark:text-gray-400">
                   {location.type}
                   {location.yearStart
                     ? ` · ${location.yearStart}${location.yearEnd ? `–${location.yearEnd}` : ""}`
@@ -139,7 +139,7 @@ export default function LeafletMap({
                   {location.authorName}
                 </a>
                 {location.addedBy && (
-                  <p className="mt-2 text-xs text-gray-400">
+                  <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
                     Added by {location.addedBy}
                   </p>
                 )}
