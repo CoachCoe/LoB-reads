@@ -300,6 +300,19 @@ turn:
    meant writing ten rows for every one kept. The edition predicates now run
    in normalize as well; 9.05M editions are built instead of 56.6M.
 
+Slice leaves the catalog badly bloated, and nothing reclaims it. Building
+41.5M works to keep 6.9M means `catalog.works` ends the run at 39GB holding
+7.1 million live tuples and 37.8 million dead ones — 84% dead space.
+`05-index.sql` only runs ANALYZE, so that space is never returned; VACUUM
+reclaims it for reuse but does not shrink the files. Only VACUUM FULL, or
+building the table filtered in the first place, actually recovers it.
+
+That is the same waste as the editions filter, one step later, and it is the
+strongest argument for the rebuild-and-swap pattern described above: normalize
+into filtered tables and swap them in, rather than building everything and
+deleting most of it. It would remove the bloat, the hours spent writing rows
+that get deleted, and the multi-hour exclusive lock, all at once.
+
 One change of mine backfired. Disabling the `search_vector` trigger during the
 works insert did halve that statement — but it left the three GIN indexes
 empty, so the later `author_names` update had to build every GIN entry at once
