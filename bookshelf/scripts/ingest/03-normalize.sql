@@ -53,9 +53,34 @@ SET LOCAL auto_explain.log_nested_statements = on;
 -- ---------------------------------------------------------------------------
 -- Authors
 -- ---------------------------------------------------------------------------
-TRUNCATE catalog.works, catalog.editions, catalog.work_authors, catalog.authors CASCADE;
+-- Build beside the live catalog, not through it.
+--
+-- This used to TRUNCATE and rebuild in place. TRUNCATE takes ACCESS EXCLUSIVE
+-- and holds it until COMMIT, so for the whole run — nine hours on the first
+-- full ingest — every read of these tables blocked. Not an error the app can
+-- degrade around: search, work pages and shelf hydration simply hung. The spec
+-- calls for a monthly rebuild, which made that a monthly multi-hour outage.
+--
+-- The rows go into parallel tables and are swapped in at the end, so the lock
+-- is held for the length of a rename rather than the length of a rebuild.
+-- Readers see the old catalog throughout and the new one immediately after.
+--
+-- Leftovers from a failed run are dropped rather than reused: a half-built
+-- table is worse than no table, and this is cheap.
+DROP TABLE IF EXISTS
+  catalog.external_ids_new, catalog.editions_new, catalog.work_authors_new,
+  catalog.works_new, catalog.authors_new CASCADE;
 
-INSERT INTO catalog.authors (ol_key, name, personal_name, birth_date, death_date, bio, photo_id)
+-- INCLUDING ALL brings the indexes, defaults and check constraints. It does
+-- not bring triggers or foreign keys — both are added below — and it names the
+-- indexes after the new table, which the swap fixes.
+CREATE TABLE catalog.authors_new      (LIKE catalog.authors      INCLUDING ALL);
+CREATE TABLE catalog.works_new        (LIKE catalog.works        INCLUDING ALL);
+CREATE TABLE catalog.work_authors_new (LIKE catalog.work_authors INCLUDING ALL);
+CREATE TABLE catalog.editions_new     (LIKE catalog.editions     INCLUDING ALL);
+CREATE TABLE catalog.external_ids_new (LIKE catalog.external_ids INCLUDING ALL);
+
+INSERT INTO catalog.authors_new (ol_key, name, personal_name, birth_date, death_date, bio, photo_id)
 SELECT
   s.ol_key,
   coalesce(s.data ->> 'name', '(unknown)'),
@@ -80,7 +105,7 @@ ON CONFLICT (ol_key) DO NOTHING;
 -- thirty minutes when it had usable estimates.
 --
 -- ANALYZE is transaction-safe, sees the uncommitted rows, and takes seconds.
-ANALYZE catalog.authors;
+ANALYZE catalog.authors_new;
 
 -- ---------------------------------------------------------------------------
 -- Works
@@ -97,11 +122,12 @@ ANALYZE catalog.authors;
 -- Skipping it here also keeps the inserted rows small, which matters when the
 -- statement is already bound by WAL.
 --
--- The trigger is restored before author_names is set, so the vector is still
--- built by exactly one piece of code. Nothing here duplicates its logic.
-ALTER TABLE catalog.works DISABLE TRIGGER works_search_vector_trigger;
+-- Nothing to disable: CREATE TABLE ... LIKE does not copy triggers, so
+-- works_new starts without one and the insert is naturally trigger-free. The
+-- trigger is created below, before author_names is assigned, so the vector is
+-- still built by exactly one piece of code and nothing here duplicates it.
 
-INSERT INTO catalog.works (
+INSERT INTO catalog.works_new (
   ol_key, title, subtitle, description, first_publish_year, subjects, updated_at
 )
 SELECT
@@ -129,11 +155,11 @@ ON CONFLICT (ol_key) DO NOTHING;
 
 -- work_authors joins staged works against both tables above, so both need
 -- honest statistics before it runs.
-ANALYZE catalog.works;
+ANALYZE catalog.works_new;
 
 -- Work authors are [{author: {key}}]; edition authors are [{key}]. Different
 -- shapes, and only the work shape is authoritative for authorship.
-INSERT INTO catalog.work_authors (work_key, author_key, position)
+INSERT INTO catalog.work_authors_new (work_key, author_key, position)
 SELECT DISTINCT ON (s.ol_key, author_key)
   s.ol_key,
   author_key,
@@ -149,12 +175,12 @@ CROSS JOIN LATERAL (
   ) AS author_key
 ) k
 WHERE k.author_key <> ''
-  AND EXISTS (SELECT 1 FROM catalog.works w WHERE w.ol_key = s.ol_key)
-  AND EXISTS (SELECT 1 FROM catalog.authors a WHERE a.ol_key = k.author_key)
+  AND EXISTS (SELECT 1 FROM catalog.works_new w WHERE w.ol_key = s.ol_key)
+  AND EXISTS (SELECT 1 FROM catalog.authors_new a WHERE a.ol_key = k.author_key)
 ON CONFLICT DO NOTHING;
 
 -- ---------------------------------------------------------------------------
-ANALYZE catalog.work_authors;
+ANALYZE catalog.work_authors_new;
 
 -- Editions
 -- ---------------------------------------------------------------------------
@@ -211,9 +237,9 @@ WITH candidate AS (
   ) w ON true
   WHERE s.data ->> 'title' IS NOT NULL
     AND (w.work_key IS NULL
-         OR EXISTS (SELECT 1 FROM catalog.works cw WHERE cw.ol_key = w.work_key))
+         OR EXISTS (SELECT 1 FROM catalog.works_new cw WHERE cw.ol_key = w.work_key))
 )
-INSERT INTO catalog.editions (
+INSERT INTO catalog.editions_new (
   ol_key, work_key, title, subtitle, isbn13, isbn10, publishers,
   publish_date_raw, publish_year, number_of_pages, languages,
   physical_format, cover_id, updated_at
@@ -238,39 +264,63 @@ ON CONFLICT (ol_key) DO NOTHING;
 -- Denormalized fields
 -- ---------------------------------------------------------------------------
 -- The aggregates below scan editions and work_authors in full.
-ANALYZE catalog.editions;
+ANALYZE catalog.editions_new;
 
 -- edition_count, used for slicing and for ranking.
-UPDATE catalog.works w
+UPDATE catalog.works_new w
 SET edition_count = c.n
-FROM (SELECT work_key, count(*) AS n FROM catalog.editions
+FROM (SELECT work_key, count(*) AS n FROM catalog.editions_new
       WHERE work_key IS NOT NULL GROUP BY work_key) c
 WHERE w.ol_key = c.work_key;
 
 -- The dump has no cover_edition_key (that field comes from the search API).
 -- Derive it: the earliest edition that actually has a cover.
-UPDATE catalog.works w
+UPDATE catalog.works_new w
 SET cover_edition_key = e.ol_key
 FROM (
   SELECT DISTINCT ON (work_key) work_key, ol_key
-  FROM catalog.editions
+  FROM catalog.editions_new
   WHERE work_key IS NOT NULL AND cover_id IS NOT NULL
   ORDER BY work_key, publish_year NULLS LAST, ol_key
 ) e
 WHERE w.ol_key = e.work_key;
 
+-- Referential integrity between the new tables. LIKE does not copy foreign
+-- keys, and the names are per-table rather than per-schema, so they can be
+-- canonical from the start and survive the rename untouched.
+--
+-- The clauses must match the migrations exactly, including ON UPDATE. A first
+-- attempt omitted ON UPDATE CASCADE and guessed SET NULL for editions; both
+-- were caught by diffing the swapped database against the datamodel, which is
+-- the check that makes this approach safe rather than merely plausible.
+ALTER TABLE catalog.work_authors_new
+  ADD CONSTRAINT work_authors_work_key_fkey
+  FOREIGN KEY (work_key) REFERENCES catalog.works_new(ol_key)
+  ON UPDATE CASCADE ON DELETE CASCADE;
+ALTER TABLE catalog.work_authors_new
+  ADD CONSTRAINT work_authors_author_key_fkey
+  FOREIGN KEY (author_key) REFERENCES catalog.authors_new(ol_key)
+  ON UPDATE CASCADE ON DELETE CASCADE;
+ALTER TABLE catalog.editions_new
+  ADD CONSTRAINT editions_work_key_fkey
+  FOREIGN KEY (work_key) REFERENCES catalog.works_new(ol_key)
+  ON UPDATE CASCADE ON DELETE CASCADE;
+
 -- Author names, denormalized for search. Joining through work_authors on every
 -- query is too slow at a million rows. Assigning this fires the search_vector
 -- trigger, which is what populates the FTS column — and now the only thing
 -- that does, since the insert above ran without it.
-ALTER TABLE catalog.works ENABLE TRIGGER works_search_vector_trigger;
+CREATE TRIGGER works_search_vector_trigger
+  BEFORE INSERT OR UPDATE OF title, subtitle, author_names, subjects
+  ON catalog.works_new
+  FOR EACH ROW EXECUTE FUNCTION catalog.works_search_vector_update();
 
-UPDATE catalog.works w
+UPDATE catalog.works_new w
 SET author_names = a.names
 FROM (
   SELECT wa.work_key, string_agg(au.name, ', ' ORDER BY wa.position) AS names
-  FROM catalog.work_authors wa
-  JOIN catalog.authors au ON au.ol_key = wa.author_key
+  FROM catalog.work_authors_new wa
+  JOIN catalog.authors_new au ON au.ol_key = wa.author_key
   GROUP BY wa.work_key
 ) a
 WHERE w.ol_key = a.work_key;
@@ -279,12 +329,101 @@ WHERE w.ol_key = a.work_key;
 -- their search_vector is still unset — and with the trigger off during the
 -- insert, unset is now the only state they can be in. Touch them so the
 -- trigger runs.
-UPDATE catalog.works SET author_names = NULL WHERE search_vector IS NULL;
+UPDATE catalog.works_new SET author_names = NULL WHERE search_vector IS NULL;
 
 -- Record ISBNs in the identity table so cross-source lookups have one path.
-INSERT INTO catalog.external_ids (entity_type, entity_key, source, external_id)
+INSERT INTO catalog.external_ids_new (entity_type, entity_key, source, external_id)
 SELECT 'edition', ol_key, 'isbn', isbn13
-FROM catalog.editions WHERE isbn13 IS NOT NULL
+FROM catalog.editions_new WHERE isbn13 IS NOT NULL
 ON CONFLICT DO NOTHING;
+
+-- ---------------------------------------------------------------------------
+-- Swap
+-- ---------------------------------------------------------------------------
+--
+-- Everything above touched only the _new tables, so readers have been served
+-- the old catalog throughout. This is the only part that takes an exclusive
+-- lock, and it holds it for the length of five drops and five renames rather
+-- than the length of a rebuild.
+--
+-- It waits for in-flight readers and briefly queues new ones. That is the
+-- trade: a pause measured in milliseconds instead of an outage measured in
+-- hours.
+DROP TABLE
+  catalog.external_ids, catalog.editions, catalog.work_authors,
+  catalog.works, catalog.authors CASCADE;
+
+ALTER TABLE catalog.authors_new      RENAME TO authors;
+ALTER TABLE catalog.works_new        RENAME TO works;
+ALTER TABLE catalog.work_authors_new RENAME TO work_authors;
+ALTER TABLE catalog.editions_new     RENAME TO editions;
+ALTER TABLE catalog.external_ids_new RENAME TO external_ids;
+
+-- Index names are per-schema and ALTER TABLE ... RENAME does not touch them,
+-- so every index is still called <table>_new_<something>. Left alone they
+-- would drift from the migration history for ever, and `prisma migrate diff`
+-- would propose dropping and recreating each one.
+--
+-- Done by loop rather than by hand: there are thirteen today, and a hand-written
+-- list is a maintenance trap — the next person to add an index would have to
+-- remember to add a rename too, and nothing would fail if they forgot.
+DO $$
+DECLARE
+  r record;
+BEGIN
+  FOR r IN
+    SELECT c.relname AS old_name,
+           replace(c.relname, t.relname || '_new_', t.relname || '_') AS new_name
+    FROM pg_class c
+    JOIN pg_index i ON i.indexrelid = c.oid
+    JOIN pg_class t ON t.oid = i.indrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'catalog'
+      AND t.relname IN ('authors','works','work_authors','editions','external_ids')
+      AND c.relname LIKE '%\_new\_%'
+  LOOP
+    EXECUTE format('ALTER INDEX catalog.%I RENAME TO %I', r.old_name, r.new_name);
+  END LOOP;
+END
+$$;
+
+-- The primary key indexes are named <table>_new_pkey, which the pattern above
+-- does not match: there is no trailing segment after "_new".
+DO $$
+DECLARE
+  r record;
+BEGIN
+  FOR r IN
+    SELECT c.relname AS old_name,
+           replace(c.relname, '_new_pkey', '_pkey') AS new_name
+    FROM pg_class c
+    JOIN pg_index i ON i.indexrelid = c.oid
+    JOIN pg_class t ON t.oid = i.indrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = 'catalog'
+      AND t.relname IN ('authors','works','work_authors','editions','external_ids')
+      AND c.relname LIKE '%\_new\_pkey'
+  LOOP
+    EXECUTE format('ALTER INDEX catalog.%I RENAME TO %I', r.old_name, r.new_name);
+  END LOOP;
+END
+$$;
+
+-- Nothing should be left carrying the temporary name. Failing here is far
+-- better than committing a catalog that silently disagrees with its migrations.
+DO $$
+DECLARE
+  stragglers text;
+BEGIN
+  SELECT string_agg(c.relname, ', ') INTO stragglers
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE n.nspname = 'catalog' AND c.relname LIKE '%\_new\_%';
+
+  IF stragglers IS NOT NULL THEN
+    RAISE EXCEPTION 'swap left objects named after the temporary tables: %', stragglers;
+  END IF;
+END
+$$;
 
 COMMIT;

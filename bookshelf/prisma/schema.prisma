@@ -336,6 +336,28 @@ model CatalogWork {
   @@schema("catalog")
 }
 
+/// Precomputed subject counts for the discover page.
+///
+/// Declared here even though it is only ever read through raw SQL, because a
+/// table the schema does not know about is a table `prisma migrate diff`
+/// proposes to DROP — which is exactly how three GIN indexes were silently
+/// lost during M3. It was created by a hand-written migration and left
+/// undeclared; the next diff wanted it gone.
+///
+/// @@ignore because there is no unique identifier: `subject` cannot be a key,
+/// as Open Library subjects are free text and some exceed the btree maximum
+/// index row size. Prisma needs the model for migrations, not for querying.
+model CatalogSubjectCount {
+  subject    String   @map("subject")
+  workCount  Int      @map("work_count")
+  computedAt DateTime @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  @@index([workCount(sort: Desc)])
+  @@map("subject_counts")
+  @@schema("catalog")
+  @@ignore
+}
+
 model CatalogWorkAuthor {
   workKey   String @map("work_key")
   authorKey String @map("author_key")
