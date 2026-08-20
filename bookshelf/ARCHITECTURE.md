@@ -384,6 +384,30 @@ whole match set, which is a decision about result quality and not a patch.
 A subject chip would be better served by an indexed `subjects @> ARRAY[...]`
 lookup than by full-text search; there is currently no index on `subjects`.
 
+## The ratings graph, and a corpus that lies about its ISBNs
+
+`scripts/social/load-ratings.ts` loads goodbooks-10k (CC-BY-SA) into `seed`.
+With the real catalog it matches 8,692 of 9,300 books (93.5%) and keeps
+5,518,739 of 5,976,479 ratings across 53,424 readers, which gives 173,156
+similarity pairs and covers 100% of the top 1,000 works — the M5 acceptance,
+met with real data rather than a fixture.
+
+It matched a third of that until the corpus's ISBN columns were looked at.
+Both were written by something that coerced them to numbers:
+
+- **`isbn13` is scientific notation** — `9.78043902348e+12`. Not merely missing
+  its check digit: the twelfth digit is rounded too. Rebuilding the value and
+  cross-checking against `isbn10` disagreed on 1,199 of 2,680 rows, so it is
+  unrecoverable and deliberately ignored.
+- **`isbn10` lost its leading zeros.** Of 9,300 values, 5,573 are nine
+  characters, 916 are eight, 112 are seven. An ISBN-10 is exactly ten, so
+  padding restores it, and the check digit validates the result — a wrong guess
+  is rejected rather than quietly matched to a different book.
+
+Taking the columns at face value cost 6,481 of 9,300 books and three quarters
+of the ratings. Worth remembering for any corpus that arrives as CSV: an
+identifier that has been through a spreadsheet is not the identifier.
+
 ## Known limitations
 
 - **Rate limiting is per-process** (`src/lib/rate-limit.ts`). Correct for a
