@@ -79,13 +79,11 @@ The catalog is the English-language, ISBN-bearing, cover-bearing slice from
 | `/search?q=dune` | 0.17 s |
 | `/search?q=Fiction` | **4.2 s** — see limitations |
 
-335 tests at the time of writing; 362 after the audit's additions.
-
 ---
 
 ## Quality posture
 
-335 tests: 113 unit, 222 integration. Integration runs against real Postgres
+362 tests: 124 unit, 238 integration. Integration runs against real Postgres
 and must run serially — they share a database and truncate between tests.
 
 Three habits are worth keeping, because each caught something a green suite
