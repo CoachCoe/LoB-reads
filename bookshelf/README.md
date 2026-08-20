@@ -2,6 +2,13 @@
 
 A modern reading tracker for book lovers. Track your library, discover new stories, connect with readers, and visualize your reading journey.
 
+## Documents
+
+- `STATUS.md` — what is built, what is measured, what is broken
+- `PRD.md` — what to build next, and why
+- `ARCHITECTURE.md` — how it works, and the reasoning behind it
+- `DEPLOYMENT.md` — running it on AWS
+
 ## Features
 
 ### Core Reading Features
