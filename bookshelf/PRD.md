@@ -71,11 +71,16 @@ lasts milliseconds rather than hours. Proven by A/B against a `TRUNCATE`-shaped
 transaction. The stated bonus is only half delivered — see R2b.
 
 **R2b. A rebuild should not leave 34 GB of dead space.**
-Slice deletes 34M of the 41.5M works after the swap, on the live table, so the
-bloat is still created and still needs `VACUUM FULL`. Moving the work-level
-filter before the swap — deleting from `works_new`, which no reader touches —
-yields a clean table for free, the same way the edition filter already moved
-into normalize.
+Moving the work-level filter into normalize was tried and does not achieve
+this: deleting from `works_new` leaves the dead tuples in `works_new`, and the
+rename does not compact them. It was kept because it cuts runtime — the two
+most expensive passes no longer run over 34M rows they discard — but the space
+is unchanged.
+
+The fix is to never insert those works: decide the surviving set from staging
+before works are built. That means materialising the edition filters first,
+turning `min_editions` into a count over them, and checking `require_author`
+against the staged authors array.
 *Done when:* a full rebuild needs no `VACUUM FULL` to return to size.
 
 ### P1 — the product works but under-delivers

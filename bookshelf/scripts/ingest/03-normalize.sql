@@ -273,18 +273,6 @@ FROM (SELECT work_key, count(*) AS n FROM catalog.editions_new
       WHERE work_key IS NOT NULL GROUP BY work_key) c
 WHERE w.ol_key = c.work_key;
 
--- The dump has no cover_edition_key (that field comes from the search API).
--- Derive it: the earliest edition that actually has a cover.
-UPDATE catalog.works_new w
-SET cover_edition_key = e.ol_key
-FROM (
-  SELECT DISTINCT ON (work_key) work_key, ol_key
-  FROM catalog.editions_new
-  WHERE work_key IS NOT NULL AND cover_id IS NOT NULL
-  ORDER BY work_key, publish_year NULLS LAST, ol_key
-) e
-WHERE w.ol_key = e.work_key;
-
 -- Referential integrity between the new tables. LIKE does not copy foreign
 -- keys, and the names are per-table rather than per-schema, so they can be
 -- canonical from the start and survive the rename untouched.
@@ -305,6 +293,69 @@ ALTER TABLE catalog.editions_new
   ADD CONSTRAINT editions_work_key_fkey
   FOREIGN KEY (work_key) REFERENCES catalog.works_new(ol_key)
   ON UPDATE CASCADE ON DELETE CASCADE;
+
+-- Drop the works outside the slice now, before the expensive passes.
+--
+-- 04-slice.sql used to do this after the swap, and the point of moving it is
+-- runtime, not space. cover_edition_key and author_names below now run over the
+-- ~6.9M works that survive rather than all 41.5M; author_names was the longest
+-- statement in the first full run at six hours twenty, and it fires the
+-- search_vector trigger for every row it touches.
+--
+-- It does NOT remove the bloat, and it is worth saying so plainly because the
+-- opposite is the intuitive guess. Deleting here leaves dead tuples in
+-- works_new, and renaming a table does not compact it — the dead space simply
+-- arrives under the new name. Measured on a fixture: one live row, five dead,
+-- after the swap.
+--
+-- Removing the bloat needs the non-qualifying works never to be inserted,
+-- which means deciding the surviving work set from staging before works are
+-- built. That is a larger restructure: the edition filters would have to be
+-- materialised first, min_editions becomes a count over them, and require_author
+-- becomes a check against the staged authors array. Until then a full rebuild
+-- still wants a VACUUM FULL — see R2b in PRD.md.
+--
+-- 04-slice.sql remains the authority and still runs — re-running it alone with
+-- a narrower config has to keep working — and finds nothing left to do when the
+-- config is unchanged. Same arrangement as the edition predicates.
+--
+-- Deleting a work cascades to its author links and its editions, which is what
+-- slice relied on too — hence the foreign keys directly above. A first attempt
+-- added them after this delete and the ALTER failed validating rows that
+-- pointed at works already gone: the cascade only exists once the constraint
+-- does. They are still added after the bulk inserts, so those are not paying
+-- per-row checks.
+DELETE FROM catalog.works_new w
+WHERE w.edition_count < :min_editions
+   OR (:'require_author' = 'true'
+       AND NOT EXISTS (
+         SELECT 1 FROM catalog.work_authors_new wa WHERE wa.work_key = w.ol_key
+       ));
+
+-- Authors with nothing left to their name.
+DELETE FROM catalog.authors_new a
+WHERE NOT EXISTS (
+  SELECT 1 FROM catalog.work_authors_new wa WHERE wa.author_key = a.ol_key
+);
+
+-- The tables just lost most of their rows, so the estimates the planner has
+-- for the passes below are now wrong by an order of magnitude.
+ANALYZE catalog.works_new;
+ANALYZE catalog.authors_new;
+ANALYZE catalog.work_authors_new;
+ANALYZE catalog.editions_new;
+
+-- The dump has no cover_edition_key (that field comes from the search API).
+-- Derive it: the earliest edition that actually has a cover.
+UPDATE catalog.works_new w
+SET cover_edition_key = e.ol_key
+FROM (
+  SELECT DISTINCT ON (work_key) work_key, ol_key
+  FROM catalog.editions_new
+  WHERE work_key IS NOT NULL AND cover_id IS NOT NULL
+  ORDER BY work_key, publish_year NULLS LAST, ol_key
+) e
+WHERE w.ol_key = e.work_key;
 
 -- Author names, denormalized for search. Joining through work_authors on every
 -- query is too slow at a million rows. Assigning this fires the search_vector

@@ -166,10 +166,20 @@ naive swap leaves the catalog disagreeing with its migrations for ever. The
 swap renames them in a loop and raises if anything is left carrying the
 temporary name.
 
-**Still outstanding:** the ~34 GB of bloat. Slice deletes 34M of the 41.5M
-works *after* the swap, on the live table, so the dead space is still created.
-Moving that filter before the swap — deleting from `works_new`, which nobody is
-reading — would produce a clean table and remove the need for `VACUUM FULL`.
+The work-level filter also moved into normalize, before the swap. That was
+worth doing for runtime — `cover_edition_key` and `author_names` now run over
+the ~6.9M works that survive rather than all 41.5M, and `author_names` was the
+longest statement in the first full run at six hours twenty.
+
+**It does not remove the bloat.** That was the intuitive guess and it is wrong:
+deleting from `works_new` leaves dead tuples in `works_new`, and renaming a
+table does not compact it, so the dead space arrives under the new name.
+Measured on a fixture — one live row, five dead, after the swap. A full rebuild
+still wants a `VACUUM FULL`.
+
+Removing it needs the non-qualifying works never to be inserted, which means
+deciding the surviving work set from staging before works are built. Tracked as
+R2b.
 
 ### The ingest takes about nine hours
 

@@ -106,6 +106,10 @@ async function main() {
     "-v", `languages={${slice.languages.join(",")}}`,
     "-v", `require_isbn=${slice.require_isbn}`,
     "-v", `require_cover=${slice.require_cover}`,
+    // Normalize applies the work-level rules too, so it drops what the slice
+    // would only delete afterwards — on the live table, as bloat.
+    "-v", `require_author=${slice.require_author}`,
+    "-v", `min_editions=${slice.min_editions_per_work}`,
   ];
 
   psql(
@@ -116,8 +120,6 @@ async function main() {
   psql(
     [
       ...sliceVars,
-      "-v", `require_author=${slice.require_author}`,
-      "-v", `min_editions=${slice.min_editions_per_work}`,
       "-v", `must_appear_in_rating_corpus=${slice.must_appear_in_rating_corpus}`,
       "-f", "scripts/ingest/04-slice.sql",
     ],
