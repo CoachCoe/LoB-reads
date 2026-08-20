@@ -14,6 +14,8 @@ import {
 import StarRating from "@/components/ui/StarRating";
 import WorkCard from "@/components/catalog/WorkCard";
 import EditionList from "./EditionList";
+import WorkLocationsSection from "@/components/catalog/WorkLocationsSection";
+import { getCurrentUser } from "@/lib/auth/session";
 import { enqueue } from "@/server/enrichment";
 
 interface Props {
@@ -61,12 +63,13 @@ export default async function WorkPage({ params }: Props) {
   }
 
   const primaryAuthor = work.authors[0];
-  const [alsoBy, alsoEnjoyed, rating] = await Promise.all([
+  const [alsoBy, alsoEnjoyed, rating, user] = await Promise.all([
     primaryAuthor
       ? getOtherWorksByAuthor(primaryAuthor.olKey, work.olKey, 6)
       : Promise.resolve([]),
     getSimilarWorks(work.olKey, 6),
     getWorkRating(work.olKey),
+    getCurrentUser(),
   ]);
 
   const coverEdition = work.editions.find(
@@ -197,6 +200,19 @@ export default async function WorkPage({ params }: Props) {
           totalCount={work.editionCount}
           pageSize={EDITIONS_PAGE_SIZE}
         />
+      </section>
+
+      {/*
+        Reader-contributed places this book is set in or mentions.
+        
+        The component, its API route and its server layer all existed and
+        nothing rendered them: BookLocationsSection was rewritten as
+        WorkLocationsSection during the repoint from app.books to work_key, and
+        the new work page was never wired to it. The feature had been built and
+        was simply unreachable.
+      */}
+      <section className="mt-10">
+        <WorkLocationsSection workKey={work.olKey} currentUserId={user?.id} />
       </section>
 
       {alsoEnjoyed.length > 0 && (
