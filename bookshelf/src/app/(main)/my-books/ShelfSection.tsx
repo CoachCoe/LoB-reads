@@ -13,24 +13,28 @@ interface ShelfSectionProps {
 
 export default function ShelfSection({ shelf }: ShelfSectionProps) {
   const [items, setItems] = useState(shelf.items);
-  const [removingBook, setRemovingBook] = useState<string | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
 
-  const handleRemoveBook = async (bookId: string) => {
-    setRemovingBook(bookId);
+  // The endpoint is /works and the body key is workKey. This called /books
+  // with { bookId } — the pre-M3 contract, which returns 404: the repoint from
+  // app.books to work_key moved the route and left the caller behind. Removing
+  // a book from a shelf has been silently failing on this page since.
+  const handleRemove = async (workKey: string) => {
+    setRemoving(workKey);
     try {
-      const response = await fetch(`/api/shelves/${shelf.id}/books`, {
+      const response = await fetch(`/api/shelves/${shelf.id}/works`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookId }),
+        body: JSON.stringify({ workKey }),
       });
 
       if (response.ok) {
-        setItems(items.filter((item) => item.workKey !== bookId));
+        setItems(items.filter((item) => item.workKey !== workKey));
       }
     } catch (error) {
       console.error("Failed to remove book:", error);
     } finally {
-      setRemovingBook(null);
+      setRemoving(null);
     }
   };
 
@@ -96,9 +100,9 @@ export default function ShelfSection({ shelf }: ShelfSectionProps) {
               <button
                 onClick={(e) => {
                   e.preventDefault();
-                  handleRemoveBook(item.workKey);
+                  handleRemove(item.workKey);
                 }}
-                disabled={removingBook === item.workKey}
+                disabled={removing === item.workKey}
                 className="absolute top-2 right-2 p-1.5 bg-[var(--card-bg)] rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/10"
                 title="Remove from shelf"
                 aria-label={`Remove ${item.work?.title ?? "Not in the current catalog"} from this shelf`}
