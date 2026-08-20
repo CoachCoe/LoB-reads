@@ -15,12 +15,17 @@ require_cover: true           # editions without a cover are dropped
 require_author: true          # the spec's M1 acceptance expects >=1 author
 min_editions_per_work: 1
 
-# NOT IMPLEMENTED. 04-slice.sql does not reference the rating corpus, and
-# run.ts never passes this through — setting it true silently does nothing, so
-# run.ts now refuses to start rather than pretend it applied.
+# Implemented, and off deliberately.
 #
-# It is also not the lever it appears to be at present: the only corpus loaded
-# is the M5 seed fixture, 4,974 synthetic ratings covering 200 distinct works.
-# Filtering the catalog to those would leave 200 works, not the ~10K this
-# comment once promised. Loading a real ratings corpus comes first.
+# With goodbooks-10k loaded it keeps the works someone has actually rated:
+# measured against the real catalog, 6,943,467 works become 8,659. That is a
+# fixture, not a library — useful for exercising recommendations where every
+# work has ratings, and not much else.
+#
+# It was originally the plan for fitting the AWS free tier. That reason is
+# gone: the full sliced catalog measures 11GB and fits 20GB with room spare.
+#
+# 04-slice.sql refuses if the corpus covers fewer than 1,000 works, because on
+# a database that has never run `npm run social:load` every work fails the test
+# and the filter would delete the entire catalog while reporting success.
 must_appear_in_rating_corpus: false

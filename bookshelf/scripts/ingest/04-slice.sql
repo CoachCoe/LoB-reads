@@ -7,6 +7,7 @@
 --   psql "$DIRECT_URL" \
 --     -v min_publish_year=1900 -v languages="{eng}" -v require_isbn=true \
 --     -v require_cover=false -v require_author=true -v min_editions=1 \
+--     -v must_appear_in_rating_corpus=false \
 --     -f scripts/ingest/04-slice.sql
 --
 -- Deletion cascades: removing a work removes its editions and author links.
@@ -48,6 +49,44 @@ DELETE FROM catalog.works w
 WHERE w.edition_count < :min_editions
    OR (:'require_author' = 'true'
        AND NOT EXISTS (SELECT 1 FROM catalog.work_authors wa WHERE wa.work_key = w.ol_key));
+
+-- Optionally, keep only works someone has actually rated.
+--
+-- This turns the catalog into roughly the size of the rating corpus — about
+-- 8,700 works against 6.9 million — which is a fixture, not a library. It
+-- exists because a catalog with ratings on every work is useful for testing
+-- recommendations, and because it was once the plan for fitting the AWS free
+-- tier. That second reason no longer applies: the full sliced catalog is 11GB
+-- and fits 20GB comfortably.
+--
+-- The guard matters more than the filter. With an empty corpus every work
+-- fails the test, so a flag set on a database that has never run
+-- `social:load` would delete the entire catalog and report success. It refuses
+-- instead.
+-- \if rather than a condition inside the block: psql does not interpolate
+-- variables inside dollar quotes, so `:'must_appear_in_rating_corpus'` reaches
+-- the server verbatim and fails to parse. The test has to happen out here.
+\if :must_appear_in_rating_corpus
+DO $$
+DECLARE
+  rated bigint;
+BEGIN
+  SELECT count(DISTINCT work_key) INTO rated FROM seed.ratings;
+
+  IF rated < 1000 THEN
+    RAISE EXCEPTION
+      'must_appear_in_rating_corpus is set but the rating corpus covers only % works. '
+      'Run `npm run social:load -- --download` first; filtering against an empty '
+      'corpus would delete the whole catalog.', rated;
+  END IF;
+
+  DELETE FROM catalog.works w
+  WHERE NOT EXISTS (SELECT 1 FROM seed.ratings r WHERE r.work_key = w.ol_key);
+
+  RAISE NOTICE 'rating-corpus filter kept works rated by the % in seed.ratings', rated;
+END
+$$;
+\endif
 
 -- Authors with nothing left to their name are dead weight.
 DELETE FROM catalog.authors a

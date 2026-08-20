@@ -89,17 +89,6 @@ async function main() {
   const slice = readSliceConfig();
   console.log("Slice config:", JSON.stringify(slice));
 
-  // This option is parsed but not implemented: 04-slice.sql never looks at the
-  // rating corpus. Silently ignoring it would leave someone believing their
-  // catalog had been filtered when it had not, so refuse instead.
-  if (slice.must_appear_in_rating_corpus) {
-    throw new Error(
-      "must_appear_in_rating_corpus is not implemented — 04-slice.sql does not " +
-        "reference the rating corpus. Set it back to false. Note that the only " +
-        "corpus currently loaded is the M5 seed fixture (200 distinct works), so " +
-        "this filter would need a real ratings corpus before it means anything."
-    );
-  }
 
   tsx("scripts/ingest/02-stage.ts", limitArgs, "Stage: dumps → staging tables");
 
@@ -129,6 +118,7 @@ async function main() {
       ...sliceVars,
       "-v", `require_author=${slice.require_author}`,
       "-v", `min_editions=${slice.min_editions_per_work}`,
+      "-v", `must_appear_in_rating_corpus=${slice.must_appear_in_rating_corpus}`,
       "-f", "scripts/ingest/04-slice.sql",
     ],
     "Slice: apply config/slice.yaml"
