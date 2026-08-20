@@ -33,7 +33,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import path from "node:path";
 import prisma from "@/lib/prisma";
-import { canonicalIsbn13 } from "@/lib/sources/isbn";
+import { corpusIsbnToCanonical } from "./corpus-isbn";
 
 const DIR = "data/ratings";
 const SOURCE = "goodbooks-10k";
@@ -92,26 +92,9 @@ async function loadBookIsbns(): Promise<Map<string, string>> {
     const cols = split(line);
     const get = (name: string) => cols[header!.indexOf(name)]?.trim() ?? "";
 
-    // Only the isbn10 column is usable, and only after restoring the leading
-    // zeros. Both ISBN columns in this corpus were written by something that
-    // coerced them to numbers.
-    //
-    // isbn13 came out as scientific notation — "9.78043902348e+12" — which is
-    // not merely missing its check digit but rounded in the twelfth digit too.
-    // Rebuilding it and cross-checking against isbn10 disagreed on 1,199 of
-    // 2,680 rows, so it is unrecoverable and deliberately ignored.
-    //
-    // isbn10 lost leading zeros instead: of 9,300 values, 5,573 are nine
-    // characters, 916 are eight and 112 are seven. An ISBN-10 is exactly ten,
-    // so padding restores it — "439023483" is The Hunger Games's 0439023483 —
-    // and canonicalIsbn13 validates the check digit, so a wrong guess is
-    // rejected rather than silently matched to another book.
-    //
-    // Taking isbn13 at face value cost 6,481 of 9,300 books, and with them the
-    // ratings that make recommendations work at all.
-    const raw = get("isbn").replace(/[^0-9Xx]/g, "");
-    const padded = raw.length > 0 && raw.length <= 10 ? raw.padStart(10, "0") : raw;
-    const canonical = canonicalIsbn13(padded);
+    // See corpus-isbn.ts: this corpus's ISBN columns were coerced to numbers,
+    // and only the isbn10 one is recoverable.
+    const canonical = corpusIsbnToCanonical(get("isbn"));
     if (canonical) byBookId.set(get("book_id"), canonical);
   }
 

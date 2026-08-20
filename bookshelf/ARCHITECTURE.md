@@ -401,8 +401,11 @@ Both were written by something that coerced them to numbers:
   unrecoverable and deliberately ignored.
 - **`isbn10` lost its leading zeros.** Of 9,300 values, 5,573 are nine
   characters, 916 are eight, 112 are seven. An ISBN-10 is exactly ten, so
-  padding restores it, and the check digit validates the result — a wrong guess
-  is rejected rather than quietly matched to a different book.
+  padding restores it. The padding is *not* validated: `isbn10To13` discards
+  the ISBN-10 check digit, so a corrupted value yields a well-formed ISBN-13
+  rather than a rejection. What protects the match is that the ISBN-13 must
+  exist in `catalog.editions` — a wrong guess loses a rating rather than
+  attaching it to the wrong book.
 
 Taking the columns at face value cost 6,481 of 9,300 books and three quarters
 of the ratings. Worth remembering for any corpus that arrives as CSV: an
