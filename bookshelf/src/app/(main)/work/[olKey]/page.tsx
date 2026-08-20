@@ -15,7 +15,11 @@ import StarRating from "@/components/ui/StarRating";
 import WorkCard from "@/components/catalog/WorkCard";
 import EditionList from "./EditionList";
 import WorkLocationsSection from "@/components/catalog/WorkLocationsSection";
+import AddToShelfButton from "@/components/catalog/AddToShelfButton";
+import ReadingProgressSection from "@/components/catalog/ReadingProgressSection";
+import WorkReviewSection from "@/components/reviews/WorkReviewSection";
 import { getCurrentUser } from "@/lib/auth/session";
+import { getUserReviewForWork } from "@/server/reviews";
 import { enqueue } from "@/server/enrichment";
 
 interface Props {
@@ -71,6 +75,20 @@ export default async function WorkPage({ params }: Props) {
     getWorkRating(work.olKey),
     getCurrentUser(),
   ]);
+
+  // Fetched on the server so opening a work page costs no round trip to
+  // discover the reader has not reviewed it, which is the common case.
+  const ownReview = user?.id
+    ? await getUserReviewForWork(user.id, work.olKey)
+    : null;
+
+  // Progress needs a denominator. Editions disagree about page counts, so take
+  // the first that states one from the editions already loaded rather than
+  // spending a query on it. Null is fine — the component then tracks a page
+  // number without a percentage, which is better than refusing to track.
+  const pageCount =
+    work.editions.find((edition) => edition.numberOfPages)?.numberOfPages ??
+    null;
 
   const coverEdition = work.editions.find(
     (e) => e.olKey === work.coverEditionKey
@@ -142,6 +160,12 @@ export default async function WorkPage({ params }: Props) {
             </div>
           )}
 
+          {user?.id && (
+            <div className="mt-4">
+              <AddToShelfButton workKey={work.olKey} />
+            </div>
+          )}
+
           <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-500 dark:text-gray-400">
             {work.firstPublishYear && (
               <div className="flex items-center gap-1.5">
@@ -189,6 +213,43 @@ export default async function WorkPage({ params }: Props) {
           )}
         </div>
       </div>
+
+      {/*
+        Reading progress and the reader's own review.
+
+        Both components existed, spoke the pre-M3 `bookId` contract, and were
+        mounted nowhere — so a reader could search 6.9 million books and not
+        rate one. Shelves and ratings could only arrive through the Goodreads
+        importer.
+      */}
+      {user?.id && (
+        <>
+          <section className="mt-10">
+            <h2 className="mb-3 text-xl font-bold text-gray-900 dark:text-gray-100">
+              Your reading
+            </h2>
+            <ReadingProgressSection workKey={work.olKey} pageCount={pageCount} />
+          </section>
+
+          <section className="mt-10">
+            <h2 className="mb-3 text-xl font-bold text-gray-900 dark:text-gray-100">
+              {ownReview ? "Your review" : "Rate this book"}
+            </h2>
+            <WorkReviewSection
+              workKey={work.olKey}
+              existingReview={
+                ownReview
+                  ? {
+                      id: ownReview.id,
+                      rating: ownReview.rating,
+                      content: ownReview.content,
+                    }
+                  : null
+              }
+            />
+          </section>
+        </>
+      )}
 
       <section className="mt-10">
         <h2 className="mb-3 text-xl font-bold text-gray-900 dark:text-gray-100">

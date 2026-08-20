@@ -8,17 +8,20 @@ import ProgressBar from "@/components/ui/ProgressBar";
 import Input from "@/components/ui/Input";
 
 interface ReadingProgressSectionProps {
-  bookId: string;
+  workKey: string;
   pageCount: number | null;
 }
 
+/** The subset of SessionWithWork this component needs. */
 interface Progress {
+  workKey: string;
   currentPage: number;
+  pageCount: number | null;
   finishedAt: string | null;
 }
 
 export default function ReadingProgressSection({
-  bookId,
+  workKey,
   pageCount,
 }: ReadingProgressSectionProps) {
   const { data: session } = useSession();
@@ -29,11 +32,13 @@ export default function ReadingProgressSection({
 
   const fetchProgress = useCallback(async () => {
     try {
-      const response = await fetch(`/api/progress?bookId=${bookId}`);
+      // GET returns the reader's open sessions; there is no per-work endpoint,
+      // so the match happens here.
+      const response = await fetch("/api/progress");
       if (response.ok) {
         const data = await response.json();
         const bookProgress = data.find(
-          (p: { bookId: string }) => p.bookId === bookId
+          (p: Progress) => p.workKey === workKey
         );
         if (bookProgress) {
           setProgress(bookProgress);
@@ -43,7 +48,7 @@ export default function ReadingProgressSection({
     } catch (error) {
       console.error("Failed to fetch progress:", error);
     }
-  }, [bookId]);
+  }, [workKey]);
 
   useEffect(() => {
     if (session?.user) {
@@ -57,7 +62,7 @@ export default function ReadingProgressSection({
       const response = await fetch("/api/progress", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookId, action: "start" }),
+        body: JSON.stringify({ workKey, action: "start" }),
       });
 
       if (response.ok) {
@@ -81,7 +86,7 @@ export default function ReadingProgressSection({
       const response = await fetch("/api/progress", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookId, currentPage: page }),
+        body: JSON.stringify({ workKey, currentPage: page }),
       });
 
       if (response.ok) {
@@ -102,7 +107,7 @@ export default function ReadingProgressSection({
       const response = await fetch("/api/progress", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookId, action: "finish" }),
+        body: JSON.stringify({ workKey, action: "finish" }),
       });
 
       if (response.ok) {

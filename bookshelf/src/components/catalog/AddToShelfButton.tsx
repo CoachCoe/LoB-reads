@@ -18,11 +18,22 @@ interface ShelfStatus {
 }
 
 interface AddToShelfButtonProps {
-  bookId: string;
+  workKey: string;
   onAdd?: () => void;
 }
 
-export default function AddToShelfButton({ bookId, onAdd }: AddToShelfButtonProps) {
+/**
+ * Put a work on a shelf, or take it off.
+ *
+ * Written against the pre-M3 `bookId` contract and mounted nowhere: the
+ * repoint from app.books to work_key moved the routes and left this behind, so
+ * there was no way to shelve a book from the UI at all. Ratings and shelves
+ * could only arrive through the Goodreads importer.
+ */
+export default function AddToShelfButton({
+  workKey,
+  onAdd,
+}: AddToShelfButtonProps) {
   const { data: session } = useSession();
   const [shelves, setShelves] = useState<Shelf[]>([]);
   const [currentShelves, setCurrentShelves] = useState<ShelfStatus[]>([]);
@@ -41,36 +52,35 @@ export default function AddToShelfButton({ bookId, onAdd }: AddToShelfButtonProp
     }
   }, []);
 
-  const fetchBookStatus = useCallback(async () => {
+  const fetchShelfStatus = useCallback(async () => {
     try {
-      const response = await fetch(`/api/books/${bookId}/shelves`);
+      const response = await fetch(`/api/works/${workKey}/shelves`);
       if (response.ok) {
-        const data = await response.json();
-        setCurrentShelves(data);
+        setCurrentShelves(await response.json());
       }
     } catch {
-      // Book might not be on any shelf yet
+      // Not on any shelf yet, which is the common case.
     }
-  }, [bookId]);
+  }, [workKey]);
 
   useEffect(() => {
     if (session?.user) {
       fetchShelves();
-      fetchBookStatus();
+      fetchShelfStatus();
     }
-  }, [session, fetchShelves, fetchBookStatus]);
+  }, [session, fetchShelves, fetchShelfStatus]);
 
   const handleAddToShelf = async (shelfId: string) => {
     setLoadingShelf(shelfId);
     try {
-      const response = await fetch(`/api/shelves/${shelfId}/books`, {
+      const response = await fetch(`/api/shelves/${shelfId}/works`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookId }),
+        body: JSON.stringify({ workKey }),
       });
 
       if (response.ok) {
-        await fetchBookStatus();
+        await fetchShelfStatus();
         onAdd?.();
       }
     } catch (error) {
@@ -84,14 +94,14 @@ export default function AddToShelfButton({ bookId, onAdd }: AddToShelfButtonProp
   const handleRemoveFromShelf = async (shelfId: string) => {
     setLoadingShelf(shelfId);
     try {
-      const response = await fetch(`/api/shelves/${shelfId}/books`, {
+      const response = await fetch(`/api/shelves/${shelfId}/works`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bookId }),
+        body: JSON.stringify({ workKey }),
       });
 
       if (response.ok) {
-        await fetchBookStatus();
+        await fetchShelfStatus();
       }
     } catch (error) {
       console.error("Failed to remove from shelf:", error);
