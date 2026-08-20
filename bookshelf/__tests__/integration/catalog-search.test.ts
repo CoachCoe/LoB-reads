@@ -1,6 +1,8 @@
 import { prisma } from "./setup";
 import {
   COUNT_CEILING,
+  getWorksBySubject,
+  countWorksBySubject,
   searchWorks,
   countWorkMatches,
   getWorkByKey,
@@ -248,4 +250,61 @@ describe("work detail", () => {
     const counts = popular.map((w) => w.editionCount);
     expect([...counts].sort((a, b) => b - a)).toEqual(counts);
   });
+});
+
+describe("subjects are browsed, not searched", () => {
+  /**
+   * Subjects used to be the D-weighted term in search_vector, which made every
+   * generic word match most of the catalog: "Fiction" matched 735,956 works of
+   * 6.9 million, and ranking a match set that size means reading every row —
+   * 6.7 seconds, from a chip the discover page rendered itself.
+   *
+   * They are indexed for containment instead, so a subject is a browse.
+   */
+  it("does not match a work through its subjects", async () => {
+    const work = await makeWork({ title: "A Book With No Genre Word" });
+    await prisma.$executeRawUnsafe(
+      `UPDATE catalog.works SET subjects = ARRAY['Xenobiology'] WHERE ol_key = $1`,
+      work.olKey
+    );
+    // The trigger reruns on the subjects update, so the vector is current.
+    const results = await searchWorks("Xenobiology", { limit: 50 });
+    expect(results.map((r) => r.olKey)).not.toContain(work.olKey);
+  });
+
+  it("finds it by subject browse", async () => {
+    const work = await makeWork({ title: "A Book About Xenolinguistics" });
+    await prisma.$executeRawUnsafe(
+      `UPDATE catalog.works SET subjects = ARRAY['Xenolinguistics'] WHERE ol_key = $1`,
+      work.olKey
+    );
+
+    const browsed = await getWorksBySubject("Xenolinguistics", { limit: 50 });
+    expect(browsed.map((r) => r.olKey)).toContain(work.olKey);
+  });
+
+  it("still finds a work by its title", async () => {
+    // The point of removing subjects is that it costs nothing here.
+    const work = await makeWork({ title: "Distinctive Zaphodian Chronicle" });
+    const results = await searchWorks("Zaphodian Chronicle", { limit: 10 });
+    expect(results.map((r) => r.olKey)).toContain(work.olKey);
+  });
+
+  it("counts a subject browse without reading every match", async () => {
+    const subject = `Bulk Subject ${Date.now()}`;
+    const works = await Promise.all(
+      Array.from({ length: 30 }, (_, i) =>
+        makeWork({ title: `Bulk Subject Volume ${i}` })
+      )
+    );
+    await prisma.$executeRawUnsafe(
+      `UPDATE catalog.works SET subjects = ARRAY[$1] WHERE ol_key = ANY($2)`,
+      subject,
+      works.map((w) => w.olKey)
+    );
+
+    const total = await countWorksBySubject(subject);
+    expect(total.count).toBe(30);
+    expect(total.atCeiling).toBe(false);
+  }, 60_000);
 });

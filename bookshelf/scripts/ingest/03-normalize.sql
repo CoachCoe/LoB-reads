@@ -110,9 +110,16 @@ SELECT
   s.data ->> 'subtitle',
   catalog.text_value(s.data -> 'description'),
   catalog.publish_year(s.data ->> 'first_publish_date'),
+  -- Subjects longer than 300 characters are not subjects. Open Library's
+  -- arrays occasionally carry a blurb or citation string — the longest seen is
+  -- 5,200 characters — and GIN cannot index an element that large, so the
+  -- subjects index fails outright with 54000 unless they are dropped here.
   CASE
     WHEN jsonb_typeof(s.data -> 'subjects') = 'array'
-      THEN ARRAY(SELECT jsonb_array_elements_text(s.data -> 'subjects'))
+      THEN ARRAY(
+        SELECT v FROM jsonb_array_elements_text(s.data -> 'subjects') AS v
+        WHERE length(v) <= 300
+      )
     ELSE '{}'::text[]
   END,
   now()

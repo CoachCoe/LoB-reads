@@ -137,6 +137,71 @@ export async function searchWorks(
  */
 export const COUNT_CEILING = 1000;
 
+/**
+ * Works carrying a subject, most editions first.
+ *
+ * A browse, not a search. Subjects were removed from `search_vector` because
+ * as a D-weighted term they made every generic word match most of the catalog
+ * — "Fiction" matched 735,956 works, and ranking that many means reading every
+ * one of them. An indexed array containment lookup answers the question the
+ * subject chips are actually asking, and does it in milliseconds.
+ */
+export async function getWorksBySubject(
+  subject: string,
+  { limit = 24, offset = 0 }: { limit?: number; offset?: number } = {}
+): Promise<WorkSearchResult[]> {
+  const trimmed = subject.trim();
+  if (trimmed.length === 0) return [];
+
+  return prisma.$queryRaw<WorkSearchResult[]>`
+    SELECT
+      w.ol_key             AS "olKey",
+      w.title,
+      w.subtitle,
+      w.author_names       AS "authorNames",
+      w.first_publish_year AS "firstPublishYear",
+      w.edition_count      AS "editionCount",
+      w.cover_edition_key  AS "coverEditionKey",
+      e.cover_id::int      AS "coverId",
+      0::double precision  AS rank
+    FROM catalog.works w
+    LEFT JOIN catalog.editions e ON e.ol_key = w.cover_edition_key
+    WHERE w.subjects @> ARRAY[${trimmed}]::text[]
+    ORDER BY w.edition_count DESC, w.ol_key
+    LIMIT ${limit} OFFSET ${offset}
+  `;
+}
+
+/**
+ * How many works carry a subject, up to the same ceiling as search.
+ *
+ * Read from the precomputed counts where possible — that is exact and free.
+ * Falls back to a bounded count for a subject the ingest has not counted,
+ * which happens only between adding a work and the next rebuild.
+ */
+export async function countWorksBySubject(
+  subject: string
+): Promise<{ count: number; atCeiling: boolean }> {
+  const trimmed = subject.trim();
+  if (trimmed.length === 0) return { count: 0, atCeiling: false };
+
+  const [cached] = await prisma.$queryRaw<{ workCount: number }[]>`
+    SELECT work_count AS "workCount" FROM catalog.subject_counts
+    WHERE subject = ${trimmed}
+  `;
+  if (cached) return { count: cached.workCount, atCeiling: false };
+
+  const rows = await prisma.$queryRaw<{ count: bigint }[]>`
+    SELECT count(*) AS count FROM (
+      SELECT 1 FROM catalog.works
+      WHERE subjects @> ARRAY[${trimmed}]::text[]
+      LIMIT ${COUNT_CEILING}
+    ) t
+  `;
+  const count = Number(rows[0]?.count ?? 0);
+  return { count, atCeiling: count >= COUNT_CEILING };
+}
+
 export async function countWorkMatches(
   query: string
 ): Promise<{ count: number; atCeiling: boolean }> {

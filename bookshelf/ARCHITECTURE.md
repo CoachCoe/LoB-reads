@@ -349,7 +349,30 @@ form ("getAllGenres reads the entire books table into memory on every
 search-page render"); it was rewritten as a GROUP BY, which is not the same as
 making it cheap.
 
-**Common terms are still slow, and this is unfixed.** "Fiction" matches 735,956
+Subjects are no longer searched. As the D-weighted term in `search_vector`
+they made every generic word match most of the catalog, and the discover page's
+own chips linked straight into the worst case:
+
+|          | in search_vector | excluded |
+|---|---|---|
+| "Fiction" | 735,956 | 10,061 |
+| "History" | 629,451 | 80,563 |
+| "dune"    | 456 | 416 |
+
+A title or author search — what people actually type — barely moves. Subjects
+are indexed for containment instead, so a chip is a browse:
+`/search?subject=Fiction` answers in 95ms with an exact count from
+`subject_counts`, against 110 seconds before.
+
+Typing a generic word into the search box is still slower than it should be
+(4.2s for "Fiction"), because 10,061 matching rows are fetched from a 3.4GB
+table with `shared_buffers` at 128MB — the same query costs 213,848 block
+reads cold and 67 warm. Raising `shared_buffers` toward 8GB on a 64GB host
+would keep the catalog resident; it needs a restart, so it belongs with the
+deployment settings rather than in a migration.
+
+**The older note below is kept because the reasoning still holds for any large
+match set.** "Fiction" matches 735,956
 works, because subjects are searchable. Ranking them requires reading every
 matching row: the rank expression is not the cost — substituting a trivial
 `ln(1 + edition_count)` still took 5,481 ms — the heap reads are. So no

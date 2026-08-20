@@ -74,7 +74,7 @@ afterAll(async () => {
 });
 
 describe("search indexes", () => {
-  it("all three exist", async () => {
+  it("all four exist", async () => {
     const rows = await prisma.$queryRaw<{ indexname: string }[]>`
       SELECT indexname FROM pg_indexes
       WHERE schemaname = 'catalog' AND tablename = 'works'
@@ -85,6 +85,9 @@ describe("search indexes", () => {
     expect(rows.map((r) => r.indexname).sort()).toEqual([
       "works_author_names_norm_idx",
       "works_search_vector_idx",
+      // Subjects are indexed for browsing, not searched. As a D-weighted term
+      // in search_vector they made "Fiction" match 735,956 works.
+      "works_subjects_idx",
       "works_title_norm_idx",
     ]);
   });

@@ -326,6 +326,10 @@ model CatalogWork {
   // exactly how these three were silently lost in the M3 migration, leaving
   // every search on a sequential scan.
   @@index([searchVector], type: Gin)
+  // Subject browse. Subjects are deliberately not in search_vector — as a
+  // D-weighted term they made "Fiction" match 735,956 works — so finding
+  // books by subject is an indexed array containment lookup instead.
+  @@index([subjects], type: Gin)
   @@index([titleNorm(ops: raw("gin_trgm_ops"))], type: Gin)
   @@index([authorNamesNorm(ops: raw("gin_trgm_ops"))], type: Gin)
   @@map("works")
