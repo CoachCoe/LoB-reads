@@ -29,15 +29,21 @@ export default async function SearchPage({ searchParams }: Props) {
   const page = Math.max(1, Number(params.page) || 1);
   const offset = (page - 1) * PAGE_SIZE;
 
+  // Subjects are only rendered when there is no query, so only fetch them
+  // then. Fetching regardless meant every search paid for a result it threw
+  // away — which was most of the page's latency before the counts were
+  // precomputed, and is still pointless work now that they are.
   const [works, total, subjects] = await Promise.all([
     query
       ? searchWorks(query, { limit: PAGE_SIZE, offset })
       : getPopularWorks(PAGE_SIZE),
-    query ? countWorkMatches(query) : Promise.resolve(0),
-    getCatalogSubjects(12),
+    query
+      ? countWorkMatches(query)
+      : Promise.resolve({ count: 0, atCeiling: false }),
+    query ? Promise.resolve<string[]>([]) : getCatalogSubjects(12),
   ]);
 
-  const totalPages = query ? Math.ceil(total / PAGE_SIZE) : 1;
+  const totalPages = query ? Math.ceil(total.count / PAGE_SIZE) : 1;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
@@ -63,9 +69,11 @@ export default async function SearchPage({ searchParams }: Props) {
 
       {query && (
         <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
-          {total === 0
+          {total.count === 0
             ? "No matches"
-            : `${total.toLocaleString()} ${total === 1 ? "result" : "results"} for “${query}”`}
+            : `${total.count.toLocaleString()}${total.atCeiling ? "+" : ""} ${
+                total.count === 1 ? "result" : "results"
+              } for “${query}”`}
         </p>
       )}
 

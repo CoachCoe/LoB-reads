@@ -326,6 +326,41 @@ slow statement here cannot be EXPLAINed from another session and every table it
 touches is locked, so without it the only evidence is wait events — which is
 how hours went into guessing at a plan that the log would have shown outright.
 
+## What the real catalog broke
+
+Every one of these was invisible on the 5,030-work fixture and appeared the
+moment the catalog held 6.9 million works. All measured, all on the search page.
+
+| | before | after |
+|---|---|---|
+| `getCatalogSubjects` | 3,944 ms | 0.17 ms (precomputed) |
+| `getPopularWorks` | 1,976 ms | 0.31 ms (index) |
+| trigram threshold | 223 ms | 40 ms (0.3 → 0.5) |
+| `countWorkMatches` ("Fiction") | 5,481 ms | 49 ms (ceiling) |
+| search page, "dune" | 3.6 s | 0.17 s |
+| search page, "Fiction" | 110 s | 6.7 s |
+
+Two of them were the same mistake in different clothes: a query that aggregates
+or sorts the whole table to produce a handful of rows. `getCatalogSubjects`
+unnested every work's subjects on every request — and the search page paid for
+it too, then discarded the result, because the subject chips only render when
+there is no query. The original audit had already caught this in its earlier
+form ("getAllGenres reads the entire books table into memory on every
+search-page render"); it was rewritten as a GROUP BY, which is not the same as
+making it cheap.
+
+**Common terms are still slow, and this is unfixed.** "Fiction" matches 735,956
+works, because subjects are searchable. Ranking them requires reading every
+matching row: the rank expression is not the cost — substituting a trivial
+`ln(1 + edition_count)` still took 5,481 ms — the heap reads are. So no
+adjustment to the weights will help, and the search page's own subject chips
+link straight into this case.
+
+The fix is a bounded candidate set: rank an approximate top-N rather than the
+whole match set, which is a decision about result quality and not a patch.
+A subject chip would be better served by an indexed `subjects @> ARRAY[...]`
+lookup than by full-text search; there is currently no index on `subjects`.
+
 ## Known limitations
 
 - **Rate limiting is per-process** (`src/lib/rate-limit.ts`). Correct for a

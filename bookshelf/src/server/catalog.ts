@@ -123,24 +123,42 @@ export async function searchWorks(
   `;
 }
 
-/** Total matches, for pagination. Deliberately a separate query. */
-export async function countWorkMatches(query: string): Promise<number> {
+/**
+ * Matches counted up to a ceiling, for pagination.
+ *
+ * Counting exactly means reading every matching row. On the real catalog a
+ * common word is not a rare case — "Fiction" matches 735,956 works, because
+ * subjects are indexed too, and counting them took 5.5 seconds. Stopping at
+ * COUNT_CEILING takes 49ms.
+ *
+ * Nothing is lost: a reader does not page to result 735,000, and the UI shows
+ * "1,000+" rather than a precise number it cannot act on. `atCeiling` says
+ * which it is, so the caller never presents a capped figure as exact.
+ */
+export const COUNT_CEILING = 1000;
+
+export async function countWorkMatches(
+  query: string
+): Promise<{ count: number; atCeiling: boolean }> {
   const trimmed = query.trim();
-  if (trimmed.length === 0) return 0;
+  if (trimmed.length === 0) return { count: 0, atCeiling: false };
 
   const rows = await prisma.$queryRaw<{ count: bigint }[]>`
-    WITH q AS (
-      SELECT
-        websearch_to_tsquery('english', unaccent(${trimmed})) AS tsq,
-        unaccent(lower(${trimmed}))                           AS norm
-    )
-    SELECT count(*) AS count
-    FROM catalog.works w
-    CROSS JOIN q
-    WHERE w.search_vector @@ q.tsq
-       OR w.title_norm % q.norm
+    SELECT count(*) AS count FROM (
+      SELECT 1
+      FROM catalog.works w
+      CROSS JOIN (
+        SELECT
+          websearch_to_tsquery('english', unaccent(${trimmed})) AS tsq,
+          unaccent(lower(${trimmed}))                           AS norm
+      ) q
+      WHERE w.search_vector @@ q.tsq
+         OR w.title_norm % q.norm
+      LIMIT ${COUNT_CEILING}
+    ) matched
   `;
-  return Number(rows[0]?.count ?? 0);
+  const count = Number(rows[0]?.count ?? 0);
+  return { count, atCeiling: count >= COUNT_CEILING };
 }
 
 export async function getWorkByKey(olKey: string): Promise<WorkDetail | null> {
@@ -278,12 +296,23 @@ export async function getPopularWorks(limit = 24): Promise<WorkSearchResult[]> {
 }
 
 /** Distinct subjects across the catalog, for browse filters. */
+/**
+ * The most common subjects, for the discover page.
+ *
+ * Read from catalog.subject_counts, which the ingest computes at the end of a
+ * rebuild. Aggregating it live meant a sequential scan over every work,
+ * unnesting subjects into millions of rows — 3.9 seconds on a 6.9M-work
+ * catalog, on every request.
+ *
+ * Empty before the first ingest populates it, which renders as no subject
+ * chips rather than an error. Deliberately not falling back to the live
+ * aggregate: that fallback would be invisible on a small catalog and would
+ * reintroduce the four-second page the moment the table went missing.
+ */
 export async function getCatalogSubjects(limit = 40): Promise<string[]> {
   const rows = await prisma.$queryRaw<{ subject: string }[]>`
-    SELECT subject, count(*) AS n
-    FROM catalog.works, unnest(subjects) AS subject
-    GROUP BY subject
-    ORDER BY n DESC
+    SELECT subject FROM catalog.subject_counts
+    ORDER BY work_count DESC, subject
     LIMIT ${limit}
   `;
   return rows.map((r) => r.subject);

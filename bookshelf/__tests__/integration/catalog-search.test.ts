@@ -1,10 +1,12 @@
 import { prisma } from "./setup";
 import {
+  COUNT_CEILING,
   searchWorks,
   countWorkMatches,
   getWorkByKey,
   getPopularWorks,
 } from "@/server/catalog";
+import { makeWork } from "./factories";
 import { KNOWN_BOOKS } from "../../scripts/ingest/known-books";
 
 /**
@@ -160,8 +162,24 @@ describe("M2 acceptance: known-title ranking", () => {
   it("counts matches consistently with what it returns", async () => {
     const total = await countWorkMatches("Dune");
     const page = await searchWorks("Dune", { limit: 100 });
-    expect(total).toBe(page.length);
+    expect(total.count).toBe(page.length);
+    expect(total.atCeiling).toBe(false);
   });
+
+  it("stops counting at the ceiling rather than reading every match", async () => {
+    // On the real catalog "Fiction" matches 735,956 works, because subjects
+    // are searchable too, and counting them exactly took 5.5 seconds. The
+    // ceiling makes that 49ms. atCeiling is what stops the UI presenting a
+    // capped number as though it were exact.
+    const filler = Array.from({ length: COUNT_CEILING + 50 }, (_, i) =>
+      makeWork({ title: `Ceiling Probe Volume ${i}` })
+    );
+    await Promise.all(filler);
+
+    const total = await countWorkMatches("Ceiling Probe");
+    expect(total.count).toBe(COUNT_CEILING);
+    expect(total.atCeiling).toBe(true);
+  }, 120_000);
 });
 
 describe("M2 acceptance: latency", () => {

@@ -316,6 +316,11 @@ model CatalogWork {
   editions CatalogEdition[]
 
   @@index([firstPublishYear])
+  // Serves the discover page's "most editions first". Without it that query
+  // sorts all 6.9M works — an external merge spilling ~480MB to disk — to
+  // return 24 rows, which took two seconds on the real catalog and nothing
+  // measurable on the fixtures.
+  @@index([editionCount(sort: Desc), olKey])
   // Declared here, not hand-written in a migration. Hand-written indexes are
   // invisible to `prisma migrate diff`, which then generates a DROP for them —
   // exactly how these three were silently lost in the M3 migration, leaving
