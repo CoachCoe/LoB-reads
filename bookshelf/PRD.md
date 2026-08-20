@@ -49,6 +49,13 @@ running at real scale for the first time. See `STATUS.md`.
 
 ### P0 — the product is visibly broken without these
 
+**R0. ~~The reading loop must be reachable.~~ Done.**
+Shelving, rating, reviewing and progress tracking had no UI path: the M3
+repoint migrated the server and left the client on the old `bookId` contract,
+so shelves and ratings could only come from the Goodreads importer. Fixed and
+covered by `core-loop.test.ts`. Kept here because it outranked everything below
+and its absence made the rest academic.
+
 **R1. Search must answer in under a second for any query.**
 Today a common word takes 4.2 s and the discover page's own subject chips used
 to lead straight into the worst case. Bound the candidate set so ranking never
@@ -92,8 +99,10 @@ and they are buried on work and author pages. A reader with no account has no
 route to the map. (`WorkLocationsSection` was in fact unreachable until
 recently — built, wired to nothing.)
 
-**R7. Close the reachability gap in testing.** Nothing asserts that a feature
-is mounted. That is how R6's component sat dead.
+**R7. Generalise the reachability check.** `core-loop.test.ts` now asserts the
+work page mounts its components, but only that page. Three separate components
+were found wired to nothing; a check that covers every page would have caught
+all of them at once.
 
 **R8. Housekeeping.** Align Postgres 14 local with 16 in CI and RDS; move rate
 limiting to a shared store before running more than one instance; delete

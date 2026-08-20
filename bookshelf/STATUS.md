@@ -43,7 +43,7 @@ vanishing. This is the single most load-bearing decision in the schema.
 |---|---|---|
 | M1 | Ingest to a sliced catalog | 113.5M records staged, 0 quarantined |
 | M2 | Search and work pages over `catalog.works` | 20 known books each in top 3 |
-| M3 | Shelves, ratings, reviews on `work_key`; `app.books` retired | — |
+| M3 | Shelves, ratings, reviews on `work_key`; `app.books` retired | Server migrated; **client was not** — see below |
 | M4 | Enrichment worker, cover storage | Worker runs; **no covers stored yet** |
 | M5 | Social layer and rating graph | 100% coverage of top 1,000 works |
 | M6 | Goodreads import with a review queue | Real export imports; unmatched queued |
@@ -79,6 +79,8 @@ The catalog is the English-language, ISBN-bearing, cover-bearing slice from
 | `/search?q=dune` | 0.17 s |
 | `/search?q=Fiction` | **4.2 s** — see limitations |
 
+335 tests at the time of writing; 362 after the audit's additions.
+
 ---
 
 ## Quality posture
@@ -107,13 +109,35 @@ four-second search page, and a component wired to nothing.
 
 ### What the tests still do not catch
 
-- **Reachability.** `WorkLocationsSection` had a route, a server layer and a
-  component, and no page mounted it. Nothing tests that a feature is reachable.
+- **Reachability** — now partly covered. `core-loop.test.ts` asserts the work
+  page mounts each component and that the routes accept exactly what those
+  components send. Nothing generalises that check to other pages yet.
 - **Anything visual.** No screenshot or DOM-level assertions. The dark-mode
   sweep was verified by grep and a build, not by looking.
 - **Behaviour at catalog scale.** Deliberately: plan assertions replace it.
 
 ---
+
+## The M3 repoint left the client behind
+
+Worth its own section, because it was the largest defect found and it was
+invisible to a green suite of 222 tests.
+
+The repoint from `app.books` to `work_key` migrated the server layer and the
+API routes, and left every client component on the old `bookId` contract.
+`AddToShelfButton`, `ReadingProgressSection` and `ReviewForm` were mounted
+nowhere at all; `ShelfSection` was mounted and called a route that had moved,
+so removing a book from a shelf returned 404 and failed silently because the
+handler only acted on `response.ok`.
+
+The effect: **shelves and ratings could only be created by the Goodreads
+importer.** A reader could search 6.9 million works and not shelve one.
+
+All fixed, and covered by `core-loop.test.ts`. The reason it survived is worth
+keeping in mind: all 222 integration tests called the server layer directly, so
+every contract was verified and nothing noticed that no page called any of
+them. `WorkLocationsSection` was the same failure in the same repoint, found a
+day earlier.
 
 ## Known limitations
 
