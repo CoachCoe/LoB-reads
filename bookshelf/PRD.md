@@ -65,12 +65,18 @@ assertion holds the bound.
 *Open question for you:* approximate results for very common words — is that
 acceptable? It is the only way to bound the work.
 
-**R2. A catalog rebuild must not take the site down.**
-`TRUNCATE` inside the normalize transaction holds an exclusive lock for hours,
-so every read blocks. A monthly rebuild is therefore a monthly multi-hour
-outage. Normalize into parallel tables and swap with `RENAME`.
-*Done when:* search and work pages stay served throughout a full rebuild.
-*Bonus:* removes ~34 GB of bloat and most of the nine-hour runtime.
+**R2. ~~A catalog rebuild must not take the site down.~~ Done.**
+Normalize builds into parallel tables and swaps them in, so the exclusive lock
+lasts milliseconds rather than hours. Proven by A/B against a `TRUNCATE`-shaped
+transaction. The stated bonus is only half delivered — see R2b.
+
+**R2b. A rebuild should not leave 34 GB of dead space.**
+Slice deletes 34M of the 41.5M works after the swap, on the live table, so the
+bloat is still created and still needs `VACUUM FULL`. Moving the work-level
+filter before the swap — deleting from `works_new`, which no reader touches —
+yields a clean table for free, the same way the edition filter already moved
+into normalize.
+*Done when:* a full rebuild needs no `VACUUM FULL` to return to size.
 
 ### P1 — the product works but under-delivers
 

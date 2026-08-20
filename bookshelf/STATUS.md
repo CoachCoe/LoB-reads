@@ -152,18 +152,24 @@ Two independent fixes: raise `shared_buffers` (needs a restart), and bound the
 candidate set so ranking never reads more than N rows. The second is a decision
 about result quality, not a patch.
 
-### A catalog rebuild takes the catalog offline
+### ~~A catalog rebuild takes the catalog offline~~ — fixed
 
-`03-normalize.sql` truncates and rebuilds in one transaction. `TRUNCATE` holds
-`ACCESS EXCLUSIVE` until commit, so for the whole run **every read of those
-tables blocks** — search, work pages, shelf hydration. Measured: a bare
-`SELECT pg_relation_size('catalog.works')` waited on a lock the transaction had
-held for over three hours.
+Normalize builds into parallel `_new` tables and swaps them in at the end, so
+the exclusive lock lasts for five drops and five renames rather than for the
+rebuild. Demonstrated with an A/B: during a build-shaped transaction, reads of
+`catalog.works` return and the table holds zero exclusive locks; during a
+`TRUNCATE`-shaped one, the same read blocks until it times out.
 
-The spec calls for a monthly rebuild. As written that is a multi-hour outage,
-every month. The fix is to normalize into parallel tables and swap them with
-`RENAME` in one short transaction, which also removes the bloat and most of the
-runtime. Documented, not built.
+Index names are the trap. `LIKE INCLUDING ALL` copies indexes but renames them
+after the new table, and `ALTER TABLE RENAME` does not touch index names, so a
+naive swap leaves the catalog disagreeing with its migrations for ever. The
+swap renames them in a loop and raises if anything is left carrying the
+temporary name.
+
+**Still outstanding:** the ~34 GB of bloat. Slice deletes 34M of the 41.5M
+works *after* the swap, on the live table, so the dead space is still created.
+Moving that filter before the swap — deleting from `works_new`, which nobody is
+reading — would produce a clean table and remove the need for `VACUUM FULL`.
 
 ### The ingest takes about nine hours
 
