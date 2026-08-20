@@ -25,8 +25,8 @@ SELECT
 
 \echo '── authors ─────────────────────────────'
 
--- (data->'photos'->0)::text::bigint
-SELECT count(*) AS "photos[0] not a number (breaks ::bigint)"
+-- Same as covers below: handled by catalog.jsonb_bigint, reported for shape.
+SELECT count(*) AS "photos[0] not a number (dropped, not fatal)"
 FROM catalog.stage_authors
 WHERE data->'photos'->0 IS NOT NULL
   AND jsonb_typeof(data->'photos'->0) <> 'number';
@@ -54,8 +54,15 @@ WHERE jsonb_typeof(s.data->'subjects') = 'array'
 
 \echo '── editions ────────────────────────────'
 
--- (data->'covers'->0)::text::bigint
-SELECT count(*) AS "covers[0] not a number (breaks ::bigint)"
+-- Informational, not a failure. These used to break the run: a raw
+-- (data->'covers'->0)::text::bigint sees JSON null as the string 'null' and
+-- raises on an integer column. catalog.jsonb_bigint now returns NULL for
+-- anything that is not a number that fits, so a non-zero count here means
+-- those covers are dropped, not that normalize will abort.
+--
+-- Kept because the number is worth watching: a sudden jump would mean the
+-- dump's shape had changed.
+SELECT count(*) AS "covers[0] not a number (dropped, not fatal)"
 FROM catalog.stage_editions
 WHERE data->'covers'->0 IS NOT NULL
   AND jsonb_typeof(data->'covers'->0) <> 'number';

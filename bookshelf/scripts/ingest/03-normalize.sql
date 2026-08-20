@@ -80,6 +80,41 @@ CREATE TABLE catalog.work_authors_new (LIKE catalog.work_authors INCLUDING ALL);
 CREATE TABLE catalog.editions_new     (LIKE catalog.editions     INCLUDING ALL);
 CREATE TABLE catalog.external_ids_new (LIKE catalog.external_ids INCLUDING ALL);
 
+-- Load without the secondary indexes.
+--
+-- INCLUDING ALL brought them, and maintaining them through the load is
+-- expensive in exactly the way the first validation run showed: the works
+-- insert took 1h19m and was still going, against 13m28s when the table carried
+-- fewer indexes. A GIN index over `subjects` is being built row by row for 41.5
+-- million rows, which is the slowest possible way to build a GIN index.
+--
+-- The primary keys stay: every insert below relies on ON CONFLICT, which needs
+-- a unique index to conflict against.
+--
+-- Definitions are read back from the live tables after loading rather than
+-- written out here, so this cannot drift from the migrations. That is the same
+-- reason the swap renames indexes by loop instead of by list.
+DO $$
+DECLARE
+  r record;
+BEGIN
+  FOR r IN
+    SELECT c.relname AS idx
+    FROM pg_class c
+    JOIN pg_index i ON i.indexrelid = c.oid
+    JOIN pg_class t ON t.oid = i.indrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    LEFT JOIN pg_constraint con ON con.conindid = c.oid
+    WHERE n.nspname = 'catalog'
+      AND t.relname IN ('authors_new','works_new','work_authors_new',
+                        'editions_new','external_ids_new')
+      AND con.conname IS NULL
+  LOOP
+    EXECUTE format('DROP INDEX catalog.%I', r.idx);
+  END LOOP;
+END
+$$;
+
 INSERT INTO catalog.authors_new (ol_key, name, personal_name, birth_date, death_date, bio, photo_id)
 SELECT
   s.ol_key,
@@ -272,6 +307,42 @@ SET edition_count = c.n
 FROM (SELECT work_key, count(*) AS n FROM catalog.editions_new
       WHERE work_key IS NOT NULL GROUP BY work_key) c
 WHERE w.ol_key = c.work_key;
+
+-- Rebuild the secondary indexes now the rows are in place.
+--
+-- Copied from the live tables, which still exist at this point, so the
+-- definitions cannot disagree with the migrations. Building a GIN index over a
+-- populated table sorts once instead of inserting row by row, which is why the
+-- indexes were dropped before the load rather than kept.
+--
+-- Names get the _new prefix so they do not clash with the live indexes, and the
+-- swap renames them back.
+DO $$
+DECLARE
+  r record;
+  ddl text;
+BEGIN
+  FOR r IN
+    SELECT c.relname AS idx, t.relname AS tbl, pg_get_indexdef(c.oid) AS def
+    FROM pg_class c
+    JOIN pg_index i ON i.indexrelid = c.oid
+    JOIN pg_class t ON t.oid = i.indrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    LEFT JOIN pg_constraint con ON con.conindid = c.oid
+    WHERE n.nspname = 'catalog'
+      AND t.relname IN ('authors','works','work_authors','editions','external_ids')
+      AND con.conname IS NULL
+  LOOP
+    -- Point the DDL at the new table, and give the index a new name. Table
+    -- first: replacing the name first would leave "catalog.works" inside it.
+    ddl := replace(r.def, ' ON catalog.' || r.tbl || ' ',
+                          ' ON catalog.' || r.tbl || '_new ');
+    ddl := replace(ddl, ' ' || r.idx || ' ',
+                        ' ' || replace(r.idx, r.tbl || '_', r.tbl || '_new_') || ' ');
+    EXECUTE ddl;
+  END LOOP;
+END
+$$;
 
 -- Referential integrity between the new tables. LIKE does not copy foreign
 -- keys, and the names are per-table rather than per-schema, so they can be
