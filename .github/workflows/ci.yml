@@ -45,7 +45,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: bookshelf/package-lock.json
 
@@ -86,3 +86,72 @@ jobs:
 
       - name: Build
         run: npx next build
+
+      # Runs the same checks that gate a real deployment. It exists so that a
+      # future migration dropping a GIN index, or leaving work_mem at the
+      # default, fails CI instead of shipping. Both have happened.
+      #
+      # NEXTAUTH_* are overridden because CI's own values are deliberately
+      # placeholders, and the check exists to reject placeholders.
+      - name: Verify deployment invariants
+        env:
+          NEXTAUTH_SECRET: ${{ github.sha }}-not-a-placeholder
+          NEXTAUTH_URL: https://ci.example.com
+          CDN_URL: https://cdn.example.invalid
+        run: npm run deploy:verify
+
+  # A separate job: it needs no database and should not wait on the test suite.
+  #
+  # This exists because of a failure every other check passed. The image built,
+  # started, served static pages, and returned 500 on every request that touched
+  # the database — Prisma resolved a query engine the base image could not load.
+  # Only building and running the container finds that class of bug.
+  #
+  # It also builds on amd64 here, which is the deployment target, while local
+  # builds are arm64.
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build --build-arg CDN_URL=https://cdn.example.invalid -t lob-app:ci .
+
+      # Starting it is the actual test. A broken query engine, a missing shared
+      # library, or an unwritable working directory all survive `docker build`.
+      - name: Start it and wait for the liveness probe
+        run: |
+          docker run -d --name lob-ci -p 3000:3000 \
+            -e NEXTAUTH_SECRET=ci-secret \
+            -e NEXTAUTH_URL=http://localhost:3000 \
+            -e DATABASE_URL=postgresql://nobody@127.0.0.1:5432/none \
+            -e DIRECT_URL=postgresql://nobody@127.0.0.1:5432/none \
+            lob-app:ci
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3000/api/health >/dev/null 2>&1; then
+              echo "live after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "the container never became live"
+          exit 1
+
+      # With no database reachable, readiness must report 503 promptly rather
+      # than hang. A probe that hangs is indistinguishable from a wedged
+      # process, and the first version of this endpoint did exactly that.
+      - name: Readiness reports unavailable without a database
+        run: |
+          code=$(curl -s -o /tmp/body -m 10 -w '%{http_code}' http://localhost:3000/api/health/ready)
+          cat /tmp/body
+          echo
+          if [ "$code" != "503" ]; then
+            echo "expected 503, got $code"
+            exit 1
+          fi
+
+      - name: Container logs
+        if: always()
+        run: docker logs lob-ci || true

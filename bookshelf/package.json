@@ -28,7 +28,8 @@
     "social:load": "tsx scripts/social/load-ratings.ts",
     "social:compute": "tsx scripts/social/compute-stats.ts",
     "db:reset": "prisma migrate reset",
-    "storage:smoke": "tsx scripts/dev/azurite-smoke.ts"
+    "storage:smoke": "tsx scripts/dev/azurite-smoke.ts",
+    "deploy:verify": "tsx scripts/deploy/verify.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

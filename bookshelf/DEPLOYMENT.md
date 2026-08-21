@@ -124,10 +124,22 @@ Raising `work_mem` to 32 MB makes the bitmap exact and the same query runs in
 | **32 MB** | 93,941 | **1007 ms** |
 | 256 MB | 93,941 | 926 ms |
 
-32 MB is the knee; more buys almost nothing. Set it as a Flexible Server
-parameter. Note `work_mem` is per sort or hash node *per parallel worker*, so it
-multiplies under concurrency — 32 MB is modest, 256 MB on a burstable instance
-is not.
+32 MB is the knee; more buys almost nothing. Note `work_mem` is per sort or hash
+node *per parallel worker*, so it multiplies under concurrency — 32 MB is
+modest, 256 MB on a burstable instance is not.
+
+**A migration already sets this**, at database scope, so a normal
+`migrate deploy` applies it and no manual step is needed. If the application
+role lacks `ALTER DATABASE`, the migration raises a warning rather than failing
+the deployment — set it as a server parameter instead:
+
+```bash
+az postgres flexible-server parameter set \
+  --resource-group <rg> --server-name <srv> --name work_mem --value 32768
+```
+
+`npm run deploy:verify` asserts the effective value, so a skipped migration is
+caught rather than assumed.
 
 **More memory will not finish the job.** With `shared_buffers` at 3 GB the query
 reports `shared hit=202478, read=0` — everything resident, no disk reads at all
@@ -269,11 +281,46 @@ docker build -t lob-app .
 Then set the environment variables above on the container app. Container Apps
 terminates TLS and scales the revision; nothing needs nginx.
 
+### Health probes
+
+Two endpoints, and using the right one for each probe matters:
+
+| probe | endpoint | checks |
+| --- | --- | --- |
+| liveness | `/api/health` | nothing — only that the process responds |
+| readiness | `/api/health/ready` | the database answers **and** the catalog has rows |
+
+**Do not point liveness at the readiness endpoint.** Liveness decides whether to
+*kill* the container. Wire it to something that depends on Postgres and a brief
+database blip restarts every replica at once, which is strictly worse than
+serving errors for a few seconds. Verified by stopping the database: liveness
+answered 200 in 4 ms, readiness returned 503 in 2.0 s, and the app recovered on
+its own when the database came back — no restart.
+
+Readiness returns 503 when the catalog is empty, not just when the database is
+down. That is deliberate: a restore still in progress, or one that silently
+restored nothing, leaves the process perfectly healthy and every search empty.
+
+```yaml
+probes:
+  - type: liveness
+    httpGet: { path: /api/health, port: 3000 }
+    periodSeconds: 10
+  - type: readiness
+    httpGet: { path: /api/health/ready, port: 3000 }
+    periodSeconds: 10
+    failureThreshold: 3
+```
+
+The readiness query has a 2-second budget. Without it the probe *hung* rather
+than failing — with Postgres stopped, Prisma blocked on connect for well over
+25 s, and a probe that never answers looks identical to a wedged process.
+
 ### Databases that predate the baseline
 
 There are none, by design. The baseline migration is the starting point for
 every environment, and `prisma migrate deploy` takes an empty database to
-current in one step — verified against a fresh Postgres 16, all 18 migrations.
+current in one step — verified against a fresh Postgres 16, all 19 migrations.
 
 An earlier revision carried a hand-written upgrade script for a database
 holding the pre-baseline schema. It was removed once no such database existed:
@@ -360,18 +407,37 @@ which routes are limited, the key format and the limits all stay as they are.
 
 ## After deploying, verify
 
-Not a checklist for its own sake — each of these has failed at least once.
+Most of this is automated. Run it first — it exits non-zero, so it can gate a
+release rather than being a checklist someone skims:
+
+```bash
+DIRECT_URL="<direct>" DATABASE_URL="<pooled>" \
+NEXTAUTH_URL="https://…" NEXTAUTH_SECRET="…" CDN_URL="https://…" \
+BASE_URL="https://…" npm run deploy:verify
+```
+
+It asserts 31 things, each corresponding to something that has gone wrong or
+would go wrong silently: the two connection strings the right way round and the
+pooled one carrying `pgbouncer=true`; `NEXTAUTH_SECRET` not a placeholder;
+storage having something that can actually serve it; both extensions; every
+migration applied and none failed; `work_mem` at least 32 MB;
+`pg_trgm.similarity_threshold`; the catalog non-empty; all four search indexes;
+the `search_vector` trigger; statistics gathered; both probes; the CSP carrying
+your CDN origin and not `localhost`; and search answering in under a second.
+
+Warnings (a shared `DATABASE_URL`/`DIRECT_URL`, a missing HSTS header) do not
+fail the run — they are legitimate in some topologies.
+
+### Still worth doing by hand
+
+The script cannot check these, because they need two accounts and a browser.
 
 - `GET /api/users/<id>` returns no `email` and no `passwordHash`
 - `GET /api/shelves/<id>` works signed out and shows owner attribution
 - Registering as `Test@Example.com` then signing in as `test@example.com` works
 - A second account gets 403 deleting the first account's uploaded map
-- Response headers include the CSP, and its `img-src` lists your Front Door
-  endpoint — not `localhost`, and not a stale one
 - Upload an avatar, confirm it renders, then replace it and confirm the old
   blob is gone from the container
 - **Open a work page and put the book on a shelf.** The whole reading loop was
   unreachable once, invisibly to 222 passing tests, because the page mounted
   none of its components.
-- **`/search?q=dune` returns in well under a second.** If it does not, the
-  catalog restored without its indexes.

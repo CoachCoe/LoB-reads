@@ -119,6 +119,19 @@ services:
         condition: service_healthy
     ports:
       - "3000:3000"
+    # Uses the liveness probe, not readiness: this decides whether to restart
+    # the container, and a database blip must not cause that. Node does the
+    # request because the slim image ships neither curl nor wget.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
   # Azure Blob Storage emulator. Stands in for the account that serves
   # avatars and world maps.

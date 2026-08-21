@@ -67,7 +67,7 @@ The catalog is the English-language, ISBN-bearing, cover-bearing slice from
 `/shelf/[shelfId]` `/user/[userId]` `/feed` `/map` `/settings` `/wrapped`
 `/wrapped/projections` `/import/[sessionId]` `/about` `/login` `/register`
 
-23 API routes. 18 migrations.
+25 API routes (including liveness and readiness probes). 19 migrations.
 
 ### Measured latency, against the real 6.9M-work catalog
 
@@ -90,8 +90,17 @@ cause turned out to be a lossy bitmap. 1.23 s is that query after raising
 
 ## Quality posture
 
-362 tests: 124 unit, 238 integration. Integration runs against real Postgres
+371 tests: 128 unit, 243 integration. Integration runs against real Postgres
 and must run serially — they share a database and truncate between tests.
+
+Two things about that database were wrong until recently. `test:all` ran the
+integration project in parallel, so it could never have passed — the two suites
+had only ever been run separately. And the test database had 29 tables and **no
+`_prisma_migrations`**: it had been created with `db push`, never from the
+migration chain, so `db:deploy:test` failed with P3005 and local integration
+tests validated a schema the migrations do not necessarily produce. Only CI,
+which starts from an empty database, would have caught the divergence. Both are
+fixed; the test database is now built from migrations exactly as CI builds it.
 
 Three habits are worth keeping, because each caught something a green suite
 had missed:
@@ -178,6 +187,12 @@ rows and ranking 10,061 of them.
 So the ordering is now clear. Raise `work_mem` for the immediate 3.5×; bounding
 the candidate set (R1) is still required to get under a second, and no amount of
 memory substitutes for it.
+
+`work_mem` now travels in a migration (`ALTER DATABASE … SET work_mem`) rather
+than being set by hand on one machine, which is how a fresh clone used to get
+the slow query back silently. If a managed provider refuses `ALTER DATABASE`,
+the migration raises a warning and `npm run deploy:verify` fails on it — warned
+at migrate time, caught at deploy time.
 
 ### ~~A catalog rebuild takes the catalog offline~~ — fixed
 
@@ -270,10 +285,7 @@ is the only fix.
 - **`shared_buffers` 128 MB** on a machine with 64 GB. Worth raising, but it is
   not the search bottleneck it was assumed to be — see above.
 - **ISBN logic exists twice**, SQL and TypeScript, guarded by a parity test.
-- **`work_mem` is set per-database locally** (`ALTER DATABASE bookshelf SET
-  work_mem='32MB'`), not in the repo. On Azure it is a server parameter, and in
-  the container topology it is in `docker-compose.yml` — so the one place it is
-  *not* captured is a fresh developer clone.
+- **Rate limiting is per-process**, so it does not hold across replicas.
 
 ---
 
@@ -298,14 +310,28 @@ those differs from `npm run dev` in a way that has hidden a real failure.
 |---|---|
 | image | 479 MB, `output: "standalone"`, Debian, unprivileged |
 | `next build` | 5.4 s, ~2 GB peak — more than a burstable instance has, so CI builds it |
-| migrations | all 18 apply to an empty Postgres 16 |
+| migrations | all 19 apply to an empty Postgres 16 |
 | catalog dump | **103 s**, 1.7 GB compressed from 10 GB |
 | storage | 11/11 checks against a real blob endpoint, both private and public postures |
+| probes | liveness stays 200 with the database stopped; readiness returns 503 in 2.0 s |
+| release check | `npm run deploy:verify` — 31 assertions over config, schema, indexes and the running app |
 
 The pooled-versus-direct connection split had never been exercised — local
 development points both variables at the same string. Under PgBouncer in
 transaction mode, reads, a nested-transaction registration and 30 rapid
 concurrent requests all pass.
+
+Two probes rather than one, because the distinction matters: liveness must not
+depend on the database, or a brief Postgres blip becomes a restart loop across
+every replica. Verified by stopping Postgres — liveness answered 200 in 4 ms
+while readiness returned 503 — and by confirming the app recovered on its own
+when Postgres came back, with no restart.
+
+The first version of the readiness probe **hung** instead of failing: with
+Postgres stopped the query blocked on connect for longer than 25 s, so the probe
+returned nothing at all. An unanswered probe is worse than a failing one,
+because to an orchestrator it looks the same as a wedged process. It now has a
+2 s budget.
 
 **The rehearsal earned its cost immediately.** The first container built
 cleanly, started cleanly, served static pages, and returned 500 on every page
