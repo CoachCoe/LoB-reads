@@ -41,7 +41,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     }
 
     if (!isStorageConfigured()) {
-      console.error("Avatar upload attempted with S3_BUCKET unset");
+      console.error("Avatar upload attempted with object storage unconfigured");
       return NextResponse.json(
         { error: "Uploads are not available right now." },
         { status: 503 }

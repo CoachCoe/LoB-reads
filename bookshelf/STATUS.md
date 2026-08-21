@@ -71,13 +71,20 @@ The catalog is the English-language, ISBN-bearing, cover-bearing slice from
 
 ### Measured latency, against the real 6.9M-work catalog
 
-| page | warm |
-|---|---|
-| `/work/[olKey]` | 0.07 s |
-| `/search` (discover) | 0.08 s |
-| `/search?subject=Fiction` | 0.10 s |
-| `/search?q=dune` | 0.17 s |
-| `/search?q=Fiction` | **4.2 s** — see limitations |
+| page | production | dev |
+|---|---|---|
+| `/` | 0.009 s | 0.07 s |
+| `/search` (discover) | 0.008 s | 0.08 s |
+| `/work/[olKey]` | 0.009 s | 0.07 s |
+| `/search?subject=Fiction` | 0.031 s | 0.10 s |
+| `/search?q=dune` | 0.091 s | 0.17 s |
+| `/search?q=Fiction` | **1.23 s** | 4.2 s — see limitations |
+
+A production build is five to ten times faster everywhere except the common-word
+search, which barely moved (4.2 s to 3.5 s). That asymmetry is what ruled out
+rendering overhead and sent the investigation to the query plan, where the real
+cause turned out to be a lossy bitmap. 1.23 s is that query after raising
+`work_mem`; see limitations for why it is not yet under a second.
 
 ---
 
@@ -141,16 +148,36 @@ day earlier.
 
 Ordered by how much they would hurt.
 
-### Common-word search is slow — 4.2 s
+### Common-word search is slow — and the earlier diagnosis was wrong
 
-"Fiction" matches 10,061 works and the ranked query reads every matching row.
-The rank expression is *not* the cost: substituting a trivial
-`ln(1 + edition_count)` still took 5.5 s. It is heap reads against a 3 GB table
-with `shared_buffers` at **128 MB** — 213,848 blocks cold, 67 warm.
+"Fiction" matches 10,061 works. The rank expression is not the cost —
+substituting a trivial `ln(1 + edition_count)` still took 5.5 s — and this was
+previously attributed to heap reads against a 3 GB table with `shared_buffers`
+at 128 MB. Reading the plan shows something more specific and much cheaper to
+fix.
 
-Two independent fixes: raise `shared_buffers` (needs a restart), and bound the
-candidate set so ranking never reads more than N rows. The second is a decision
-about result quality, not a patch.
+At the 4 MB `work_mem` default the bitmap index scan **overflows and goes
+lossy**: it can no longer track individual rows, so it degrades to page
+granularity and rechecks every row on every candidate page. Raising `work_mem`
+alone, with `shared_buffers` untouched at 128 MB:
+
+| `work_mem` | rows rechecked | heap blocks | query |
+|---|---|---|---|
+| 4 MB | 1,028,773 | 11,357 exact + **55,531 lossy** | 3549 ms |
+| 32 MB | 93,941 | 67,069 exact, none lossy | **1007 ms** |
+| 256 MB | 93,941 | 66,682 exact | 926 ms |
+
+A 3.5× speed-up from one setting, and 32 MB is the knee — more buys almost
+nothing. On the page: **3.5 s → 1.23 s**.
+
+**Caching cannot finish the job.** With `shared_buffers` at 3 GB the query
+reports `shared hit=202478, read=0` — the entire working set is resident, zero
+disk reads — and still takes 1.2 s. Whatever remains is CPU: rechecking 93,941
+rows and ranking 10,061 of them.
+
+So the ordering is now clear. Raise `work_mem` for the immediate 3.5×; bounding
+the candidate set (R1) is still required to get under a second, and no amount of
+memory substitutes for it.
 
 ### ~~A catalog rebuild takes the catalog offline~~ — fixed
 
@@ -238,22 +265,53 @@ is the only fix.
 
 - **Rate limiting is per-process.** Correct for one long-lived instance; on
   serverless the effective limit becomes `limit × instances`.
-- **Postgres 14 locally, 16 in CI and on RDS.** Nothing depends on 15+ yet.
-- **`shared_buffers` 128 MB** on a machine with 64 GB.
+- **Postgres 14 locally, 16 in CI and in the container topology.** Nothing
+  depends on 15+ yet, and the full migration set now applies cleanly to 16.
+- **`shared_buffers` 128 MB** on a machine with 64 GB. Worth raising, but it is
+  not the search bottleneck it was assumed to be — see above.
 - **ISBN logic exists twice**, SQL and TypeScript, guarded by a parity test.
-- **`.env.local` points at an abandoned Neon database**, so `npm run dev` fails
-  until it is deleted.
+- **`work_mem` is set per-database locally** (`ALTER DATABASE bookshelf SET
+  work_mem='32MB'`), not in the repo. On Azure it is a server parameter, and in
+  the container topology it is in `docker-compose.yml` — so the one place it is
+  *not* captured is a fresh developer clone.
 
 ---
 
 ## Not built
 
-- Deployment. `DEPLOYMENT.md` is written with real numbers behind it; nothing
-  is provisioned. Needs RDS, S3 + CloudFront, EC2, `GOOGLE_BOOKS_API_KEY`,
-  `S3_BUCKET`. Note `next build` will OOM on a t3.micro — build in CI.
+- **Deployment itself.** Nothing is provisioned. What *is* done: the app is
+  containerised, the topology runs locally under Docker Compose, storage is on
+  Azure Blob, and `DEPLOYMENT.md` is rewritten for Azure with measured numbers.
+  What is left is an Azure subscription, a Flexible Server, a storage account
+  and `GOOGLE_BOOKS_API_KEY`. See below.
 - Cover storage at scale (above).
-- Rebuild-and-swap ingest (above).
 - Bounded-candidate search (above).
+- Instrumentation. Every performance problem so far was found by hand.
+
+## Deployment readiness
+
+Rehearsed locally rather than assumed. `docker-compose.yml` runs Postgres 16,
+PgBouncer in transaction mode, the app container and Azurite, because each of
+those differs from `npm run dev` in a way that has hidden a real failure.
+
+| | |
+|---|---|
+| image | 479 MB, `output: "standalone"`, Debian, unprivileged |
+| `next build` | 5.4 s, ~2 GB peak — more than a burstable instance has, so CI builds it |
+| migrations | all 18 apply to an empty Postgres 16 |
+| catalog dump | **103 s**, 1.7 GB compressed from 10 GB |
+| storage | 11/11 checks against a real blob endpoint, both private and public postures |
+
+The pooled-versus-direct connection split had never been exercised — local
+development points both variables at the same string. Under PgBouncer in
+transaction mode, reads, a nested-transaction registration and 30 rapid
+concurrent requests all pass.
+
+**The rehearsal earned its cost immediately.** The first container built
+cleanly, started cleanly, served static pages, and returned 500 on every page
+that touched the database: Prisma 5.22 probes the host to choose a query engine
+and resolves `openssl-1.1.x` on current Alpine, which ships only
+`libssl.so.3`. No test could have caught it and the build reported success.
 
 ---
 
@@ -280,3 +338,21 @@ Written down because each cost hours and each is invisible in a diff.
    pre-flight reported all-clear on editions while `stage_editions` was empty.
 6. **Length is not integrity.** A resumed download finished at exactly the
    advertised byte count and was corrupt.
+7. **A green build is not a working container.** Prisma picks its query engine
+   by probing the host, so the same image that builds and starts cleanly can
+   fail on every query. Anything resolved at runtime by detection has to be
+   exercised at runtime, on the target platform.
+8. **A test script that cannot pass is not a test script.** `test:all` ran the
+   integration project in parallel, and those tests share one database and
+   truncate between tests. It could never have gone green, and nothing noticed
+   because the two suites were always run separately.
+9. **A lossy bitmap is invisible unless you read the plan.** The common-word
+   search was diagnosed twice from timings and buffer counts, and both times the
+   conclusion was "too little cache". `EXPLAIN (ANALYZE, BUFFERS)` named it in
+   one line: `Heap Blocks: lossy=55531`. Latency tells you something is slow;
+   only the plan tells you what.
+10. **"Configured" has to mean "will actually work."** Storage with credentials
+   but no CDN in front of a private container accepted every upload and served
+   403 for every image. `isStorageConfigured()` now requires something that can
+   serve the bytes, so a missing setting disables uploads instead of silently
+   producing broken pictures.

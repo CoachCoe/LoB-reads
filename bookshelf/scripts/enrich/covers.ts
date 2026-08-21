@@ -126,7 +126,7 @@ async function main() {
 
   if (!isStorageConfigured()) {
     console.error(
-      "S3_BUCKET is not set. Covers would be fetched and then discarded."
+      "Object storage is not configured. Covers would be fetched and then discarded."
     );
     process.exit(1);
   }

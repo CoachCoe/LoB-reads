@@ -10,7 +10,7 @@
     "lint": "eslint",
     "test": "jest --selectProjects unit",
     "test:integration": "jest --selectProjects integration --runInBand",
-    "test:all": "jest",
+    "test:all": "jest --selectProjects unit && jest --selectProjects integration --runInBand",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "db:generate": "prisma generate",
@@ -27,13 +27,15 @@
     "enrich:covers": "tsx scripts/enrich/covers.ts",
     "social:load": "tsx scripts/social/load-ratings.ts",
     "social:compute": "tsx scripts/social/compute-stats.ts",
-    "db:reset": "prisma migrate reset"
+    "db:reset": "prisma migrate reset",
+    "storage:smoke": "tsx scripts/dev/azurite-smoke.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1111.0",
+    "@azure/identity": "^4.13.2",
+    "@azure/storage-blob": "^12.33.0",
     "@prisma/client": "^5.22.0",
     "bcryptjs": "^3.0.3",
     "date-fns": "^4.1.0",

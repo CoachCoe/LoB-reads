@@ -57,9 +57,13 @@ covered by `core-loop.test.ts`. Kept here because it outranked everything below
 and its absence made the rest academic.
 
 **R1. Search must answer in under a second for any query.**
-Today a common word takes 4.2 s and the discover page's own subject chips used
-to lead straight into the worst case. Bound the candidate set so ranking never
-reads more than a fixed number of rows, and raise `shared_buffers`.
+A common word took 4.2 s. Raising `work_mem` from the 4 MB default to 32 MB
+brought that to **1.23 s** — the default made the bitmap scan go lossy and
+recheck a million rows. Do that first; it is one setting.
+
+It does not finish the job. With the whole working set cached and zero disk
+reads the query is still 1.2 s, so the rest is CPU and the candidate set has to
+be bounded so ranking never touches more than a fixed number of rows.
 *Done when:* no query in a representative set exceeds 1 s warm, and a plan
 assertion holds the bound.
 *Open question for you:* approximate results for very common words — is that
@@ -98,10 +102,15 @@ realistic, so this is a scope decision: enrich the popular head, hotlink the
 tail.
 *Done when:* the works people actually open serve covers from our own storage.
 
-**R5. Deploy it.**
-`DEPLOYMENT.md` is written and costed. Nothing is provisioned. `next build`
-OOMs on a t3.micro, so build in CI and ship the artifact.
-*Needs from you:* AWS account, `GOOGLE_BOOKS_API_KEY`, `S3_BUCKET`.
+**R5. Deploy it.** *Target is now Azure, not AWS.*
+The app is containerised (479 MB), the topology is rehearsed locally under
+Docker Compose, storage runs on Azure Blob (verified against Azurite), and
+`DEPLOYMENT.md` is rewritten for Azure. The catalog dumps to **1.7 GB
+compressed** and the whole database is 11 GB, so it fits the smallest Flexible
+Server allocation with room to spare.
+*Needs from you:* an Azure subscription, and `GOOGLE_BOOKS_API_KEY`.
+*One thing to know:* the common-word search will still be slow on a burstable
+tier, because that is R1 and not a configuration problem.
 
 ### P2 — worth doing, nothing waits on it
 
@@ -115,9 +124,12 @@ work page mounts its components, but only that page. Three separate components
 were found wired to nothing; a check that covers every page would have caught
 all of them at once.
 
-**R8. Housekeeping.** Align Postgres 14 local with 16 in CI and RDS; move rate
-limiting to a shared store before running more than one instance; delete
-`.env.local`, which points at an abandoned database and breaks `npm run dev`.
+**R8. Housekeeping.** Move rate limiting to a shared store before scaling past
+one replica — Container Apps scales by default, which makes the effective limit
+`limit × replicas`. Capture `work_mem` somewhere a fresh clone picks it up; it
+is currently set by hand on the local database. (Two items are now closed:
+`.env.local` is deleted and `npm run dev` works, and all 18 migrations apply
+cleanly to Postgres 16 — which local development still does not run.)
 
 ---
 

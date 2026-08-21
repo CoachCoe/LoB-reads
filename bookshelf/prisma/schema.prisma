@@ -5,6 +5,19 @@ generator client {
   //   app     — user-owned data, survives every ingest
   //   seed    — synthetic / restricted-licence, never served
   previewFeatures = ["multiSchema"]
+  // The container needs an engine for its own platform, not the developer's.
+  // Both Debian targets are listed because the image is built on arm64 locally
+  // and runs on amd64 in Azure.
+  //
+  // Debian rather than Alpine on purpose: Prisma 5.22 probes current Alpine and
+  // resolves `openssl-1.1.x`, which that release no longer ships. The container
+  // built, started, and served static pages, then threw
+  // PrismaClientInitializationError on every query touching the database.
+  // Declaring the musl targets does not help — it changes which engines are
+  // shipped, not which one the client asks for at runtime.
+  //
+  // (The parser requires this array on one line.)
+  binaryTargets   = ["native", "debian-openssl-3.0.x", "linux-arm64-openssl-3.0.x"]
 }
 
 datasource db {
