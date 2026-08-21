@@ -12,6 +12,12 @@
  * serves 403; a `work_mem` default that makes search 3.5x slower.
  *
  * Exits non-zero if any check fails, so it can gate a release.
+ *
+ * Deliberately does NOT load `.env`, unlike the storage smoke test. This
+ * verifies a *deployment*, so its configuration must come from the environment
+ * it is handed. Reading a local `.env` would let it cheerfully report a
+ * developer's own database as a healthy production one — the same trap
+ * `scripts/db/migrate-deploy.sh` exists to avoid.
  */
 import { readdirSync } from "node:fs";
 import path from "node:path";
@@ -164,9 +170,12 @@ async function main() {
     withFileTypes: true,
   }).filter((e) => e.isDirectory() && /^\d/.test(e.name)).length;
 
+  // DISTINCT matters: a migration that failed once and was then re-applied has
+  // several rows, only one of which succeeded.
   const applied = Number(
     await one(
-      "SELECT count(*) FROM public._prisma_migrations WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL"
+      `SELECT count(DISTINCT migration_name) FROM public._prisma_migrations
+        WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL`
     )
   );
   check(
@@ -175,12 +184,26 @@ async function main() {
     `${applied} applied, ${onDisk} on disk`
   );
 
-  const failed = Number(
-    await one(
-      "SELECT count(*) FROM public._prisma_migrations WHERE finished_at IS NULL OR rolled_back_at IS NOT NULL"
-    )
+  // A rolled-back row is only a problem if that migration has no successful
+  // row at all. Treating any rolled-back attempt as a failure flags the normal
+  // `migrate resolve --rolled-back` recovery, which is history, not breakage —
+  // this check did exactly that against a database `migrate status` called
+  // up to date.
+  const stuck = (await client.query(
+    `SELECT DISTINCT migration_name FROM public._prisma_migrations m
+      WHERE NOT EXISTS (
+        SELECT 1 FROM public._prisma_migrations ok
+         WHERE ok.migration_name = m.migration_name
+           AND ok.finished_at IS NOT NULL
+           AND ok.rolled_back_at IS NULL
+      )`
+  )).rows.map((r) => r.migration_name as string);
+
+  check(
+    "no migration left unapplied after a failure",
+    stuck.length === 0,
+    stuck.length ? stuck.join(", ") : ""
   );
-  check("no failed migrations", failed === 0, `${failed} incomplete`);
 
   // work_mem. The migration sets this at database scope, but a managed provider
   // may refuse ALTER DATABASE — in which case it warns and carries on, so this

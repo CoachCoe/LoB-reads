@@ -12,6 +12,10 @@
  * Point AZURE_STORAGE_CONNECTION_STRING at a real account and it verifies that
  * account instead, which is worth doing once after provisioning.
  */
+// A bare `tsx` script does not read .env — only the Prisma CLI and Next do, and
+// this script imports neither, so without this it reported the connection
+// string unset no matter what was configured.
+import "dotenv/config";
 import { BlobServiceClient } from "@azure/storage-blob";
 import {
   putObject,

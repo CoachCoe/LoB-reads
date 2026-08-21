@@ -286,6 +286,13 @@ is the only fix.
   not the search bottleneck it was assumed to be — see above.
 - **ISBN logic exists twice**, SQL and TypeScript, guarded by a parity test.
 - **Rate limiting is per-process**, so it does not hold across replicas.
+- **`enrichment.test.ts` has a narrow timing dependency.** "only claims jobs
+  that are due" calls `recordFailure` and immediately asserts nothing is
+  claimable. The first backoff is `30 × (0.5 + random())` seconds, so the
+  margin is 15 s at worst — ample normally, and it failed twice in about ten
+  runs while a container build, a 10 GB restore and the Compose stack were
+  running concurrently. Not reproduced in six clean runs since, so the
+  mechanism is inferred from the arithmetic rather than observed.
 
 ---
 
@@ -314,7 +321,7 @@ those differs from `npm run dev` in a way that has hidden a real failure.
 | catalog dump | **103 s**, 1.7 GB compressed from 10 GB |
 | storage | 11/11 checks against a real blob endpoint, both private and public postures |
 | probes | liveness stays 200 with the database stopped; readiness returns 503 in 2.0 s |
-| release check | `npm run deploy:verify` — 31 assertions over config, schema, indexes and the running app |
+| release check | `npm run deploy:verify` — 21 assertions over config and schema, 31 with a running app |
 
 The pooled-versus-direct connection split had never been exercised — local
 development points both variables at the same string. Under PgBouncer in

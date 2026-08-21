@@ -416,8 +416,9 @@ NEXTAUTH_URL="https://…" NEXTAUTH_SECRET="…" CDN_URL="https://…" \
 BASE_URL="https://…" npm run deploy:verify
 ```
 
-It asserts 31 things, each corresponding to something that has gone wrong or
-would go wrong silently: the two connection strings the right way round and the
+It runs 21 checks over configuration and schema, and ten more against the
+running app when `BASE_URL` is set. Each corresponds to something that has gone
+wrong or would go wrong silently: the two connection strings the right way round and the
 pooled one carrying `pgbouncer=true`; `NEXTAUTH_SECRET` not a placeholder;
 storage having something that can actually serve it; both extensions; every
 migration applied and none failed; `work_mem` at least 32 MB;

@@ -108,11 +108,12 @@ Docker Compose, storage runs on Azure Blob (verified against Azurite), and
 `DEPLOYMENT.md` is rewritten for Azure. The catalog dumps to **1.7 GB
 compressed** and the whole database is 11 GB, so it fits the smallest Flexible
 Server allocation with room to spare.
-There is also a release gate now: `npm run deploy:verify` asserts 31 things
-about a deployment — connection strings the right way round, extensions,
-migrations, `work_mem`, the four search indexes, the search trigger, statistics,
-catalog contents, both probes, and the CSP's CDN origin. It fails non-zero, so
-it can gate a release rather than being a checklist someone reads.
+There is also a release gate now: `npm run deploy:verify` checks connection
+strings are the right way round, extensions, migrations, `work_mem`, the four
+search indexes, the search trigger, statistics, catalog contents, both probes,
+and the CSP's CDN origin — 21 checks, or 31 with a running app to point at. It
+exits non-zero, so it gates a release rather than being a checklist someone
+reads.
 *Needs from you:* an Azure subscription, and `GOOGLE_BOOKS_API_KEY`.
 *One thing to know:* the common-word search will still be slow on a burstable
 tier, because that is R1 and not a configuration problem.
