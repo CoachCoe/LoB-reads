@@ -181,7 +181,35 @@ Removing it needs the non-qualifying works never to be inserted, which means
 deciding the surviving work set from staging before works are built. Tracked as
 R2b.
 
-### The ingest takes about nine hours
+### The ingest takes about two and three quarter hours
+
+Measured on a full rebuild of the 2026-07 dumps: **161m26s** for normalize,
+against roughly nine hours before. Per statement, baseline then now:
+
+| statement | before | after |
+|---|---|---|
+| works insert | 13m28s | ~8 min |
+| work_authors | 38 min | ~3 min |
+| editions | 64 min | ~33 min |
+| author_names | 6h20m | ~60 min |
+
+Four changes account for it: `ANALYZE` inside the transaction so the planner
+stops sizing a 15M-row table at 1,269; the edition predicates applied during
+the build rather than deleted afterwards; the work-level filter moved before the
+expensive passes; and the secondary indexes dropped for the load and rebuilt at
+the end. The last one was found by this run — an earlier ordering rebuilt them
+too early and `cover_edition_key` doubled to thirty minutes as a result.
+
+The rebuild is idempotent: it produced a catalog identical to the one it
+replaced, and `prisma migrate diff` returns an empty migration afterwards. It
+also corrected two stale `external_ids` rows that had accumulated because that
+table was only ever inserted into, never rebuilt.
+
+**Still costs a `VACUUM FULL`.** After the rebuild `catalog.works` holds
+6,870,623 live tuples and 22,362,429 dead in a 13GB table; 3GB of that is real
+data. Deleting 34M rows creates that bloat wherever it happens. See R2b.
+
+### The old nine-hour figure, and what caused it
 
 And left 34 GB of bloat needing `VACUUM FULL`. Four things dominated, all
 measured: checkpoint pressure at the 1 GB `max_wal_size` default; an autovacuum
