@@ -308,42 +308,6 @@ FROM (SELECT work_key, count(*) AS n FROM catalog.editions_new
       WHERE work_key IS NOT NULL GROUP BY work_key) c
 WHERE w.ol_key = c.work_key;
 
--- Rebuild the secondary indexes now the rows are in place.
---
--- Copied from the live tables, which still exist at this point, so the
--- definitions cannot disagree with the migrations. Building a GIN index over a
--- populated table sorts once instead of inserting row by row, which is why the
--- indexes were dropped before the load rather than kept.
---
--- Names get the _new prefix so they do not clash with the live indexes, and the
--- swap renames them back.
-DO $$
-DECLARE
-  r record;
-  ddl text;
-BEGIN
-  FOR r IN
-    SELECT c.relname AS idx, t.relname AS tbl, pg_get_indexdef(c.oid) AS def
-    FROM pg_class c
-    JOIN pg_index i ON i.indexrelid = c.oid
-    JOIN pg_class t ON t.oid = i.indrelid
-    JOIN pg_namespace n ON n.oid = c.relnamespace
-    LEFT JOIN pg_constraint con ON con.conindid = c.oid
-    WHERE n.nspname = 'catalog'
-      AND t.relname IN ('authors','works','work_authors','editions','external_ids')
-      AND con.conname IS NULL
-  LOOP
-    -- Point the DDL at the new table, and give the index a new name. Table
-    -- first: replacing the name first would leave "catalog.works" inside it.
-    ddl := replace(r.def, ' ON catalog.' || r.tbl || ' ',
-                          ' ON catalog.' || r.tbl || '_new ');
-    ddl := replace(ddl, ' ' || r.idx || ' ',
-                        ' ' || replace(r.idx, r.tbl || '_', r.tbl || '_new_') || ' ');
-    EXECUTE ddl;
-  END LOOP;
-END
-$$;
-
 -- Referential integrity between the new tables. LIKE does not copy foreign
 -- keys, and the names are per-table rather than per-schema, so they can be
 -- canonical from the start and survive the rename untouched.
@@ -458,6 +422,54 @@ INSERT INTO catalog.external_ids_new (entity_type, entity_key, source, external_
 SELECT 'edition', ol_key, 'isbn', isbn13
 FROM catalog.editions_new WHERE isbn13 IS NOT NULL
 ON CONFLICT DO NOTHING;
+
+-- Rebuild the secondary indexes, last.
+--
+-- Copied from the live tables, which still exist until the swap below, so the
+-- definitions cannot disagree with the migrations. Building a GIN index over a
+-- populated table sorts once instead of inserting row by row, which is why the
+-- indexes were dropped before the load rather than kept.
+--
+-- Last, rather than straight after the load, because everything between here
+-- and there writes to these tables. An earlier version built them before the
+-- work-level delete, so 34 million rows were indexed and then removed, and
+-- both cover_edition_key and author_names then maintained seven indexes per row
+-- they touched. Measured cost of that ordering: cover_edition_key went from
+-- 15m54s to about thirty minutes, and the deletes left index bloat as well as
+-- table bloat.
+--
+-- Nothing between the load and here needs a secondary index: the deletes filter
+-- on edition_count and on a primary-key EXISTS, and the updates join on primary
+-- keys.
+--
+-- Names get the _new prefix so they do not clash with the live indexes, and the
+-- swap renames them back.
+DO $$
+DECLARE
+  r record;
+  ddl text;
+BEGIN
+  FOR r IN
+    SELECT c.relname AS idx, t.relname AS tbl, pg_get_indexdef(c.oid) AS def
+    FROM pg_class c
+    JOIN pg_index i ON i.indexrelid = c.oid
+    JOIN pg_class t ON t.oid = i.indrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    LEFT JOIN pg_constraint con ON con.conindid = c.oid
+    WHERE n.nspname = 'catalog'
+      AND t.relname IN ('authors','works','work_authors','editions','external_ids')
+      AND con.conname IS NULL
+  LOOP
+    -- Point the DDL at the new table, and give the index a new name. Table
+    -- first: replacing the name first would leave "catalog.works" inside it.
+    ddl := replace(r.def, ' ON catalog.' || r.tbl || ' ',
+                          ' ON catalog.' || r.tbl || '_new ');
+    ddl := replace(ddl, ' ' || r.idx || ' ',
+                        ' ' || replace(r.idx, r.tbl || '_', r.tbl || '_new_') || ' ');
+    EXECUTE ddl;
+  END LOOP;
+END
+$$;
 
 -- ---------------------------------------------------------------------------
 -- Swap
