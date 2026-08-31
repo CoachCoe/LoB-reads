@@ -43,6 +43,13 @@ export interface CatalogAuthorDetail {
     firstPublishYear: number | null;
     coverId: number | null;
   }[];
+  /**
+   * How many works this author has in the catalog, which is not
+   * `works.length` — that is capped at AUTHOR_WORKS_LIMIT. Rendering the capped
+   * figure as the total is the same defect as showing a shelf's preview size as
+   * its book count.
+   */
+  workCount: number;
   locations: AuthorLocationData[];
 }
 
@@ -65,7 +72,7 @@ export async function getAuthorByKey(
 
   if (!author) return null;
 
-  const [works, locations] = await Promise.all([
+  const [works, countRows, locations] = await Promise.all([
     prisma.$queryRaw<CatalogAuthorDetail["works"]>`
       SELECT w.ol_key AS "olKey", w.title,
              w.first_publish_year AS "firstPublishYear",
@@ -77,10 +84,19 @@ export async function getAuthorByKey(
       ORDER BY w.first_publish_year NULLS LAST, w.title
       LIMIT ${AUTHOR_WORKS_LIMIT}
     `,
+    prisma.$queryRaw<{ count: bigint }[]>`
+      SELECT count(*) AS count
+      FROM catalog.work_authors WHERE author_key = ${authorKey}
+    `,
     getAuthorLocations(authorKey),
   ]);
 
-  return { ...author, works, locations };
+  return {
+    ...author,
+    works,
+    workCount: Number(countRows[0]?.count ?? works.length),
+    locations,
+  };
 }
 
 /** Resolve a display name to a catalog author, for name-based URLs. */

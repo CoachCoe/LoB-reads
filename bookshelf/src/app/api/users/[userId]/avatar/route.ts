@@ -89,12 +89,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // point their own profile at another user's stored blob — same origin, same
     // container, a key `keyFromUrl` happily resolves — and have this line
     // delete it on their next upload.
-    const previousKey = previousAvatarUrl ? keyFromUrl(previousAvatarUrl) : null;
-    if (previousKey?.startsWith(`avatars/${userId}/`)) {
-      try {
-        await deleteObjectByUrl(previousAvatarUrl!);
-      } catch (storageError) {
-        console.error("Failed to delete previous avatar:", storageError);
+    if (previousAvatarUrl) {
+      const previousKey = keyFromUrl(previousAvatarUrl);
+      if (previousKey?.startsWith(`avatars/${userId}/`)) {
+        try {
+          await deleteObjectByUrl(previousAvatarUrl);
+        } catch (storageError) {
+          console.error("Failed to delete previous avatar:", storageError);
+        }
       }
     }
 

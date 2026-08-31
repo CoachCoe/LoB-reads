@@ -25,13 +25,13 @@ From a clean state — `rm -rf .next node_modules`, then `npm ci`:
 |---|---|---|
 | typecheck | `npx tsc --noEmit` | exit 0 |
 | lint | `npx eslint .` | exit 0 |
-| unit | `npx jest --selectProjects unit --ci` | 190/190 |
+| unit | `npx jest --selectProjects unit --ci` | 196/196 |
 | integration | `npx jest --selectProjects integration --ci --runInBand` | 271/271 |
 | build | `npx next build` | exit 0 |
 | migrations | `db:deploy:test`, `db:status:test` | 19/19, up to date |
 | release gate | `deploy:verify` | 21/24 — see note |
 
-461 tests, up from 371. **No suppression was introduced anywhere in the diff**:
+467 tests, up from 371. **No suppression was introduced anywhere in the diff**:
 zero `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`, `eslint-disable`,
 `.skip`, `.only`, `xit`, `xdescribe`, `.todo`, or `istanbul ignore` in any added
 line, no `any` widening, and no change to `tsconfig.json`, `eslint.config.mjs`,
@@ -59,6 +59,34 @@ every performance bug found at 6.9M works, and both mutations that
 nothing while carrying wall-clock flake risk on a loaded runner. Flagged here
 rather than buried, because it is the one place this branch made a check weaker.
 Push back if you disagree; the honest alternative is deleting it outright.
+
+### Review round (`/bastion`)
+
+Five findings, all accepted; four were defects this branch introduced or left
+half-done.
+
+1. **`resolvePage` clamped both modes to the search ceiling.** A subject browse
+   reads an *exact* count from `catalog.subject_counts`, so `?subject=Fiction`
+   has ~30,665 real pages over an indexed lookup — and the clamp made everything
+   past page 42 unreachable while the pager still rendered links to page 50.
+   `resolvePage` now takes the caller's own `lastPage`, and the test covers both
+   modes. A regression introduced by the KNOWN-4 fix.
+2. **The author page reported the truncated count as the total** — "Books (100)"
+   for an author with 400. That is FLOW-16 verbatim, reintroduced on another page
+   in the same PR. Now returns a real `workCount` and says when the list is cut.
+3. **A non-null assertion in the avatar security fix** (`previousAvatarUrl!`).
+   Restructured so the compiler knows.
+4. **`ReviewCard`'s fallback linked to a page that 404s.** "Renders nothing" was
+   replaced with "renders a dead link". Now plain text, and the block comment
+   explaining the old code was deleted.
+5. **The loosened p95 bound was replaced with no bound at all.** A threshold
+   nobody chose is worse than none; the timing is logged, the plan assertions are
+   the gate.
+
+Separately, the suite caught an error in one of this branch's own new tests: the
+jitter assertion used 15–30 s, but `0.5 + Math.random()` spans [0.5, 1.5), so the
+real range is 15–45 s. It failed at 40.7 s. Corrected in the test and in the two
+documents that stated the range. Confirmed over three consecutive clean runs.
 
 ---
 

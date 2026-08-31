@@ -90,10 +90,10 @@ cause turned out to be a lossy bitmap. 1.23 s is that query after raising
 
 ## Quality posture
 
-461 tests: 190 unit, 271 integration. Integration runs against real Postgres
+467 tests: 196 unit, 271 integration. Integration runs against real Postgres
 and must run serially — they share a database and truncate between tests.
 
-The 2026-08-31 audit added 90 of those, and the reason is worth stating plainly:
+The 2026-08-31 audit added 96 of those, and the reason is worth stating plainly:
 all five checks were green — typecheck, lint, 128 unit, 243 integration, build —
 while four blockers sat in the tree, including a page that threw on load. A green
 suite here has repeatedly meant "the tests that exist pass", not "the app works".
@@ -303,7 +303,9 @@ is the only fix.
   separator-bearing ISBN-13, so the boundary agreed by accident.
 - ~~**`enrichment.test.ts` has a narrow timing dependency.**~~ Fixed. The
   mechanism was confirmed from source, not just arithmetic: the first backoff is
-  `30 × (0.5 + random())` = 15–30 s computed from the **Node** clock, while
+  `30 × (0.5 + random())`, and `0.5 + random()` spans [0.5, 1.5), so the range is
+  **15–45 s** — not 15–30, which is what a first attempt at pinning it assumed
+  before the suite disproved it. Computed from the **Node** clock, while
   `claimJobs` compares against Postgres `now()`, so the margin was 15 s at worst
   plus any app↔DB clock skew. The test now passes an explicit 3600-second
   backoff, and the jitter it used to depend on is asserted separately without

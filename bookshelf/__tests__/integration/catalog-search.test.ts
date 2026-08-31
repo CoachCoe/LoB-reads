@@ -223,9 +223,12 @@ describe("search latency (reporting, not a gate)", () => {
         `median ${median.toFixed(1)}ms, p95 ${p95.toFixed(1)}ms`
     );
 
-    // Catastrophe-only: at this fixture size anything approaching a second
-    // means a query stopped using an index altogether.
-    expect(p95).toBeLessThan(2_000);
+    // Deliberately no timing assertion. At this fixture size the number is not
+    // discriminating — STATUS.md records this test passing through every real
+    // performance bug — and any threshold picked here would be arbitrary. The
+    // query-plan assertions in read-path-plans.test.ts are the gate; this logs
+    // the distribution so a human reading CI output can see it move.
+    expect(timings).toHaveLength(queries.length);
   }, 60_000);
 });
 

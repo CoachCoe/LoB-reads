@@ -59,8 +59,13 @@ export default async function AuthorPage({ params }: Props) {
 
       <section className="mt-8">
         <h2 className="mb-3 text-xl font-bold text-gray-900 dark:text-gray-100">
-          Books ({author.works.length})
+          Books ({author.workCount})
         </h2>
+        {author.workCount > author.works.length && (
+          <p className="mb-3 text-sm text-gray-500 dark:text-gray-400">
+            Showing the first {author.works.length}.
+          </p>
+        )}
         {author.works.length === 0 ? (
           <p className="text-gray-500 dark:text-gray-400">
             No works recorded for this author.

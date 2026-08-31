@@ -37,23 +37,23 @@ export default function ReviewCard({ review, showWork = false }: ReviewCardProps
             >
               {review.user.name}
             </Link>
-            {/*
-              The `review.work &&` guard used to sit here, which suppressed the
-              whole element when the work was absent and made the fallback on the
-              next line unreachable. ARCHITECTURE.md requires the opposite —
-              "Read paths tolerate absence… render as 'not in the current
-              catalog' rather than vanishing" — and absence is the NORMAL case
-              here, since getWorksByKeys omits keys the current ingest dropped.
-            */}
             {showWork && (
               <>
                 <span className="text-[var(--foreground-secondary)]">reviewed</span>
-                <Link
-                  href={`/work/${review.workKey}`}
-                  className="font-medium text-[var(--foreground)] hover:text-[#D4A017]"
-                >
-                  {review.work?.title ?? "a book no longer in the catalog"}
-                </Link>
+                {review.work ? (
+                  <Link
+                    href={`/work/${review.workKey}`}
+                    className="font-medium text-[var(--foreground)] hover:text-[#D4A017]"
+                  >
+                    {review.work.title}
+                  </Link>
+                ) : (
+                  // Not a link: the work page 404s on a key the current ingest
+                  // dropped, and this is the normal case, not an error.
+                  <span className="text-[var(--foreground-secondary)] italic">
+                    a book no longer in the catalog
+                  </span>
+                )}
               </>
             )}
           </div>
