@@ -6,6 +6,7 @@ import { BookOpen, Check } from "lucide-react";
 import Button from "@/components/ui/Button";
 import ProgressBar from "@/components/ui/ProgressBar";
 import Input from "@/components/ui/Input";
+import { useToast } from "@/components/providers/ToastProvider";
 
 interface ReadingProgressSectionProps {
   workKey: string;
@@ -29,26 +30,28 @@ export default function ReadingProgressSection({
   const [isLoading, setIsLoading] = useState(false);
   const [pageInput, setPageInput] = useState("");
   const [isEditing, setIsEditing] = useState(false);
+  const { showToast } = useToast();
 
   const fetchProgress = useCallback(async () => {
     try {
       // GET returns the reader's open sessions; there is no per-work endpoint,
       // so the match happens here.
       const response = await fetch("/api/progress");
-      if (response.ok) {
-        const data = await response.json();
-        const bookProgress = data.find(
-          (p: Progress) => p.workKey === workKey
-        );
-        if (bookProgress) {
-          setProgress(bookProgress);
-          setPageInput(bookProgress.currentPage.toString());
-        }
+      if (!response.ok) {
+        showToast("Could not load your reading progress", "error");
+        return;
       }
-    } catch (error) {
-      console.error("Failed to fetch progress:", error);
+
+      const data = await response.json();
+      const bookProgress = data.find((p: Progress) => p.workKey === workKey);
+      if (bookProgress) {
+        setProgress(bookProgress);
+        setPageInput(bookProgress.currentPage.toString());
+      }
+    } catch {
+      showToast("Could not reach the server. Try again.", "error");
     }
-  }, [workKey]);
+  }, [workKey, showToast]);
 
   useEffect(() => {
     if (session?.user) {
@@ -65,13 +68,16 @@ export default function ReadingProgressSection({
         body: JSON.stringify({ workKey, action: "start" }),
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        setProgress(data);
-        setPageInput("0");
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        showToast(data.error ?? "Could not start reading that", "error");
+        return;
       }
-    } catch (error) {
-      console.error("Failed to start reading:", error);
+
+      setProgress(await response.json());
+      setPageInput("0");
+    } catch {
+      showToast("Could not reach the server. Try again.", "error");
     } finally {
       setIsLoading(false);
     }
@@ -89,13 +95,19 @@ export default function ReadingProgressSection({
         body: JSON.stringify({ workKey, currentPage: page }),
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        setProgress(data);
-        setIsEditing(false);
+      if (!response.ok) {
+        // progress.ts raises well-worded messages here — "You are not currently
+        // reading that book", "That edition has N pages" — that no reader ever
+        // saw: the Update button just stopped spinning and the number reverted.
+        const data = await response.json().catch(() => ({}));
+        showToast(data.error ?? "Could not save your progress", "error");
+        return;
       }
-    } catch (error) {
-      console.error("Failed to update progress:", error);
+
+      setProgress(await response.json());
+      setIsEditing(false);
+    } catch {
+      showToast("Could not reach the server. Try again.", "error");
     } finally {
       setIsLoading(false);
     }
@@ -110,12 +122,15 @@ export default function ReadingProgressSection({
         body: JSON.stringify({ workKey, action: "finish" }),
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        setProgress(data);
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        showToast(data.error ?? "Could not mark that finished", "error");
+        return;
       }
-    } catch (error) {
-      console.error("Failed to finish reading:", error);
+
+      setProgress(await response.json());
+    } catch {
+      showToast("Could not reach the server. Try again.", "error");
     } finally {
       setIsLoading(false);
     }

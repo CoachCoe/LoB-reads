@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { ChevronDown, Check, BookPlus, Loader2 } from "lucide-react";
 import Button from "@/components/ui/Button";
+import { useToast } from "@/components/providers/ToastProvider";
 
 interface Shelf {
   id: string;
@@ -39,27 +40,34 @@ export default function AddToShelfButton({
   const [currentShelves, setCurrentShelves] = useState<ShelfStatus[]>([]);
   const [isOpen, setIsOpen] = useState(false);
   const [loadingShelf, setLoadingShelf] = useState<string | null>(null);
+  const { showToast } = useToast();
 
   const fetchShelves = useCallback(async () => {
     try {
       const response = await fetch("/api/shelves");
-      if (response.ok) {
-        const data = await response.json();
-        setShelves(data);
+      if (!response.ok) {
+        // Silently leaving `shelves` empty renders an "Add to Shelf" button
+        // whose menu has no options, which reads as "you have no shelves"
+        // rather than "we could not load them".
+        showToast("Could not load your shelves", "error");
+        return;
       }
-    } catch (error) {
-      console.error("Failed to fetch shelves:", error);
+      setShelves(await response.json());
+    } catch {
+      showToast("Could not reach the server. Try again.", "error");
     }
-  }, []);
+  }, [showToast]);
 
   const fetchShelfStatus = useCallback(async () => {
     try {
       const response = await fetch(`/api/works/${workKey}/shelves`);
-      if (response.ok) {
-        setCurrentShelves(await response.json());
-      }
+      // An empty list is a 200 with [], so a non-ok response is a real failure
+      // — the previous comment here ("Not on any shelf yet, which is the common
+      // case") described a case this branch never sees.
+      if (!response.ok) return;
+      setCurrentShelves(await response.json());
     } catch {
-      // Not on any shelf yet, which is the common case.
+      // A network blip on a status read is not worth interrupting the reader.
     }
   }, [workKey]);
 
@@ -79,15 +87,21 @@ export default function AddToShelfButton({
         body: JSON.stringify({ workKey }),
       });
 
-      if (response.ok) {
-        await fetchShelfStatus();
-        onAdd?.();
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        showToast(data.error ?? "Could not add that to the shelf", "error");
+        // Keep the dropdown open so the reader can see what failed and retry.
+        setLoadingShelf(null);
+        return;
       }
-    } catch (error) {
-      console.error("Failed to add to shelf:", error);
+
+      await fetchShelfStatus();
+      onAdd?.();
+      setIsOpen(false);
+    } catch {
+      showToast("Could not reach the server. Try again.", "error");
     } finally {
       setLoadingShelf(null);
-      setIsOpen(false);
     }
   };
 
@@ -100,11 +114,15 @@ export default function AddToShelfButton({
         body: JSON.stringify({ workKey }),
       });
 
-      if (response.ok) {
-        await fetchShelfStatus();
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        showToast(data.error ?? "Could not remove that from the shelf", "error");
+        return;
       }
-    } catch (error) {
-      console.error("Failed to remove from shelf:", error);
+
+      await fetchShelfStatus();
+    } catch {
+      showToast("Could not reach the server. Try again.", "error");
     } finally {
       setLoadingShelf(null);
     }

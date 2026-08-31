@@ -6,6 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { ChevronRight, X } from "lucide-react";
 import type { ShelfWithItems } from "@/server/shelves";
+import { useToast } from "@/components/providers/ToastProvider";
 
 interface ShelfSectionProps {
   shelf: ShelfWithItems;
@@ -14,6 +15,11 @@ interface ShelfSectionProps {
 export default function ShelfSection({ shelf }: ShelfSectionProps) {
   const [items, setItems] = useState(shelf.items);
   const [removing, setRemoving] = useState<string | null>(null);
+  // The true total, not `items.length`. `items` is capped at
+  // SHELF_PREVIEW_SIZE, so a 42-book shelf used to render "(24)" while
+  // my-books/page.tsx used `itemCount` correctly two elements away.
+  const [bookCount, setBookCount] = useState(shelf.itemCount);
+  const { showToast } = useToast();
 
   // The endpoint is /works and the body key is workKey. This called /books
   // with { bookId } — the pre-M3 contract, which returns 404: the repoint from
@@ -28,17 +34,24 @@ export default function ShelfSection({ shelf }: ShelfSectionProps) {
         body: JSON.stringify({ workKey }),
       });
 
-      if (response.ok) {
-        setItems(items.filter((item) => item.workKey !== workKey));
+      if (!response.ok) {
+        // This branch is why the pre-M3 404 went unnoticed for three
+        // milestones: the handler acted only on `response.ok`, so a route that
+        // had moved looked exactly like a successful removal.
+        const data = await response.json().catch(() => ({}));
+        showToast(data.error ?? "Could not remove that book", "error");
+        return;
       }
-    } catch (error) {
-      console.error("Failed to remove book:", error);
+
+      setItems(items.filter((item) => item.workKey !== workKey));
+      setBookCount((count) => Math.max(0, count - 1));
+    } catch {
+      showToast("Could not reach the server. Try again.", "error");
     } finally {
       setRemoving(null);
     }
   };
 
-  const bookCount = items.length;
   const displayBooks = items.slice(0, 6);
 
   return (
