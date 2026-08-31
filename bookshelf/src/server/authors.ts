@@ -145,7 +145,22 @@ export async function addAuthorLocation(
   });
 }
 
-export async function deleteAuthorLocation(locationId: string, userId: string) {
+/**
+ * PRD section 2 states the rule for contributed content: "anyone signed in may
+ * edit, uploader-or-moderator may delete." The moderator half was implemented
+ * for fictional-world maps and for neither location type, so there was no way to
+ * remove an abusive pin from the public map at all.
+ *
+ * It was worse than an inconvenience: `addedById` is nullable with
+ * `onDelete: SetNull`, deliberately, so contributions outlive the account that
+ * made them. Once a contributor deleted their account the column was NULL,
+ * `NULL !== userId` held for every caller, and nobody could ever delete that pin.
+ */
+export async function deleteAuthorLocation(
+  locationId: string,
+  userId: string,
+  isModerator = false
+) {
   const location = await prisma.authorLocation.findUnique({
     where: { id: locationId },
     select: { addedById: true },
@@ -155,7 +170,7 @@ export async function deleteAuthorLocation(locationId: string, userId: string) {
     throw new NotFoundError("Location not found");
   }
 
-  if (location.addedById !== userId) {
+  if (!isModerator && location.addedById !== userId) {
     throw new AuthorizationError(
       "You can only remove locations you contributed"
     );

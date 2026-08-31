@@ -15,6 +15,8 @@ import type { AuthorLocationData } from "@/server/authors";
 interface AuthorLocationsSectionProps {
   authorName: string;
   currentUserId?: string;
+  /** Moderators may remove any contribution — PRD section 2. */
+  canModerate?: boolean;
 }
 
 /** This endpoint wraps the list; the book endpoint returns a bare array. */
@@ -39,6 +41,7 @@ const LOCATION_TYPES = [
 export default function AuthorLocationsSection({
   authorName,
   currentUserId,
+  canModerate = false,
 }: AuthorLocationsSectionProps) {
   const {
     locations,
@@ -232,7 +235,9 @@ export default function AuthorLocationsSection({
               ) : null
             }
             onDelete={
-              location.addedBy != null && currentUserId === location.addedBy.id
+              canModerate ||
+              (location.addedBy != null &&
+                currentUserId === location.addedBy.id)
                 ? () => setPendingDelete(location)
                 : undefined
             }

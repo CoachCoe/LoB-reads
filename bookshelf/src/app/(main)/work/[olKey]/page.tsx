@@ -273,7 +273,11 @@ export default async function WorkPage({ params }: Props) {
         was simply unreachable.
       */}
       <section className="mt-10">
-        <WorkLocationsSection workKey={work.olKey} currentUserId={user?.id} />
+        <WorkLocationsSection
+          workKey={work.olKey}
+          currentUserId={user?.id}
+          canModerate={Boolean(user?.isModerator)}
+        />
       </section>
 
       {alsoEnjoyed.length > 0 && (

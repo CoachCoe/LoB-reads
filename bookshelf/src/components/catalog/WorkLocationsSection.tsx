@@ -16,6 +16,8 @@ import type { FictionalWorldWithWorks } from "@/server/fictional-worlds";
 interface WorkLocationsSectionProps {
   workKey: string;
   currentUserId?: string;
+  /** Moderators may remove any contribution — PRD section 2. */
+  canModerate?: boolean;
 }
 
 /** The endpoint returns a bare array; the author endpoint wraps it. */
@@ -50,6 +52,7 @@ const LOCATION_TYPES = [
 export default function WorkLocationsSection({
   workKey,
   currentUserId,
+  canModerate = false,
 }: WorkLocationsSectionProps) {
   const {
     locations,
@@ -290,7 +293,8 @@ export default function WorkLocationsSection({
             ) : null
           }
           onDelete={
-            location.addedBy != null && currentUserId === location.addedBy.id
+            canModerate ||
+            (location.addedBy != null && currentUserId === location.addedBy.id)
               ? () => setPendingDelete(location)
               : undefined
           }

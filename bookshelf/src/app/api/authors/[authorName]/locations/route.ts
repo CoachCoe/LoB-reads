@@ -82,7 +82,7 @@ export async function DELETE(request: NextRequest) {
       throw new ValidationError("Location ID is required");
     }
 
-    await deleteAuthorLocation(locationId, user.id);
+    await deleteAuthorLocation(locationId, user.id, Boolean(user.isModerator));
     return NextResponse.json({ success: true });
   } catch (error) {
     return errorResponse("Error deleting author location", error);

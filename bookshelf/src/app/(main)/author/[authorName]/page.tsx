@@ -78,6 +78,7 @@ export default async function AuthorPage({ params }: Props) {
         <AuthorLocationsSection
           authorName={author.name}
           currentUserId={user?.id}
+          canModerate={Boolean(user?.isModerator)}
         />
       </section>
     </div>
