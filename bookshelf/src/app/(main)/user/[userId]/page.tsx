@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getUserProfile, isFollowing } from "@/server/users";
 import { getUserReviews } from "@/server/reviews";
-import { coverUrl } from "@/server/catalog";
+import { coverUrl } from "@/lib/covers";
 import { getCurrentUser } from "@/lib/auth/session";
 import Avatar from "@/components/ui/Avatar";
 import Card, { CardContent } from "@/components/ui/Card";

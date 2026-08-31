@@ -1,7 +1,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { BookOpen } from "lucide-react";
-import { coverUrl } from "@/server/catalog";
+import { coverUrl } from "@/lib/covers";
 
 interface WorkCardProps {
   olKey: string;

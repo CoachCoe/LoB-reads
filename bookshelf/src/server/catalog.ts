@@ -1,5 +1,4 @@
 import prisma from "@/lib/prisma";
-import { Prisma } from "@prisma/client";
 
 /**
  * Reads over the Open Library catalog.
@@ -320,26 +319,6 @@ export async function getOtherWorksByAuthor(
   `;
 }
 
-/**
- * Cover image URL.
- *
- * Prefers a copy stored in our own object storage, falling back to hotlinking
- * Open Library for anything the cover worker has not reached yet. Pass
- * `storedUrl` wherever it is available; the fallback exists so a fresh catalog
- * still shows covers before the first backfill has run.
- *
- * The `id` form rather than `isbn`: we already hold cover_id, and the isbn form
- * is more aggressively rate limited.
- */
-export function coverUrl(
-  coverId: number | null | undefined,
-  size: "S" | "M" | "L" = "M",
-  storedUrl?: string | null
-): string | null {
-  if (storedUrl) return storedUrl;
-  return coverId ? `https://covers.openlibrary.org/b/id/${coverId}-${size}.jpg` : null;
-}
-
 /** Browse entry point: the works with the most editions. */
 export async function getPopularWorks(limit = 24): Promise<WorkSearchResult[]> {
   return prisma.$queryRaw<WorkSearchResult[]>`
@@ -382,9 +361,6 @@ export async function getCatalogSubjects(limit = 40): Promise<string[]> {
   `;
   return rows.map((r) => r.subject);
 }
-
-/** Kept for the explain-plan check in the performance test. */
-export const SEARCH_SQL_MARKER = Prisma.sql`catalog.works`;
 
 /**
  * Summary of a work, as shown in a shelf, a review or an activity feed.

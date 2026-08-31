@@ -10,7 +10,7 @@ import LocationRow from "@/components/locations/LocationRow";
 import LocationField, {
   locationInputClass,
 } from "@/components/locations/LocationField";
-import { AuthorLocationData } from "@/server/authors";
+import type { AuthorLocationData } from "@/server/authors";
 
 interface AuthorLocationsSectionProps {
   authorName: string;

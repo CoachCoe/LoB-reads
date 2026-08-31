@@ -8,9 +8,9 @@ import {
   getOtherWorksByAuthor,
   getSimilarWorks,
   getWorkRating,
-  coverUrl,
   EDITIONS_PAGE_SIZE,
 } from "@/server/catalog";
+import { coverUrl } from "@/lib/covers";
 import StarRating from "@/components/ui/StarRating";
 import WorkCard from "@/components/catalog/WorkCard";
 import EditionList from "./EditionList";

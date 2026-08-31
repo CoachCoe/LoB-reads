@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { ChevronLeft, ChevronRight, Share2, BookOpen, Star, Clock, Trophy, Heart } from "lucide-react";
-import { WrappedStats } from "@/server/wrapped";
+import type { WrappedStats } from "@/server/wrapped";
 import Button from "@/components/ui/Button";
 import { useToast } from "@/components/providers/ToastProvider";
 

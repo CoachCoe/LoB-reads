@@ -2,7 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { BookOpen } from "lucide-react";
 import ProgressBar from "@/components/ui/ProgressBar";
-import { coverUrl } from "@/server/catalog";
+import { coverUrl } from "@/lib/covers";
 import type { SessionWithWork } from "@/server/progress";
 
 /** An open reading session, shown on the home page. */

@@ -10,8 +10,8 @@ import LocationRow from "@/components/locations/LocationRow";
 import LocationField, {
   locationInputClass,
 } from "@/components/locations/LocationField";
-import { WorkLocationData } from "@/server/work-locations";
-import { FictionalWorldWithWorks } from "@/server/fictional-worlds";
+import type { WorkLocationData } from "@/server/work-locations";
+import type { FictionalWorldWithWorks } from "@/server/fictional-worlds";
 
 interface WorkLocationsSectionProps {
   workKey: string;

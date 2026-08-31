@@ -92,6 +92,54 @@ describe("API route conventions", () => {
   });
 });
 
+/**
+ * Client components must not pull the server layer into the browser bundle.
+ *
+ * `ShelfSection` value-imported `coverUrl` from `@/server/catalog`, whose module
+ * scope constructs a PrismaClient and evaluated `Prisma.sql` at import time. The
+ * browser build of Prisma throws from `Prisma.sql`, so /my-books shipped a chunk
+ * that threw before the component was defined and the page never hydrated. A
+ * green typecheck, a green lint, 371 green tests and a successful build all
+ * missed it, because nothing renders a client component in a browser here.
+ *
+ * `import type` is fine — it is erased before the bundler sees it.
+ */
+describe("client/server boundary", () => {
+  const clientFiles = (): string[] =>
+    walk("src", (f) => /\.tsx?$/.test(f)).filter((file) =>
+      /^\s*["']use client["']/m.test(read(file))
+    );
+
+  it("finds the client components (guards against a broken scan)", () => {
+    expect(clientFiles().length).toBeGreaterThan(5);
+  });
+
+  it("never value-imports the server layer into a client component", () => {
+    // Matches `import { x } from "@/server/..."` but not `import type { ... }`,
+    // and not `import { type X }`-only specifier lists.
+    const VALUE_IMPORT =
+      /import\s+(?!type\b)([^;]*?)\s+from\s+["'](@\/server\/[^"']+|@\/lib\/prisma)["']/g;
+
+    const offenders = clientFiles().flatMap((file) => {
+      const source = read(file);
+      return [...source.matchAll(VALUE_IMPORT)]
+        .filter(([, specifiers]) => {
+          // A brace list whose every member is `type X` is still type-only.
+          const inner = specifiers.match(/\{([\s\S]*)\}/)?.[1];
+          if (!inner) return true;
+          return inner
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .some((s) => !s.startsWith("type "));
+        })
+        .map(([match]) => `${file}: ${match.replace(/\s+/g, " ")}`);
+    });
+
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe("schema conventions", () => {
   it("uses every schema it defines", () => {
     // updateProfileSchema was written and left unwired for several commits,
