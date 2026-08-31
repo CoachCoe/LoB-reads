@@ -10,7 +10,7 @@ export async function GET(
 ) {
   const session = await getServerSession(authOptions);
 
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return unauthorized();
   }
 
@@ -29,7 +29,7 @@ export async function POST(
 ) {
   const session = await getServerSession(authOptions);
 
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return unauthorized();
   }
 
@@ -48,7 +48,7 @@ export async function DELETE(
 ) {
   const session = await getServerSession(authOptions);
 
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return unauthorized();
   }
 

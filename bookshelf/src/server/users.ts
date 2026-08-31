@@ -96,6 +96,29 @@ export async function getUserAvatarUrl(userId: string): Promise<string | null> {
   return user?.avatarUrl ?? null;
 }
 
+/**
+ * The signed-in reader's own editable profile, including their email.
+ *
+ * This query lived inline in `src/app/(main)/settings/page.tsx`, which made that
+ * page the only one in the app importing prisma directly — contradicting both
+ * README.md ("All database access lives here, never in a route") and
+ * ARCHITECTURE.md, and invisible to conventions.test.ts, which only walked
+ * src/app/api. Email is included because this is the account's own settings
+ * form; `publicUserSelect` deliberately omits it.
+ */
+export async function getOwnProfile(userId: string) {
+  return prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      bio: true,
+      avatarUrl: true,
+    },
+  });
+}
+
 export async function updateUserProfile(
   userId: string,
   data: {

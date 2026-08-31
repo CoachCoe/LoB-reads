@@ -32,7 +32,7 @@ export async function PATCH(
 ) {
   const session = await getServerSession(authOptions);
 
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return unauthorized();
   }
 

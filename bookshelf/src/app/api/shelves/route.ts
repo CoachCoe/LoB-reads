@@ -8,7 +8,7 @@ import { createShelfSchema } from "@/lib/http/schemas";
 export async function GET() {
   const session = await getServerSession(authOptions);
 
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return unauthorized();
   }
 
@@ -23,7 +23,7 @@ export async function GET() {
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
 
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return unauthorized();
   }
 

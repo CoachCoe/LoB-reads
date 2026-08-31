@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
-import prisma from "@/lib/prisma";
+import { getOwnProfile } from "@/server/users";
 import SettingsForm from "./SettingsForm";
 
 export default async function SettingsPage() {
@@ -10,16 +10,7 @@ export default async function SettingsPage() {
     redirect("/login?callbackUrl=/settings");
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: sessionUser.id },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      bio: true,
-      avatarUrl: true,
-    },
-  });
+  const user = await getOwnProfile(sessionUser.id);
 
   if (!user) {
     redirect("/login");

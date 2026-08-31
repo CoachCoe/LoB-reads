@@ -90,6 +90,25 @@ describe("API route conventions", () => {
 
     expect(offenders).toEqual([]);
   });
+
+  it("keeps database access out of pages and layouts too", () => {
+    // The check above walked only src/app/api, so a server COMPONENT importing
+    // prisma was invisible to it — and one did: src/app/(main)/settings/page.tsx
+    // queried prisma.user directly, contradicting README.md ("All database
+    // access lives here, never in a route") and ARCHITECTURE.md, which names
+    // exactly one documented exception and not this one.
+    const pageFiles = walk("src/app", (f) =>
+      /(page|layout)\.tsx?$/.test(f)
+    ).sort();
+
+    expect(pageFiles.length).toBeGreaterThan(10);
+
+    const offenders = pageFiles.filter((file) =>
+      /from "@\/lib\/prisma"/.test(read(file))
+    );
+
+    expect(offenders).toEqual([]);
+  });
 });
 
 /**
