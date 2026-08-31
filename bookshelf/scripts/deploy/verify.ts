@@ -127,6 +127,17 @@ async function main() {
     !/localhost|127\.0\.0\.1/.test(process.env.NEXTAUTH_URL ?? "localhost"),
     process.env.NEXTAUTH_URL ?? "unset"
   );
+  // NextAuth derives cookie security from this URL's scheme: with no explicit
+  // `useSecureCookies` (and options.ts sets none), an http:// base yields a
+  // session cookie with secure=false and no __Secure- prefix — sent in cleartext
+  // on any downgrade. The gate checked "not localhost", which an http://
+  // production host passes happily.
+  check(
+    "NEXTAUTH_URL is https",
+    (process.env.NEXTAUTH_URL ?? "").startsWith("https://"),
+    process.env.NEXTAUTH_URL ?? "unset",
+    { hint: "an http URL makes NextAuth drop Secure from the session cookie" }
+  );
 
   // A pooled URL without the flag breaks prepared statements under reuse; a
   // direct URL carrying it means the two got swapped.
