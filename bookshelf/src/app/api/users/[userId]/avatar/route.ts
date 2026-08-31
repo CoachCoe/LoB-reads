@@ -3,7 +3,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getUserAvatarUrl, updateUserProfile } from "@/server/users";
 import { validateImageFile, sanitizeFilename } from "@/lib/storage/file-validation";
-import { putObject, deleteObjectByUrl, isStorageConfigured } from "@/lib/storage/objects";
+import {
+  putObject,
+  deleteObjectByUrl,
+  isStorageConfigured,
+  keyFromUrl,
+} from "@/lib/storage/objects";
 import { checkLimit, LIMITS } from "@/lib/rate-limit";
 
 interface RouteParams {
@@ -67,9 +72,16 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // storage cost forever. Best-effort: a failure here must not fail the
     // upload the user already completed. deleteObjectByUrl ignores URLs that
     // aren't ours, so an external DiceBear avatar is left alone.
-    if (previousAvatarUrl) {
+    //
+    // Scoped to this user's own prefix. Origin alone was not enough: PATCH
+    // /api/users/[userId] accepted any URL for `avatarUrl`, so a reader could
+    // point their own profile at another user's stored blob — same origin, same
+    // container, a key `keyFromUrl` happily resolves — and have this line
+    // delete it on their next upload.
+    const previousKey = previousAvatarUrl ? keyFromUrl(previousAvatarUrl) : null;
+    if (previousKey?.startsWith(`avatars/${userId}/`)) {
       try {
-        await deleteObjectByUrl(previousAvatarUrl);
+        await deleteObjectByUrl(previousAvatarUrl!);
       } catch (storageError) {
         console.error("Failed to delete previous avatar:", storageError);
       }
