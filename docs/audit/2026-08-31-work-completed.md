@@ -49,16 +49,20 @@ Two things not verified locally, both deliberate:
   that BLOCK-2 and SEC-11 changed.
 - **The `image` CI job.** `docker build` and the container run were not executed.
 
-### One assertion was loosened, deliberately
+### One timing assertion was removed
 
-`catalog-search.test.ts`'s `expect(p95).toBeLessThan(100)` is now
-`toBeLessThan(2_000)`, and the block is renamed from "M2 acceptance" to
-reporting. `STATUS.md` already documented that this test kept passing through
-every performance bug found at 6.9M works, and both mutations that
-`read-path-plans.test.ts` exists to catch leave it green — so it was gating
-nothing while carrying wall-clock flake risk on a loaded runner. Flagged here
-rather than buried, because it is the one place this branch made a check weaker.
-Push back if you disagree; the honest alternative is deleting it outright.
+`catalog-search.test.ts`'s `expect(p95).toBeLessThan(100)` is gone, and the block
+is renamed from "M2 acceptance" to reporting. `STATUS.md` already documented that
+this test kept passing through every performance bug found at 6.9M works, and
+both mutations `read-path-plans.test.ts` exists to catch leave it green — so it
+gated nothing while carrying wall-clock flake risk on a loaded runner.
+
+It was first loosened to 2000ms; the review round pointed out that a threshold
+nobody chose is worse than none, which is right. The distribution is still
+logged, and the query-plan assertions are the gate. Called out because it is the
+one place this branch removed a check rather than adding one — the two
+`expect()` lines deleted in this whole diff are this and the `X-Forwarded-For`
+assertion that encoded SEC-2's vulnerability, against 78 added.
 
 ### Review round (`/bastion`)
 
