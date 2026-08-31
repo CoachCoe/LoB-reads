@@ -203,7 +203,7 @@ export default async function WorkPage({ params }: Props) {
               {work.subjects.slice(0, 8).map((subject) => (
                 <Link
                   key={subject}
-                  href={`/search?q=${encodeURIComponent(subject)}`}
+                  href={`/search?subject=${encodeURIComponent(subject)}`}
                   className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700 transition-colors hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
                 >
                   {subject}
