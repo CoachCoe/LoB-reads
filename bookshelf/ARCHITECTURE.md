@@ -42,7 +42,7 @@ Two rules follow from that first line:
 2. **User-contributed data about a work must be a join table in `app`**, never
    a column on `catalog.works` — a rebuild would erase it. This is why
    third-party enrichment sits in `catalog.enrichment` rather than on the work,
-   and why fictional-world associations will move to `app.work_fictional_worlds`.
+   and why fictional-world associations live in `app.work_fictional_worlds`.
 
 ## Layers
 
@@ -106,7 +106,8 @@ what we told it to.
 ## Search
 
 `src/server/catalog.ts`. Full-text over a weighted `tsvector` (title A, author
-B, subtitle C, subjects D), with trigram similarity carrying typos that FTS
+B, subtitle C — subjects were deliberately removed; see "Subjects are a browse,
+not a search"), with trigram similarity carrying typos that FTS
 cannot match at all.
 
 Ranking is not `ts_rank` alone. Relevance scoring puts "Dune Messiah" level
@@ -171,7 +172,9 @@ queue-driven worker fills them from Google Books.
 **Nothing in a request path ever calls a third party.** Serving a work with no
 description performs one INSERT with an ON CONFLICT and returns; the worker
 picks it up out of band. This is enforced by a test that replaces `fetch` with
-a throw and renders the page. It is easy to satisfy today and easy to break
+a throw and exercises the page's data path — note it re-implements that path
+rather than importing the page module, so an inline `fetch` added to the page
+itself would not fail it (recorded as SPEC-10 in the 2026-08-31 audit). It is easy to satisfy today and easy to break
 later with "just fetch it inline when it's missing", which works locally and
 inherits someone else's latency and downtime in production.
 
@@ -240,37 +243,33 @@ anything derived from it and then distributed inherits the licence. Keeping it
 behind the flag and out of served responses means that question never has to be
 answered. Raw files are gitignored.
 
-## The catalog rebuild takes the catalog offline
+## The catalog rebuild does not take the catalog offline
 
-`03-normalize.sql` opens with `TRUNCATE catalog.works, catalog.editions,
-catalog.work_authors, catalog.authors CASCADE` and then rebuilds inside the
-same transaction. `TRUNCATE` takes `ACCESS EXCLUSIVE` and holds it until
-commit, so for the whole run **every read of those tables blocks** — search,
-work pages, shelf hydration, the lot. Not an error the app can catch and
-degrade around: the queries simply hang until the rebuild commits.
+It used to. `03-normalize.sql` opened with `TRUNCATE catalog.works,
+catalog.editions, catalog.work_authors, catalog.authors CASCADE` and rebuilt
+inside the same transaction. `TRUNCATE` takes `ACCESS EXCLUSIVE` and holds it
+until commit, so for the whole run **every read of those tables blocked** —
+search, work pages, shelf hydration, the lot. Measured, not inferred: during the
+first full ingest a bare `SELECT pg_relation_size('catalog.works')` sat waiting
+on a relation lock the normalize transaction had held for over three hours. With
+a monthly rebuild that is a multi-hour outage every month.
 
-This was measured, not inferred. During the first full ingest a bare
-`SELECT pg_relation_size('catalog.works')` sat waiting on a relation lock; the
-normalize transaction had been holding it for over three hours.
+Normalize now builds beside the live tables rather than through them: into
+`authors_new`, `works_new`, `editions_new` and so on, swapped at the end by five
+drops and five renames, so the exclusive lock lasts milliseconds. Demonstrated
+with an A/B against a `TRUNCATE`-shaped transaction — reads of `catalog.works`
+return during a build-shaped one and the table holds zero exclusive locks.
 
-The spec calls for a monthly rebuild, so as written that is a multi-hour
-outage every month.
+Index names are the trap. `LIKE INCLUDING ALL` copies indexes but names them
+after the new table, and `ALTER TABLE RENAME` does not touch index names, so a
+naive swap would leave the catalog disagreeing with its migrations for ever. The
+swap renames them in a loop and raises if anything still carries a temporary
+name.
 
-The fix is to build beside the live tables rather than through them: normalize
-into `works_new`, `editions_new` and so on, then swap in one short transaction
-
-    BEGIN;
-    ALTER TABLE works     RENAME TO works_old;
-    ALTER TABLE works_new RENAME TO works;
-    ...
-    COMMIT;
-
-which holds the exclusive lock for milliseconds instead of hours, and leaves
-the previous catalog in place to roll back to. It costs disk — both copies
-exist at once — which is a fair trade against the site being unavailable.
-
-Not yet implemented. It matters at deploy time, not for a local rebuild where
-nothing is reading the catalog.
+It does **not** remove the bloat — deleting from `works_new` leaves the dead
+tuples in `works_new`, and renaming a table does not compact it, so the dead
+space simply arrives under the new name. That is tracked as R2b in `PRD.md`; see
+`STATUS.md` for the measurements.
 
 ## Ingest performance, and what the first full run cost
 
@@ -303,7 +302,8 @@ turn:
 Slice leaves the catalog badly bloated, and nothing reclaims it. Building
 41.5M works to keep 6.9M means `catalog.works` ends the run at 39GB holding
 7.1 million live tuples and 37.8 million dead ones — 84% dead space.
-`05-index.sql` only runs ANALYZE, so that space is never returned; VACUUM
+`05-index.sql` runs ANALYZE, truncates the staging tables and rebuilds
+`catalog.subject_counts`, but reclaims no space; VACUUM
 reclaims it for reuse but does not shrink the files. Only VACUUM FULL, or
 building the table filtered in the first place, actually recovers it.
 
@@ -317,9 +317,10 @@ One change of mine backfired. Disabling the `search_vector` trigger during the
 works insert did halve that statement — but it left the three GIN indexes
 empty, so the later `author_names` update had to build every GIN entry at once
 across 39 million rows while generating a dead tuple for each. That update
-became the longest statement in the run. The right pattern is the standard one
-for bulk loading: drop the GIN indexes before the load and rebuild them in
-`05-index.sql`, rather than moving when they are maintained.
+became the longest statement in the run. The fix was the standard one for bulk
+loading, and it is what `03-normalize.sql` now does: drop the secondary indexes
+before the load and rebuild them at the end, rather than moving when they are
+maintained.
 
 `auto_explain` is loaded inside the normalize transaction for this reason. A
 slow statement here cannot be EXPLAINed from another session and every table it
@@ -382,7 +383,9 @@ link straight into this case.
 The fix is a bounded candidate set: rank an approximate top-N rather than the
 whole match set, which is a decision about result quality and not a patch.
 A subject chip would be better served by an indexed `subjects @> ARRAY[...]`
-lookup than by full-text search; there is currently no index on `subjects`.
+lookup than by full-text search. That is what the code now does — see
+"Subjects are a browse, not a search" above; `works_subjects_idx` exists, is
+declared in `schema.prisma`, and `deploy:verify` asserts it.
 
 ## The ratings graph, and a corpus that lies about its ISBNs
 
@@ -436,7 +439,7 @@ identifier that has been through a spreadsheet is not the identifier.
   returns local time, so comparisons between them are wrong by the server's
   offset. Guarded by a test asserting no naive timestamp columns exist. Keep
   `@db.Timestamptz(6)` on new DateTime fields.
-- **Postgres 14 locally, 16 in CI and on RDS.** Nothing currently depends on
+- **Postgres 14 locally, 16 in CI and in the container topology.** Nothing currently depends on
   15+ features, but the versions should be aligned.
 
 ## Import
@@ -462,6 +465,6 @@ coverage, and would reach 100% for any import someone finished.
 | M1 | Ingest to sliced catalog | Done |
 | M2 | Search and detail pages on `catalog.works` | Done |
 | M3 | Users, shelves, ratings repointed at `work_key` | Done |
-| M4 | Enrichment worker and covers | Done |
+| M4 | Enrichment worker and covers | Worker done; covers **not** served — `coverUrl`'s `storedUrl` argument has no caller, so `enrich:covers` stores objects nothing reads. See PRD R4. |
 | M5 | Social layer, seeded rating graph | Done |
 | M6 | Goodreads import against the catalog | Done |

@@ -11,7 +11,8 @@ const prisma = new PrismaClient();
  * set of works itself — enough for shelves, ratings and the map to have
  * something to point at on a fresh clone.
  *
- * A real ingest TRUNCATEs and rebuilds catalog.*, which will remove these. That
+ * A real ingest rebuilds catalog.* and swaps the new tables in, which will
+ * remove these. That
  * is expected: there is no foreign key from app into catalog precisely so a
  * rebuild cannot cascade into user data. Shelf entries whose work has gone are
  * rendered as "not in the current catalog" rather than disappearing.

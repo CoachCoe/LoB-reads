@@ -4,7 +4,7 @@ What to build next, and why. Deliberately short. `STATUS.md` has the evidence
 for every claim of fact here.
 
 > **Open input needed.** Bhavia's requirements are not recorded anywhere in this
-> repository — not in a document, not in 71 commits of history. The priorities
+> repository — not in a document, not anywhere in its history. The priorities
 > below are derived from measured defects and known gaps, which is a different
 > and weaker basis than knowing what a stakeholder actually asked for. **They
 > should be re-ordered once Bhavia's requirements are supplied**, and P0 in
@@ -38,7 +38,7 @@ is table stakes that has to be good enough not to get in the way.
 Six milestones are built: ingest, search, shelves on `work_key`, an enrichment
 worker, the social layer, and Goodreads import with a review queue. A 6.9
 million-work catalog is loaded, 11 GB, with 5.5M ratings behind
-recommendations. 362 tests pass.
+recommendations. 461 tests pass.
 
 The gaps are not features that were forgotten; they are the consequences of
 running at real scale for the first time. See `STATUS.md`.
@@ -111,7 +111,7 @@ Server allocation with room to spare.
 There is also a release gate now: `npm run deploy:verify` checks connection
 strings are the right way round, extensions, migrations, `work_mem`, the four
 search indexes, the search trigger, statistics, catalog contents, both probes,
-and the CSP's CDN origin — 21 checks, or 31 with a running app to point at. It
+and the CSP's CDN origin — 21 checks, or 29 with a running app to point at. It
 exits non-zero, so it gates a release rather than being a checklist someone
 reads.
 *Needs from you:* an Azure subscription, and `GOOGLE_BOOKS_API_KEY`.

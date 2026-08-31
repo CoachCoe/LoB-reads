@@ -1,11 +1,11 @@
 # Status — Life on Books
 
-Where the project actually is, as of 2026-08-20. Written to be read by someone
+Where the project actually is, as of 2026-08-31. Written to be read by someone
 deciding what to do next, so it leans on measurements rather than intentions.
 Every number here was taken from the running system, not estimated.
 
 Companion documents: `ARCHITECTURE.md` for how it works and why,
-`DEPLOYMENT.md` for running it on AWS, `PRD.md` for what to build next.
+`DEPLOYMENT.md` for running it on Azure, `PRD.md` for what to build next.
 
 ---
 
@@ -278,14 +278,14 @@ is the only fix.
 
 ### Smaller, real
 
-- **Rate limiting is per-process.** Correct for one long-lived instance; on
-  serverless the effective limit becomes `limit × instances`.
+- **Rate limiting is per-process**, so it does not hold across replicas.
+  Correct for one long-lived instance; on serverless, or on Container Apps with
+  more than one replica, the effective limit becomes `limit × instances`.
 - **Postgres 14 locally, 16 in CI and in the container topology.** Nothing
   depends on 15+ yet, and the full migration set now applies cleanly to 16.
 - **`shared_buffers` 128 MB** on a machine with 64 GB. Worth raising, but it is
   not the search bottleneck it was assumed to be — see above.
 - **ISBN logic exists twice**, SQL and TypeScript, guarded by a parity test.
-- **Rate limiting is per-process**, so it does not hold across replicas.
 - **`enrichment.test.ts` has a narrow timing dependency.** "only claims jobs
   that are due" calls `recordFailure` and immediately asserts nothing is
   claimable. The first backoff is `30 × (0.5 + random())` seconds, so the
@@ -321,7 +321,7 @@ those differs from `npm run dev` in a way that has hidden a real failure.
 | catalog dump | **103 s**, 1.7 GB compressed from 10 GB |
 | storage | 11/11 checks against a real blob endpoint, both private and public postures |
 | probes | liveness stays 200 with the database stopped; readiness returns 503 in 2.0 s |
-| release check | `npm run deploy:verify` — 21 assertions over config and schema, 31 with a running app |
+| release check | `npm run deploy:verify` — 21 assertions over config and schema (23 with distinct pooled/direct URLs), 29 with a running app |
 
 The pooled-versus-direct connection split had never been exercised — local
 development points both variables at the same string. Under PgBouncer in
