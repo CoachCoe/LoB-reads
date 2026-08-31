@@ -132,7 +132,15 @@ all of them at once.
 
 **R8. Housekeeping.** Move rate limiting to a shared store before scaling past
 one replica — Container Apps scales by default, which makes the effective limit
-`limit × replicas`. That is the last item here; the rest are closed. `.env.local`
+`limit × replicas`. The in-process limiter is at least sound now: it was
+quadratic past 10,000 keys and keyed on the client-controlled end of
+`X-Forwarded-For`, both fixed in the 2026-08-31 audit.
+
+Also open from that audit, and not housekeeping: `/my-books` was shipping Prisma
+to the browser and never hydrated (fixed), CI's release gate could never pass
+(fixed), and two documented features — custom shelves and creating a fictional
+world — have working API routes with no UI to reach them. See
+`docs/audit/2026-08-31-work-completed.md` for what was deferred and why. `.env.local`
 is deleted and `npm run dev` works; `work_mem` now travels in a migration
 instead of being set by hand; the test database is built from the migration
 chain rather than `db push`; and all 19 migrations apply cleanly to Postgres 16,

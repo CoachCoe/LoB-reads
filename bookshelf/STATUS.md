@@ -90,8 +90,14 @@ cause turned out to be a lossy bitmap. 1.23 s is that query after raising
 
 ## Quality posture
 
-371 tests: 128 unit, 243 integration. Integration runs against real Postgres
+461 tests: 190 unit, 271 integration. Integration runs against real Postgres
 and must run serially — they share a database and truncate between tests.
+
+The 2026-08-31 audit added 90 of those, and the reason is worth stating plainly:
+all five checks were green — typecheck, lint, 128 unit, 243 integration, build —
+while four blockers sat in the tree, including a page that threw on load. A green
+suite here has repeatedly meant "the tests that exist pass", not "the app works".
+See `docs/audit/2026-08-31-findings.md`.
 
 Two things about that database were wrong until recently. `test:all` ran the
 integration project in parallel, so it could never have passed — the two suites
@@ -125,7 +131,12 @@ four-second search page, and a component wired to nothing.
 
 - **Reachability** — now partly covered. `core-loop.test.ts` asserts the work
   page mounts each component and that the routes accept exactly what those
-  components send. Nothing generalises that check to other pages yet.
+  components send — though the request bodies and route paths in it are
+  hand-typed, so it verifies what the TEST sends, not what the component sends
+  (audit TEST-3). Nothing generalises the mount check to other pages yet, and
+  the audit found five more "built, wired to nothing" cases. `conventions.test.ts`
+  now mechanically forbids the one shape that produced a blocker: a client
+  component value-importing `src/server/*` or `@/lib/prisma`.
 - **Anything visual.** No screenshot or DOM-level assertions. The dark-mode
   sweep was verified by grep and a build, not by looking.
 - **Behaviour at catalog scale.** Deliberately: plan assertions replace it.
@@ -285,14 +296,23 @@ is the only fix.
   depends on 15+ yet, and the full migration set now applies cleanly to 16.
 - **`shared_buffers` 128 MB** on a machine with 64 GB. Worth raising, but it is
   not the search bottleneck it was assumed to be — see above.
-- **ISBN logic exists twice**, SQL and TypeScript, guarded by a parity test.
-- **`enrichment.test.ts` has a narrow timing dependency.** "only claims jobs
-  that are due" calls `recordFailure` and immediately asserts nothing is
-  claimable. The first backoff is `30 × (0.5 + random())` seconds, so the
-  margin is 15 s at worst — ample normally, and it failed twice in about ten
-  runs while a container build, a 10 GB restore and the Compose stack were
-  running concurrently. Not reproduced in six clean runs since, so the
-  mechanism is inferred from the arithmetic rather than observed.
+- **ISBN logic exists twice**, SQL and TypeScript. The parity test now compares
+  the two implementations of the same thing — `is_valid_isbn13(clean_isbn(x))`,
+  the form the pipeline actually uses — and pins the deliberate contract
+  difference. It previously compared unlike things and its case list contained no
+  separator-bearing ISBN-13, so the boundary agreed by accident.
+- ~~**`enrichment.test.ts` has a narrow timing dependency.**~~ Fixed. The
+  mechanism was confirmed from source, not just arithmetic: the first backoff is
+  `30 × (0.5 + random())` = 15–30 s computed from the **Node** clock, while
+  `claimJobs` compares against Postgres `now()`, so the margin was 15 s at worst
+  plus any app↔DB clock skew. The test now passes an explicit 3600-second
+  backoff, and the jitter it used to depend on is asserted separately without
+  racing it.
+- **`reclaimStale` has a wrong predicate, and no test.** It selects
+  `status: "running", createdAt < cutoff`, but `createdAt` is when the job was
+  *enqueued*, not claimed, and the schema has no `claimed_at`. On a real queue a
+  worker's freshly claimed batch is returned to `pending` while it is still being
+  processed. Left alone: the fix needs a migration. Audit TEST-10.
 
 ---
 
