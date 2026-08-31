@@ -45,6 +45,9 @@ const SEED_WORKS = [
     subjects: ["Science Fiction"] },
 ];
 
+// Same list as src/server/shelves.ts. Not imported: prisma/seed.ts runs through
+// tsx outside the Next module graph, so the "@/" alias is not resolved here.
+// Kept adjacent to registration.test.ts, which asserts the three names.
 const DEFAULT_SHELVES = ["Want to Read", "Currently Reading", "Read"];
 
 async function seedCatalog() {

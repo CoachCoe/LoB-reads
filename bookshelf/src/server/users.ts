@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { DEFAULT_SHELF_NAMES } from "./shelves";
 import { ValidationError } from "@/lib/http/errors";
 import { getWorksByKeys, type WorkSummary } from "./catalog";
 
@@ -16,8 +17,11 @@ const publicUserSelect = {
   createdAt: true,
 } as const;
 
-/** Every new account starts with these three; order is the display order. */
-const DEFAULT_SHELVES = ["Want to Read", "Currently Reading", "Read"];
+// The names live in ./shelves as DEFAULT_SHELF_NAMES. This file used to keep its
+// own copy, and it was the copy that actually created the shelves — so the
+// exported "canonical" list was used only as a type, by progress.ts. Since
+// progress.ts matches exclusive shelves BY NAME, a rename in one place and not
+// the other would have silently broken the exclusive-shelf move.
 
 export async function findUserByEmail(email: string) {
   return prisma.user.findUnique({ where: { email }, select: { id: true } });
@@ -38,7 +42,7 @@ export async function createUserWithDefaultShelves(data: {
     data: {
       ...data,
       shelves: {
-        create: DEFAULT_SHELVES.map((name) => ({ name, isDefault: true })),
+        create: DEFAULT_SHELF_NAMES.map((name) => ({ name, isDefault: true })),
       },
     },
     select: { id: true, email: true, name: true },

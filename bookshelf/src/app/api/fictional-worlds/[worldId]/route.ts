@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getFictionalWorldById } from "@/server/fictional-worlds";
+import { errorResponse } from "@/lib/http/api";
 
 interface RouteParams {
   params: Promise<{ worldId: string }>;
@@ -19,10 +20,6 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json(world);
   } catch (error) {
-    console.error("Error fetching fictional world:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch fictional world" },
-      { status: 500 }
-    );
+    return errorResponse("Error fetching fictional world", error);
   }
 }

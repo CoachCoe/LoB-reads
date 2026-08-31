@@ -6,7 +6,12 @@ import {
   sanitizeFilename,
   MAX_FILE_SIZE,
 } from "@/lib/storage/file-validation";
-import { declaredBodyTooLarge, payloadTooLarge } from "@/lib/http/api";
+import {
+  declaredBodyTooLarge,
+  errorResponse,
+  payloadTooLarge,
+  unauthorized,
+} from "@/lib/http/api";
 import { checkLimit, LIMITS } from "@/lib/rate-limit";
 import { putObject, isStorageConfigured } from "@/lib/storage/objects";
 
@@ -18,7 +23,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const user = await getCurrentUser();
     if (!user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return unauthorized();
     }
 
     // Uploads write to paid blob storage, so cap them per account.
@@ -93,10 +98,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ map });
   } catch (error) {
-    console.error("Error uploading map image:", error);
-    return NextResponse.json(
-      { error: "Failed to upload map image" },
-      { status: 500 }
-    );
+    return errorResponse("Error uploading map image", error);
   }
 }

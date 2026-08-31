@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeEmail } from "@/lib/auth/email";
 
 /**
  * Request shapes for the API routes.
@@ -40,9 +41,12 @@ export const coordinatesSchema = z.object({
 export const registerSchema = z.object({
   email: z
     .string()
-    .trim()
-    .toLowerCase()
-    .max(254, "Email address is too long") // RFC 5321
+    // email.ts states that "every lookup must go through this function"; the
+    // registration path re-implemented it as .trim().toLowerCase() instead. They
+    // agreed, but the stated invariant did not hold, and a change to the
+    // canonical helper would not have reached the write path.
+    .transform(normalizeEmail)
+    .pipe(z.string().max(254, "Email address is too long")) // RFC 5321
     .refine((v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), {
       message: "Please enter a valid email address",
     }),

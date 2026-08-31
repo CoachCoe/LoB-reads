@@ -21,8 +21,7 @@ export async function GET(
 
     return NextResponse.json(user);
   } catch (error) {
-    console.error("Get user error:", error);
-    return NextResponse.json({ error: "Failed to fetch user" }, { status: 500 });
+    return errorResponse("Get user error", error);
   }
 }
 
