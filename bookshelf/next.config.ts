@@ -86,11 +86,23 @@ const nextConfig: NextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+              // 'unsafe-eval' has no consumer in the application — no eval and
+              // no `new Function` anywhere in src — but Next's dev server needs
+              // it for hot reload, so it is scoped to development instead of
+              // being granted in production.
+              //
+              // 'unsafe-inline' is still required by the one inline script in
+              // layout.tsx (the theme bootstrap, a constant string with no
+              // interpolation). Removing that needs a per-request nonce or
+              // moving the script to a file; recorded, not done here.
+              `script-src 'self' 'unsafe-inline'${
+                process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""
+              }`,
               "style-src 'self' 'unsafe-inline'",
               `img-src 'self' data: blob: https://covers.openlibrary.org https://archive.org https://api.dicebear.com https://*.tile.openstreetmap.org${cdnOrigin ? ` ${cdnOrigin}` : ""}`,
               "font-src 'self'",
               `connect-src 'self' https://openlibrary.org${cdnOrigin ? ` ${cdnOrigin}` : ""}`,
+              "object-src 'none'",
               "frame-ancestors 'none'",
               "base-uri 'self'",
               "form-action 'self'",
