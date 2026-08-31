@@ -16,6 +16,9 @@
 # next.js
 /.next/
 /out/
+# SWC plugin cache. Invisible to git today only because its leaf directories
+# happen to be empty.
+/.swc
 
 # production
 /build
