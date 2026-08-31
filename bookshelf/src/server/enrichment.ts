@@ -156,9 +156,16 @@ export async function recordFailure(
 ): Promise<void> {
   const exhausted = attempts + 1 >= MAX_ATTEMPTS;
 
-  const backoffSeconds =
-    retryAfterSeconds ??
-    Math.min(3600, 2 ** attempts * 30) * (0.5 + Math.random());
+  // The ceiling applies to BOTH branches. It used to sit inside the computed
+  // one, so `retryAfterSeconds ?? ...` let a third party choose the delay
+  // outright: `Retry-After: 999999999` scheduled the retry about 31 years out,
+  // and since claimJobs filters on `next_attempt_at <= now()` while reclaimStale
+  // only rescues rows stuck in `running`, the job sat pending forever and the
+  // queue silently stopped producing.
+  const backoffSeconds = Math.min(
+    3600,
+    retryAfterSeconds ?? 2 ** attempts * 30 * (0.5 + Math.random())
+  );
 
   await prisma.enrichmentJob.update({
     where: { id: jobId },
