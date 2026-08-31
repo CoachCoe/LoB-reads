@@ -105,10 +105,66 @@ describe("the queue", () => {
     });
 
     const [job] = await claimJobs(1);
-    await recordFailure(job.id, 0, "not yet");
+    // An explicit backoff rather than the jittered default. The default is
+    // `30 * (0.5 + random())` = 15-30 seconds, computed from the NODE clock,
+    // while claimJobs compares against Postgres `now()` — so the margin was 15
+    // seconds at worst plus any app/DB clock skew, and it failed twice in about
+    // ten runs under load. The behaviour under test is the
+    // `next_attempt_at <= now()` filter, which an hour exercises just as well.
+    await recordFailure(job.id, 0, "not yet", 3600);
 
     // Backoff puts it in the future, so a worker running now sees nothing.
     expect(await claimJobs(10)).toHaveLength(0);
+  });
+
+  it("applies a jittered backoff within the documented bounds", async () => {
+    // Kept as a separate, non-racing assertion so the jitter itself stays
+    // covered after the test above stopped depending on it.
+    const work = await makeWork();
+    await enqueue({
+      entityType: "work",
+      entityKey: work.olKey,
+      field: "description",
+      source: "google_books",
+    });
+
+    const [job] = await claimJobs(1);
+    const before = Date.now();
+    await recordFailure(job.id, 0, "jitter");
+
+    const row = await prisma.enrichmentJob.findUnique({
+      where: { id: job.id },
+      select: { nextAttemptAt: true },
+    });
+
+    const delayMs = row!.nextAttemptAt!.getTime() - before;
+    expect(delayMs).toBeGreaterThanOrEqual(15_000 - 1_000);
+    expect(delayMs).toBeLessThanOrEqual(30_000 + 1_000);
+  });
+
+  it("caps a backoff the upstream asked for", async () => {
+    const work = await makeWork();
+    await enqueue({
+      entityType: "work",
+      entityKey: work.olKey,
+      field: "description",
+      source: "google_books",
+    });
+
+    const [job] = await claimJobs(1);
+    const before = Date.now();
+    // SEC-15: an upstream Retry-After used to bypass the ceiling entirely,
+    // which stranded the job permanently rather than delaying it.
+    await recordFailure(job.id, 0, "rate limited", 999_999_999);
+
+    const row = await prisma.enrichmentJob.findUnique({
+      where: { id: job.id },
+      select: { nextAttemptAt: true },
+    });
+
+    expect(row!.nextAttemptAt!.getTime() - before).toBeLessThanOrEqual(
+      3_600_000 + 1_000
+    );
   });
 
   it("gives up after MAX_ATTEMPTS instead of cycling forever", async () => {

@@ -41,3 +41,24 @@ describe("ProgressBar component", () => {
     expect(container.firstChild).toHaveClass("custom-class");
   });
 });
+
+/**
+ * The label text was covered thoroughly; the bar itself was not. Hardcoding
+ * `style={{ width: "100%" }}` passed every existing test, and every reader
+ * would have appeared to finish every book.
+ */
+describe("ProgressBar bar width", () => {
+  const barWidth = (container: HTMLElement) =>
+    (container.querySelector("[style*='width']") as HTMLElement | null)?.style
+      .width;
+
+  it.each([
+    [0, 100, "0%"],
+    [50, 100, "50%"],
+    [100, 100, "100%"],
+    [1, 8, "13%"],
+  ])("renders %i/%i as %s", (value, max, expected) => {
+    const { container } = render(<ProgressBar value={value} max={max} />);
+    expect(barWidth(container)).toBe(expected);
+  });
+});

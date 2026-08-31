@@ -1,5 +1,10 @@
 import { prisma } from "./setup";
-import { canonicalIsbn13, isbn10To13, isValidIsbn13 } from "@/lib/sources/isbn";
+import {
+  canonicalIsbn13,
+  cleanIsbn,
+  isbn10To13,
+  isValidIsbn13,
+} from "@/lib/sources/isbn";
 
 /**
  * The ISBN logic exists twice: as SQL for the ingest's set-based work, and as
@@ -22,6 +27,16 @@ const CASES = [
   "0-395-07122-4",
   "0 395 07122 4",
   "034533968x", // lowercase check digit
+  // Separator-bearing ISBN-13s. These are the cases the two implementations
+  // actually disagree on and that this list never contained: the TypeScript
+  // `isValidIsbn13` calls cleanIsbn first and so accepts them, while
+  // `catalog.is_valid_isbn13` tests the raw argument against '^[0-9]{13}$' and
+  // rejects them (asserted from the SQL side in ingest-sql.test.ts). The two
+  // separator cases above are ISBN-10s, which both sides reject as an ISBN-13 —
+  // so they agreed by accident and the boundary went unchecked.
+  "978-0-441-17271-9",
+  "978 0441172719",
+  "978-0441172719",
   // Not convertible
   "12345",
   "12345678901234",
@@ -38,11 +53,52 @@ describe("ISBN canonicalisation: TypeScript matches SQL", () => {
     expect(isbn10To13(input)).toBe(row.sql);
   });
 
+  it.each(CASES)("clean_isbn(%p) agrees", async (input) => {
+    // This pair was never compared, which is what let the boundary below go
+    // unnoticed: the composition is only trustworthy if the cleaner matches.
+    const [row] = await prisma.$queryRaw<{ sql: string }[]>`
+      SELECT catalog.clean_isbn(${input}) AS sql
+    `;
+    expect(cleanIsbn(input)).toBe(row.sql);
+  });
+
   it.each(CASES)("is_valid_isbn13(%p) agrees", async (input) => {
+    // Composed the way the ingest composes it, and the way the TypeScript
+    // composes it internally.
+    //
+    // The two functions do NOT have the same contract, and comparing them
+    // directly was comparing unlike things: `catalog.is_valid_isbn13` tests its
+    // raw argument against '^[0-9]{13}$' — deliberately, asserted in
+    // ingest-sql.test.ts — while the pipeline always calls it as
+    // `is_valid_isbn13(clean_isbn(x))` (03-normalize.sql), and the TypeScript
+    // calls cleanIsbn on the way in. The old CASES list contained no
+    // separator-bearing ISBN-13, so the mismatch never showed: its two
+    // separator cases are ISBN-10s, which both sides reject as an ISBN-13, so
+    // they agreed by accident.
     const [row] = await prisma.$queryRaw<{ sql: boolean }[]>`
-      SELECT catalog.is_valid_isbn13(${input}) AS sql
+      SELECT catalog.is_valid_isbn13(catalog.clean_isbn(${input})) AS sql
     `;
     expect(isValidIsbn13(input)).toBe(row.sql);
+  });
+
+  it("pins the contract difference rather than leaving it to chance", async () => {
+    // The raw SQL function is strict by design. Locking it here means a future
+    // change to either side has to be deliberate: make the SQL lenient and this
+    // fails; make the TypeScript strict and the parity loop above fails.
+    const separated = "978-0441172719";
+
+    const [raw] = await prisma.$queryRaw<{ sql: boolean }[]>`
+      SELECT catalog.is_valid_isbn13(${separated}) AS sql
+    `;
+    expect(raw.sql).toBe(false);
+
+    const [cleaned] = await prisma.$queryRaw<{ sql: boolean }[]>`
+      SELECT catalog.is_valid_isbn13(catalog.clean_isbn(${separated})) AS sql
+    `;
+    expect(cleaned.sql).toBe(true);
+
+    // The TypeScript cleans on the way in, so it matches the composed form.
+    expect(isValidIsbn13(separated)).toBe(true);
   });
 
   it("agrees on null input", async () => {

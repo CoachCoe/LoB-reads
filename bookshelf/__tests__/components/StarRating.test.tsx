@@ -52,3 +52,25 @@ describe("StarRating component", () => {
     });
   });
 });
+
+/**
+ * The tests above cover star count, disabled state and onChange wiring — but
+ * nothing asserted the mapping from `rating` to appearance, which is the
+ * component's entire purpose. `const isFilled = true` passed all of them, and
+ * every rating would have rendered as five gold stars.
+ */
+describe("StarRating fill state", () => {
+  const filledCount = (container: HTMLElement) =>
+    container.querySelectorAll("svg.fill-\\[\\#D4A017\\]").length;
+
+  it.each([0, 1, 3, 5])("fills exactly %i stars", (rating) => {
+    const { container } = render(<StarRating rating={rating} />);
+    expect(filledCount(container)).toBe(rating);
+  });
+
+  it("leaves the remainder unfilled rather than absent", () => {
+    const { container } = render(<StarRating rating={2} />);
+    expect(container.querySelectorAll("svg").length).toBe(5);
+    expect(filledCount(container)).toBe(2);
+  });
+});
