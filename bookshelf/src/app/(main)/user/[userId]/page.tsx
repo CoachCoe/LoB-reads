@@ -88,8 +88,16 @@ export default async function UserProfilePage({ params }: Props) {
       <section className="mb-8">
         <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-4">Bookshelves</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {/*
+            A public shelf page exists, renders without a session, and
+            getShelfById deliberately has no owner check — but nothing linked to
+            it except the owner's own /my-books. PRD section 2 promises a
+            browser "must never hit a login wall to look at a book or a public
+            shelf"; there was no wall and no door either.
+          */}
           {user.shelves.map((shelf) => (
-            <Card key={shelf.id}>
+            <Link key={shelf.id} href={`/shelf/${shelf.id}`} className="block">
+              <Card className="h-full transition-colors hover:border-[#D4A017]">
               <CardContent>
                 <h3 className="font-medium text-gray-900 dark:text-gray-100">{shelf.name}</h3>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -113,7 +121,8 @@ export default async function UserProfilePage({ params }: Props) {
                   </div>
                 )}
               </CardContent>
-            </Card>
+              </Card>
+            </Link>
           ))}
         </div>
       </section>

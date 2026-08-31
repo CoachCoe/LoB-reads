@@ -22,6 +22,15 @@ export interface AuthorLocationData {
   createdAt: Date;
 }
 
+/**
+ * Works listed on an author page.
+ *
+ * The query had an ORDER BY and no LIMIT, so a prolific author — or a
+ * compilation-heavy author key, against 3.2M authors and 6.9M works — meant an
+ * unbounded query and an unbounded DOM.
+ */
+export const AUTHOR_WORKS_LIMIT = 100;
+
 export interface CatalogAuthorDetail {
   olKey: string;
   name: string;
@@ -66,6 +75,7 @@ export async function getAuthorByKey(
       LEFT JOIN catalog.editions e ON e.ol_key = w.cover_edition_key
       WHERE wa.author_key = ${authorKey}
       ORDER BY w.first_publish_year NULLS LAST, w.title
+      LIMIT ${AUTHOR_WORKS_LIMIT}
     `,
     getAuthorLocations(authorKey),
   ]);

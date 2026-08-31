@@ -41,6 +41,22 @@ export default function SettingsForm({ user }: SettingsFormProps) {
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [message, setMessage] = useState("");
+  // Tracked rather than inferred from the text. The banner used to decide its
+  // colour with `message.includes("success")`, so "Imported 12 books." — a
+  // success — rendered red.
+  const [messageVariant, setMessageVariant] = useState<"success" | "error">(
+    "error"
+  );
+
+  const reportSuccess = (text: string) => {
+    setMessageVariant("success");
+    setMessage(text);
+  };
+
+  const reportError = (text: string) => {
+    setMessageVariant("error");
+    setMessage(text);
+  };
   const [importResult, setImportResult] = useState<ImportResultState | null>(
     null
   );
@@ -58,14 +74,14 @@ export default function SettingsForm({ user }: SettingsFormProps) {
       });
 
       if (response.ok) {
-        setMessage("Settings saved successfully!");
+        reportSuccess("Settings saved successfully!");
         router.refresh();
       } else {
         const data = await response.json();
-        setMessage(data.error || "Failed to save settings");
+        reportError(data.error || "Failed to save settings");
       }
     } catch {
-      setMessage("An error occurred");
+      reportError("An error occurred");
     } finally {
       setIsLoading(false);
     }
@@ -92,15 +108,15 @@ export default function SettingsForm({ user }: SettingsFormProps) {
       if (response.ok) {
         const data = await response.json();
         setAvatarUrl(data.url);
-        setMessage("Avatar uploaded successfully!");
+        reportSuccess("Avatar uploaded successfully!");
         router.refresh();
       } else {
         const error = await response.json();
-        setMessage(error.error || "Failed to upload avatar");
+        reportError(error.error || "Failed to upload avatar");
       }
     } catch (error) {
       console.error("Upload error:", error);
-      setMessage("Failed to upload avatar");
+      reportError("Failed to upload avatar");
     } finally {
       setIsUploadingAvatar(false);
     }
@@ -132,14 +148,14 @@ export default function SettingsForm({ user }: SettingsFormProps) {
           notProcessed: data.notProcessed,
           maxRows: data.maxRows,
         });
-        setMessage(`Imported ${data.summary.matched} books.`);
+        reportSuccess(`Imported ${data.summary.matched} books.`);
         router.refresh();
       } else {
-        setMessage(data.error || "Failed to import Goodreads library");
+        reportError(data.error || "Failed to import Goodreads library");
       }
     } catch (error) {
       console.error("Import error:", error);
-      setMessage("Failed to import Goodreads library");
+      reportError("Failed to import Goodreads library");
     } finally {
       setIsImporting(false);
     }
@@ -327,7 +343,14 @@ export default function SettingsForm({ user }: SettingsFormProps) {
 
       {message && (
         <div
-          className={`p-3 rounded-lg text-sm ${ message.includes("success") ? "bg-green-50 text-green-600" : "bg-red-50 text-red-600" }`}
+          // Was `message.includes("success")`, so "Imported 12 books." — set on
+          // the success path — rendered in the error style. The variant is now
+          // tracked alongside the message instead of being guessed from it.
+          className={`p-3 rounded-lg text-sm ${
+            messageVariant === "success"
+              ? "bg-green-50 text-green-600"
+              : "bg-red-50 text-red-600"
+          }`}
         >
           {message}
         </div>

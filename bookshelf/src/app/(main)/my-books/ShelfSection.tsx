@@ -61,7 +61,10 @@ export default function ShelfSection({ shelf }: ShelfSectionProps) {
           <h2 className="text-xl font-bold text-[var(--foreground)]">{shelf.name}</h2>
           <span className="text-sm text-[var(--foreground-secondary)]">({bookCount})</span>
         </div>
-        {bookCount > 6 && (
+        {/* Was `bookCount > 6`, so a shelf of two books had no route to its
+            own page. FLOW-15: the public shelf page was reachable from almost
+            nowhere. */}
+        {bookCount > displayBooks.length && (
           <Link
             href={`/shelf/${shelf.id}`}
             className="text-sm text-[#D4A017] hover:text-[#B8860B] flex items-center gap-1"
