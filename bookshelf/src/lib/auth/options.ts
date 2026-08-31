@@ -3,7 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import prisma from "@/lib/prisma";
 import { normalizeEmail } from "@/lib/auth/email";
-import { checkLimit, LIMITS } from "@/lib/rate-limit";
+import { checkLimit, clientIpFromHeaders, LIMITS } from "@/lib/rate-limit";
 
 /**
  * A real bcrypt hash of a value nothing can match, used only to equalise the
@@ -29,11 +29,17 @@ export const authOptions: NextAuthOptions = {
 
         // Throttle per account and per origin, so neither a single targeted
         // account nor a single host can be used for unbounded guessing.
-        const forwardedFor = req?.headers?.["x-forwarded-for"];
-        const ip =
-          (typeof forwardedFor === "string"
-            ? forwardedFor.split(",")[0].trim()
-            : undefined) ?? "unknown";
+        //
+        // Goes through clientIpFromHeaders rather than re-deriving the address:
+        // this copy had the same leftmost-element bug, and two implementations
+        // of "which hop do we trust" is one too many.
+        const header = req?.headers?.["x-forwarded-for"];
+        const ip = clientIpFromHeaders(
+          typeof header === "string" ? header : undefined,
+          typeof req?.headers?.["x-real-ip"] === "string"
+            ? (req.headers["x-real-ip"] as string)
+            : undefined
+        );
 
         for (const key of [`login:email:${email}`, `login:ip:${ip}`]) {
           if (!checkLimit(key, LIMITS.login).allowed) {

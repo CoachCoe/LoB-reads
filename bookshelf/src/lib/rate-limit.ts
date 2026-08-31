@@ -100,16 +100,58 @@ export function checkLimit(
 }
 
 /**
- * Best-effort client identifier for rate-limit keys. Falls back to a shared
- * bucket when no forwarding header is present, which is the safe direction:
- * unknown clients share a limit rather than each getting their own.
+ * How many proxies we sit behind and therefore trust to have appended to
+ * `X-Forwarded-For`. One by default: Azure Front Door, per DEPLOYMENT.md.
+ *
+ * Set to 0 to ignore the header entirely, which is the right answer when
+ * nothing trusted is in front of the app.
  */
-export function getClientIp(request: Request): string {
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  if (forwardedFor) {
-    return forwardedFor.split(",")[0].trim();
+function trustedProxyHops(): number {
+  const configured = Number(process.env.TRUSTED_PROXY_HOPS ?? 1);
+  return Number.isInteger(configured) && configured >= 0 ? configured : 1;
+}
+
+/**
+ * Client identifier for rate-limit keys, derived from the part of
+ * `X-Forwarded-For` a trusted proxy actually wrote.
+ *
+ * This used to take the LEFTMOST element, which is precisely the part the client
+ * controls: a proxy *appends* the peer it saw, so `XFF: 1.2.3.4` arriving from
+ * an attacker becomes `1.2.3.4, <real peer>`. Reading the left meant every
+ * IP-keyed limit could be defeated by incrementing a header — unbounded
+ * registrations against LIMITS.register, and `login:ip:*`, whose whole job is to
+ * stop one host guessing across many accounts, reduced to nothing.
+ *
+ * Counting from the right instead: with one trusted hop the last element is what
+ * that proxy observed, which the client cannot forge.
+ *
+ * Falls back to a shared bucket when there is nothing usable, which is the safe
+ * direction — unknown clients share a limit rather than each getting their own.
+ */
+export function clientIpFromHeaders(
+  forwardedFor: string | null | undefined,
+  realIp?: string | null
+): string {
+  const hops = trustedProxyHops();
+
+  if (hops > 0) {
+    const chain = (forwardedFor ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+
+    if (chain.length >= hops) return chain[chain.length - hops];
   }
-  return request.headers.get("x-real-ip") ?? "unknown";
+
+  return realIp?.trim() || "unknown";
+}
+
+/** `clientIpFromHeaders` for a standard `Request`. */
+export function getClientIp(request: Request): string {
+  return clientIpFromHeaders(
+    request.headers.get("x-forwarded-for"),
+    request.headers.get("x-real-ip")
+  );
 }
 
 /** Shared limits, kept here so they're visible in one place. */

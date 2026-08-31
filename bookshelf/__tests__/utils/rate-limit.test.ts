@@ -4,6 +4,7 @@
 import {
   checkLimit,
   getClientIp,
+  clientIpFromHeaders,
   __resetRateLimits,
 } from "@/lib/rate-limit";
 
@@ -100,11 +101,27 @@ describe("checkLimit bucket accounting", () => {
 });
 
 describe("getClientIp", () => {
-  it("takes the first address from x-forwarded-for", () => {
+  /**
+   * This previously asserted the LEFTMOST element, which is the part a client
+   * controls: a proxy appends the peer it saw, so an attacker sending
+   * `X-Forwarded-For: 203.0.113.5` arrives as `203.0.113.5, <real peer>`. The
+   * assertion encoded the bug, so both IP-keyed limits were bypassable by
+   * incrementing a header. It now asserts the trusted hop.
+   */
+  it("takes the address the trusted proxy appended, not the one the client sent", () => {
     const request = new Request("https://example.com", {
       headers: { "x-forwarded-for": "203.0.113.5, 70.41.3.18" },
     });
-    expect(getClientIp(request)).toBe("203.0.113.5");
+    expect(getClientIp(request)).toBe("70.41.3.18");
+  });
+
+  it("cannot be moved by prepending more spoofed hops", () => {
+    const spoofed = new Request("https://example.com", {
+      headers: {
+        "x-forwarded-for": "1.1.1.1, 2.2.2.2, 3.3.3.3, 70.41.3.18",
+      },
+    });
+    expect(getClientIp(spoofed)).toBe("70.41.3.18");
   });
 
   it("falls back to x-real-ip", () => {
@@ -117,5 +134,46 @@ describe("getClientIp", () => {
   it("buckets unidentifiable clients together rather than exempting them", () => {
     const request = new Request("https://example.com");
     expect(getClientIp(request)).toBe("unknown");
+  });
+});
+
+describe("clientIpFromHeaders trusted-hop configuration", () => {
+  const withHops = <T,>(value: string | undefined, run: () => T): T => {
+    const previous = process.env.TRUSTED_PROXY_HOPS;
+    if (value === undefined) delete process.env.TRUSTED_PROXY_HOPS;
+    else process.env.TRUSTED_PROXY_HOPS = value;
+    try {
+      return run();
+    } finally {
+      if (previous === undefined) delete process.env.TRUSTED_PROXY_HOPS;
+      else process.env.TRUSTED_PROXY_HOPS = previous;
+    }
+  };
+
+  it("counts from the right by the configured number of hops", () => {
+    withHops("2", () => {
+      expect(
+        clientIpFromHeaders("1.1.1.1, 203.0.113.7, 10.0.0.1")
+      ).toBe("203.0.113.7");
+    });
+  });
+
+  it("ignores the header entirely when nothing trusted is in front", () => {
+    withHops("0", () => {
+      expect(clientIpFromHeaders("203.0.113.5, 70.41.3.18")).toBe("unknown");
+      expect(clientIpFromHeaders("203.0.113.5", "10.0.0.9")).toBe("10.0.0.9");
+    });
+  });
+
+  it("shares one bucket when the chain is shorter than the trusted hop count", () => {
+    withHops("3", () => {
+      expect(clientIpFromHeaders("203.0.113.5, 70.41.3.18")).toBe("unknown");
+    });
+  });
+
+  it("falls back to one hop for a nonsense setting", () => {
+    withHops("banana", () => {
+      expect(clientIpFromHeaders("203.0.113.5, 70.41.3.18")).toBe("70.41.3.18");
+    });
   });
 });
