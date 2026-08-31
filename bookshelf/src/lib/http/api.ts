@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { ZodError, ZodType } from "zod";
 import {
   AuthorizationError,
@@ -31,6 +32,23 @@ export function errorResponse(context: string, error: unknown): NextResponse {
       { error: firstZodMessage(error) },
       { status: 400 }
     );
+  }
+
+  // Prisma's own failures for "the row is not there" and "it already is".
+  //
+  // Both were reaching the client as 500s. A bare `.delete()` on a row that has
+  // already gone raises P2025 — reachable by removing a book from a shelf twice,
+  // or unfollowing from a stale button — and an ordinary double-click was
+  // answered with a server error. The message is NOT forwarded: Prisma names
+  // constraints and columns, which is what `errors.ts` exists to keep out of
+  // responses.
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === "P2025") {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    if (error.code === "P2002") {
+      return NextResponse.json({ error: "That already exists" }, { status: 409 });
+    }
   }
 
   console.error(`${context}:`, error);
