@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { parseGoodreadsCSV, GoodreadsBook } from "@/lib/sources/goodreads";
 import { createImportSession, getImportSession } from "@/server/imports";
-import { errorResponse, unauthorized } from "@/lib/http/api";
+import {
+  declaredBodyTooLarge,
+  errorResponse,
+  payloadTooLarge,
+  unauthorized,
+} from "@/lib/http/api";
+import { checkLimit, LIMITS } from "@/lib/rate-limit";
 import { ValidationError } from "@/lib/http/errors";
 
 /**
@@ -28,6 +34,29 @@ export async function POST(request: NextRequest) {
     const user = await getCurrentUser();
     if (!user?.id) {
       return unauthorized();
+    }
+
+    // This route had no rate limit at all, while the two blob-upload routes
+    // did — and it is by far the most expensive: createImportSession runs
+    // matchSession, which per row may do a trigram similarity scan over
+    // catalog.works plus up to three write paths, two of them transactions.
+    // MAX_ROWS bounds the loop, not the cost, so 2,000 deliberately unmatchable
+    // rows times a handful of concurrent requests exhausts the connection pool
+    // and every other page starts timing out.
+    const limit = checkLimit(`import:${user.id}`, LIMITS.upload);
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: "Too many imports. Please try again later." },
+        {
+          status: 429,
+          headers: { "Retry-After": String(limit.retryAfterSeconds) },
+        }
+      );
+    }
+
+    // Before formData(), which buffers the entire body.
+    if (declaredBodyTooLarge(request, MAX_FILE_SIZE)) {
+      return payloadTooLarge("File too large. Maximum size is 10MB.");
     }
 
     const formData = await request.formData();

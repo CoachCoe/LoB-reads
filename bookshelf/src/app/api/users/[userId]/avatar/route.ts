@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getCurrentUser } from "@/lib/auth/session";
 import { getUserAvatarUrl, updateUserProfile } from "@/server/users";
-import { validateImageFile, sanitizeFilename } from "@/lib/storage/file-validation";
+import {
+  validateImageFile,
+  sanitizeFilename,
+  MAX_FILE_SIZE,
+} from "@/lib/storage/file-validation";
 import {
   putObject,
   deleteObjectByUrl,
@@ -10,6 +14,7 @@ import {
   keyFromUrl,
 } from "@/lib/storage/objects";
 import { checkLimit, LIMITS } from "@/lib/rate-limit";
+import { declaredBodyTooLarge, payloadTooLarge } from "@/lib/http/api";
 
 interface RouteParams {
   params: Promise<{ userId: string }>;
@@ -36,6 +41,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         { error: "Too many uploads. Please try again later." },
         { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
       );
+    }
+
+    // Before formData(), which buffers the entire body. validateImageFile's
+    // 5MB check can only run once the bytes are already in memory.
+    if (declaredBodyTooLarge(request, MAX_FILE_SIZE)) {
+      return payloadTooLarge("File too large. Maximum size is 5MB.");
     }
 
     const formData = await request.formData();

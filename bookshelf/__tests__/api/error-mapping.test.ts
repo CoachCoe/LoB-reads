@@ -3,7 +3,7 @@
  */
 import { ZodError } from "zod";
 import { Prisma } from "@prisma/client";
-import { errorResponse } from "@/lib/http/api";
+import { errorResponse, declaredBodyTooLarge } from "@/lib/http/api";
 import {
   AuthorizationError,
   NotFoundError,
@@ -130,5 +130,40 @@ describe("errorResponse with real Prisma errors", () => {
     await expect(response.json()).resolves.toEqual({
       error: "Something went wrong. Please try again.",
     });
+  });
+});
+
+/**
+ * Every upload route checked `file.size`, which is only knowable after
+ * `formData()` has already buffered the whole body into memory. This is the
+ * cheap gate that runs first.
+ */
+describe("declaredBodyTooLarge", () => {
+  const withLength = (value: string | null) =>
+    new Request("https://example.com", {
+      method: "POST",
+      ...(value === null ? {} : { headers: { "content-length": value } }),
+    });
+
+  it("rejects a body larger than the cap", () => {
+    expect(declaredBodyTooLarge(withLength("20971520"), 5 * 1024 * 1024)).toBe(
+      true
+    );
+  });
+
+  it("allows a body at or under the cap", () => {
+    expect(declaredBodyTooLarge(withLength("5242880"), 5 * 1024 * 1024)).toBe(
+      false
+    );
+    expect(declaredBodyTooLarge(withLength("10"), 5 * 1024 * 1024)).toBe(false);
+  });
+
+  it.each([
+    ["absent (a chunked request)", null],
+    ["not a number", "banana"],
+    ["empty", ""],
+  ])("does not reject when content-length is %s", (_label, value) => {
+    // Advisory, not a guarantee — the per-account rate limits bound the rest.
+    expect(declaredBodyTooLarge(withLength(value), 5 * 1024 * 1024)).toBe(false);
   });
 });

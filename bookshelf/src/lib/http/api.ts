@@ -83,6 +83,32 @@ function firstZodMessage(error: ZodError): string {
   return path ? `${path}: ${issue.message}` : issue.message;
 }
 
+/**
+ * Reject an over-large body before it is buffered into memory.
+ *
+ * Every upload route checked `file.size` — which is only knowable AFTER
+ * `await request.formData()` has accumulated the whole body. A size limit
+ * enforced after the bytes are in memory is not a size limit, and Next exposes
+ * no body cap for route handlers (`serverActions.bodySizeLimit` applies to
+ * Server Actions only), there is no middleware, and next.config.ts sets none.
+ *
+ * Content-Length is advisory and absent on a chunked request, so this is a cheap
+ * first gate rather than a guarantee — it turns the easy case (an honest client,
+ * or an attacker not bothering to hide) into a 413 that costs nothing. The
+ * per-account rate limits are what bound the rest.
+ */
+export function declaredBodyTooLarge(
+  request: Request,
+  maxBytes: number
+): boolean {
+  const declared = Number(request.headers.get("content-length"));
+  return Number.isFinite(declared) && declared > maxBytes;
+}
+
+export function payloadTooLarge(message: string): NextResponse {
+  return NextResponse.json({ error: message }, { status: 413 });
+}
+
 export function unauthorized(): NextResponse {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }

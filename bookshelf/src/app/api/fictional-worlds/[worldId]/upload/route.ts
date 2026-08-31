@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getFictionalWorldById, addMapToWorld } from "@/server/fictional-worlds";
-import { validateImageFile, sanitizeFilename } from "@/lib/storage/file-validation";
+import {
+  validateImageFile,
+  sanitizeFilename,
+  MAX_FILE_SIZE,
+} from "@/lib/storage/file-validation";
+import { declaredBodyTooLarge, payloadTooLarge } from "@/lib/http/api";
 import { checkLimit, LIMITS } from "@/lib/rate-limit";
 import { putObject, isStorageConfigured } from "@/lib/storage/objects";
 
@@ -34,6 +39,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         { error: "Fictional world not found" },
         { status: 404 }
       );
+    }
+
+    // Before formData(), which buffers the entire body.
+    if (declaredBodyTooLarge(request, MAX_FILE_SIZE)) {
+      return payloadTooLarge("File too large. Maximum size is 5MB.");
     }
 
     const formData = await request.formData();
