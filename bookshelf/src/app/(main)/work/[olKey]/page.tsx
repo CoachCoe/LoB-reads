@@ -53,19 +53,6 @@ export default async function WorkPage({ params }: Props) {
     notFound();
   }
 
-  // A missing description queues a backfill. This is a single INSERT with an
-  // ON CONFLICT — no outbound request happens here, and none ever should: a
-  // page render that calls a third party inherits that third party's latency
-  // and downtime.
-  if (!work.description) {
-    await enqueue({
-      entityType: "work",
-      entityKey: work.olKey,
-      field: "description",
-      source: "google_books",
-    });
-  }
-
   const primaryAuthor = work.authors[0];
   const [alsoBy, alsoEnjoyed, rating, user] = await Promise.all([
     primaryAuthor
@@ -75,6 +62,29 @@ export default async function WorkPage({ params }: Props) {
     getWorkRating(work.olKey),
     getCurrentUser(),
   ]);
+
+  // A missing description queues a backfill. This is a single INSERT with an
+  // ON CONFLICT — no outbound request happens here, and none ever should: a
+  // page render that calls a third party inherits that third party's latency
+  // and downtime.
+  //
+  // Only for a signed-in reader, and never awaited. The page is public and
+  // dynamically rendered per request, so as an awaited write on an anonymous
+  // path it let anyone fill catalog.enrichment_queue by walking sequential
+  // public Open Library keys. claimJobs orders by created_at, so a junk queue
+  // drains AHEAD of genuinely popular works and defeats the prioritisation
+  // backfill.ts and PRD R4 exist for — at a worker rate of five per second.
+  if (!work.description && user?.id) {
+    void enqueue({
+      entityType: "work",
+      entityKey: work.olKey,
+      field: "description",
+      source: "google_books",
+    }).catch((error) => {
+      // Best effort: a queue insert must not fail the page it decorates.
+      console.error("Failed to queue description enrichment:", error);
+    });
+  }
 
   // Fetched on the server so opening a work page costs no round trip to
   // discover the reader has not reviewed it, which is the common case.
