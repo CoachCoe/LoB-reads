@@ -468,12 +468,21 @@ export async function findWorkKeyByTitleAuthor(
   title: string,
   author: string
 ): Promise<string | null> {
+  // `author` is bound safely, but binding does not disarm LIKE's own
+  // metacharacters. An author of "%" made the predicate `LIKE '%%%'`, matching
+  // every row — which switched off the author half of the match on the
+  // AUTO-APPLY path: imports.ts feeds this straight to applyRow and marks the
+  // row `matched`/`title_author` with no review. A crafted CSV row could
+  // therefore attach to whichever work shares the title and has the most
+  // editions, regardless of who wrote it. Backslash is Postgres's default LIKE
+  // escape, so the clause needs no ESCAPE addition.
+  const authorPattern = `%${author.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+
   const rows = await prisma.$queryRaw<{ olKey: string }[]>`
     SELECT ol_key AS "olKey"
     FROM catalog.works
     WHERE title_norm = unaccent(lower(${title}))
-      AND coalesce(author_names_norm, '') LIKE
-          '%' || unaccent(lower(${author})) || '%'
+      AND coalesce(author_names_norm, '') LIKE unaccent(lower(${authorPattern}))
     ORDER BY edition_count DESC
     LIMIT 1
   `;
