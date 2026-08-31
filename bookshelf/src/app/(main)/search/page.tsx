@@ -7,7 +7,9 @@ import {
   getCatalogSubjects,
   getWorksBySubject,
   countWorksBySubject,
+  COUNT_CEILING,
 } from "@/server/catalog";
+import { resolvePage } from "@/lib/pagination";
 import WorkCard from "@/components/catalog/WorkCard";
 import SearchForm from "./SearchForm";
 
@@ -29,7 +31,12 @@ export default async function SearchPage({ searchParams }: Props) {
   const params = await searchParams;
   const query = (params.q ?? "").trim();
   const subject = (params.subject ?? "").trim();
-  const page = Math.max(1, Number(params.page) || 1);
+  // Clamped at both ends. See resolvePage: the old form bounded only the
+  // bottom, so a typed ?page=1e8 became OFFSET 2399999976.
+  const page = resolvePage(params.page, {
+    pageSize: PAGE_SIZE,
+    ceiling: COUNT_CEILING,
+  });
   const offset = (page - 1) * PAGE_SIZE;
 
   // Three modes, and each asks the database a different question.
