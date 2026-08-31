@@ -91,13 +91,36 @@ async function main() {
   }
 
   check("NEXTAUTH_SECRET is set", Boolean(process.env.NEXTAUTH_SECRET));
+
+  // A placeholder is a VALUE, not a substring. The check used to be
+  // /placeholder|changeme|.../i over the whole secret, which rejected CI's own
+  // deliberately-real `${{ github.sha }}-not-a-placeholder` because that string
+  // contains "placeholder" — so this gate failed every run and CI was red at the
+  // last step. Compare against known placeholder values instead, and let length
+  // carry the real protection: a short secret is the actual risk, and substring
+  // matching never caught one.
+  const secret = (process.env.NEXTAUTH_SECRET ?? "").trim();
+  const KNOWN_PLACEHOLDERS = [
+    "changeme",
+    "ci-placeholder-secret",
+    "ci-secret",
+    "placeholder",
+    "secret",
+    "secret-not-for-deployment",
+  ];
   check(
-    "NEXTAUTH_SECRET is not a placeholder",
-    !/placeholder|changeme|secret-not-for-deployment/i.test(
-      process.env.NEXTAUTH_SECRET ?? ""
-    ),
+    "NEXTAUTH_SECRET is not a known placeholder",
+    secret.length > 0 && !KNOWN_PLACEHOLDERS.includes(secret.toLowerCase()),
     "",
     { hint: "every session token is forgeable with a known secret" }
+  );
+  check(
+    "NEXTAUTH_SECRET is long enough",
+    secret.length >= 32,
+    secret.length > 0 ? `${secret.length} characters` : "unset",
+    {
+      hint: "`openssl rand -base64 32` produces 44; anything short is guessable",
+    }
   );
   check(
     "NEXTAUTH_URL is not localhost",
