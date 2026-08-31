@@ -47,7 +47,25 @@ Two things not verified locally, both deliberate:
   and `catalog has editions`, which CI satisfies by seeding and ingesting the
   fixture first. Every configuration and schema check passes, including the two
   that BLOCK-2 and SEC-11 changed.
-- **The `image` CI job.** `docker build` and the container run were not executed.
+- **The `image` CI job.** `docker build` and the container run were not executed
+  locally — but CI ran it on this PR and it **passed**.
+
+### CI found one thing the audit did not (TEST-19)
+
+This PR is the first time CI has ever run in this repository, and its first run
+failed at the unit tests on a **pre-existing** defect the read-only phase could
+not see, because it only appears under CI's environment.
+
+`isStorageConfigured()` read `process.env.CDN_URL` at call time while every other
+setting in `objects.ts` is captured at module load. `storage.test.ts`'s
+`loadWith` restores the environment before returning — correct for load-time
+settings — so by the time the assertion ran, CI's job-wide
+`CDN_URL: https://cdn.example.invalid` was back and "reports unconfigured when
+nothing can serve the files" got `true`.
+
+Fixed at the source rather than in the test: making the module consistent is the
+root cause, and adjusting the test would have hidden it. Reproduced locally by
+exporting `CDN_URL`, and both suites now pass with and without it set.
 
 ### One timing assertion was removed
 
