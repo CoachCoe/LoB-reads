@@ -83,29 +83,25 @@ const W_TRIGRAM = 5; // fuzzy similarity, covers typos
 const W_POPULARITY = 0.5; // edition count, as a tiebreak only
 
 /**
- * How many works may reach the ranking expression, per match strategy.
+ * The search statement.
  *
- * R1: "the candidate set has to be bounded so ranking never touches more than a
- * fixed number of rows". "Fiction" matched 10,061 works and every one of them
- * was scored with `ts_rank_cd` + `similarity` before the LIMIT threw all but 24
- * away, and STATUS.md's measurements show the remaining cost after `work_mem`
- * was raised is CPU, not I/O — "rechecking 93,941 rows and ranking 10,061".
+ * A bounded-candidate version of this was tried and REVERTED — see PRD R1. It
+ * capped what reached the ranking expression by unioning four per-strategy
+ * subqueries, each `ORDER BY w.edition_count DESC LIMIT n`. Measured against the
+ * real 6.9M-work catalog it took `?q=dune` from 222ms to 71 seconds.
  *
- * Bounded per strategy rather than overall, because a single popularity-ordered
- * cap would drop an exact title match that happens to have few editions — which
- * is the one result a title search must never lose. Exact and prefix matches get
- * their own reservations; the broad strategies are capped and ordered by
- * edition_count, which an index already supplies.
+ * The reason is worth keeping, because it is a trap anyone bounding this query
+ * will walk into. `ORDER BY edition_count DESC LIMIT 200` invites the planner to
+ * walk `works_edition_count_ol_key_idx` in popularity order and filter as it
+ * goes, on the assumption it will fill 200 rows early. `title_norm LIKE 'dune%'`
+ * matches 113 rows in 6.9M, so it walked all 6,943,467 of them — 10.9 seconds in
+ * one subquery, and the same shape in a second.
  *
- * This is the approximation PRD R1 asks about and OQ-3 approved: for a query
- * matching more works than these caps, the ranking sees the most-published ones
- * plus every exact and prefix hit, not the whole match set.
+ * Every subquery was fast in isolation (7-335ms). Only the combination was slow,
+ * and only at real scale: at 3,000 fixture rows walking the whole table is
+ * instant, so no fixture-based test could see it. That is the same lesson
+ * STATUS.md already records, learned again the hard way.
  */
-const CANDIDATES_EXACT = 100;
-const CANDIDATES_PREFIX = 200;
-const CANDIDATES_FTS = 1000;
-const CANDIDATES_TRIGRAM = 200;
-
 export function searchWorksSql(
   query: string,
   { limit = 20, offset = 0 }: { limit?: number; offset?: number } = {}
@@ -117,26 +113,6 @@ export function searchWorksSql(
       SELECT
         websearch_to_tsquery('english', unaccent(${query})) AS tsq,
         unaccent(lower(${query}))                           AS norm
-    ),
-    candidates AS (
-      (SELECT w.ol_key FROM catalog.works w CROSS JOIN q
-        WHERE w.title_norm = q.norm
-        LIMIT ${CANDIDATES_EXACT})
-      UNION
-      (SELECT w.ol_key FROM catalog.works w CROSS JOIN q
-        WHERE w.title_norm LIKE q.norm || '%'
-        ORDER BY w.edition_count DESC
-        LIMIT ${CANDIDATES_PREFIX})
-      UNION
-      (SELECT w.ol_key FROM catalog.works w CROSS JOIN q
-        WHERE w.search_vector @@ q.tsq
-        ORDER BY w.edition_count DESC
-        LIMIT ${CANDIDATES_FTS})
-      UNION
-      (SELECT w.ol_key FROM catalog.works w CROSS JOIN q
-        WHERE w.title_norm % q.norm
-        ORDER BY w.edition_count DESC
-        LIMIT ${CANDIDATES_TRIGRAM})
     )
     SELECT
       w.ol_key                                   AS "olKey",
@@ -154,10 +130,11 @@ export function searchWorksSql(
         + similarity(w.title_norm, q.norm) * ${W_TRIGRAM}
         + ln(1 + w.edition_count) * ${W_POPULARITY}
       )::double precision                        AS rank
-    FROM candidates c
-    JOIN catalog.works w ON w.ol_key = c.ol_key
+    FROM catalog.works w
     CROSS JOIN q
     LEFT JOIN catalog.editions e ON e.ol_key = w.cover_edition_key
+    WHERE w.search_vector @@ q.tsq
+       OR w.title_norm % q.norm
     ORDER BY rank DESC, w.edition_count DESC, w.ol_key
     LIMIT ${limit} OFFSET ${offset}
   `;

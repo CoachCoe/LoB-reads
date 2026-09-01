@@ -235,32 +235,54 @@ describe("search must stay bounded by what it returns", () => {
 });
 
 /**
- * R1: "the candidate set has to be bounded so ranking never touches more than a
- * fixed number of rows". PRD.md asked whether approximate results are
- * acceptable for very common words; audit OQ-3 answered yes.
+ * Search stays a single pass.
  *
- * The bound is per strategy, not one popularity-ordered cap over everything,
- * precisely so the approximation cannot cost a result a title search must never
- * lose. That is the property worth testing — a plan assertion alone would not
- * catch a bound that quietly drops exact matches.
+ * An attempt at R1 bounded the candidate set with four subqueries, each
+ * `ORDER BY w.edition_count DESC LIMIT n`. That invites the planner to walk
+ * `works_edition_count_ol_key_idx` in popularity order and filter as it goes,
+ * betting it will fill the LIMIT early. `title_norm LIKE 'dune%'` matches 113
+ * rows in 6.9M, so it walked all 6,943,467 — 10.9 seconds in one subquery.
+ * `?q=dune` went from 222ms to 71 seconds, and it shipped.
+ *
+ * Read this part before adding a plan assertion here and believing it helps:
+ * **the bad plan cannot be reproduced at fixture scale.** At 3,000 rows the
+ * planner correctly chooses bitmap scans on the text indexes; it only flips to
+ * the ordered walk when the table is large enough for that to look cheap. I
+ * restored the reverted query and every plan assertion below still passed. The
+ * plan itself is scale-dependent, so no fixture-based EXPLAIN can catch this
+ * class of regression — which is precisely why it got through.
+ *
+ * What is checkable without the real catalog is the SHAPE of the statement, so
+ * that is what the first test does. It is a text assertion and says so.
  */
-describe("search bounds what it ranks without losing exact matches", () => {
-  it("caps the rows that reach the ranking expression", async () => {
-    // All 3,000 fixture works match "Fixture". Without a bound every one of them
-    // is scored with ts_rank_cd + similarity before LIMIT discards all but 24.
-    const explained = await planOf(searchWorksSql("Fixture", { limit: 24 }));
+describe("search stays a single pass", () => {
+  it("has exactly one LIMIT — no per-strategy subquery caps", () => {
+    // A text assertion, deliberately. The reverted version had five LIMITs: one
+    // per candidate subquery plus the outer one. One LIMIT means one pass over
+    // the match set, which is the property that kept this query at 222ms.
+    const sql = searchWorksSql("anything", { limit: 24, offset: 0 }).text;
+    const limits = sql.match(/\bLIMIT\b/gi) ?? [];
 
-    // Each candidate strategy carries its own Limit, so the union feeding the
-    // ranking is a constant regardless of how many works match.
-    const limitNodes = explained.match(/->\s+Limit/g) ?? [];
-    expect(limitNodes.length).toBeGreaterThanOrEqual(4);
+    // One LIMIT is the whole property: no per-strategy subquery caps, so one
+    // pass over the match set. A "no ORDER BY ... edition_count ... LIMIT" rule
+    // was tried and dropped — the correct query legitimately ends
+    // `ORDER BY rank DESC, w.edition_count DESC, w.ol_key` then `LIMIT`, so it
+    // matched the good query as readily as the bad one.
+    expect(limits).toHaveLength(1);
   });
 
-  it("still ranks an exact title first when thousands of works match", async () => {
-    // edition_count 1 — the least popular thing in the fixture. A single
-    // popularity-ordered cap would drop it below 1,000 better-published works
-    // that also match, and the reader would search a title they own and not
-    // find it.
+  it("reaches works through the text indexes at this scale", async () => {
+    // Kept as a weak signal, not a guard: it passed against the reverted query
+    // too. It would only fail on a change bad enough to be visible at 3,000
+    // rows, which the regression was not.
+    const explained = await planOf(searchWorksSql("Fixture", { limit: 24 }));
+    expect(worksRowsRead(explained)).toBeGreaterThan(0);
+  });
+
+  it("still returns the exact title first", async () => {
+    // The quality property the reverted change was trying to protect. The
+    // single-pass form gets it for free, because nothing is discarded before
+    // ranking.
     await prisma.$executeRawUnsafe(`
       INSERT INTO catalog.works
         (ol_key, title, author_names, subjects, edition_count, first_publish_year)
@@ -277,14 +299,6 @@ describe("search bounds what it ranks without losing exact matches", () => {
         `DELETE FROM catalog.works WHERE ol_key = 'OLPLANEXACTW'`
       );
     }
-  });
-
-  it("returns fewer results than match, which is the approximation", async () => {
-    // Not a defect: OQ-3 accepted it. Pinned so the trade is visible rather
-    // than discovered.
-    const results = await searchWorks("Fixture", { limit: 24 });
-    expect(results.length).toBe(24);
-    expect(results.every((r) => r.olKey.startsWith("OLPLAN"))).toBe(true);
   });
 });
 
