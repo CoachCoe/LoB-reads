@@ -30,14 +30,27 @@ const MIN_CO_RATERS = 3;
 /** Neighbours kept per work. Beyond this the tail is not worth storing. */
 const NEIGHBOURS_PER_WORK = 20;
 
-const seedEnabled = process.env.ENABLE_SEED_DATA === "true";
+/**
+ * Whether the CC-BY-SA corpus in `seed` is folded in.
+ *
+ * Passed rather than read at module scope, so a caller — the recommendation
+ * tests especially — decides. A module-level `process.env` read makes a module's
+ * behaviour depend on the ambient environment rather than on how it is called,
+ * which is exactly the shape that made storage.test.ts pass locally and fail in
+ * CI (audit TEST-19).
+ */
+export interface ComputeOptions {
+  includeSeed: boolean;
+}
 
-async function computeRatingStats() {
+export async function computeRatingStats({
+  includeSeed,
+}: ComputeOptions): Promise<void> {
   await prisma.$executeRawUnsafe(`TRUNCATE catalog.work_rating_stats`);
 
   // The union is built once here rather than in both queries, so the stats and
   // the similarity matrix cannot disagree about what counts as a rating.
-  const seedUnion = seedEnabled
+  const seedUnion = includeSeed
     ? `UNION ALL SELECT work_key, rating, true AS is_seed FROM seed.ratings`
     : "";
 
@@ -80,10 +93,12 @@ async function computeRatingStats() {
  * useless. Dividing by sqrt(popularity_a * popularity_b) is what turns
  * "lots of people read both" into "people who read A disproportionately read B".
  */
-async function computeSimilarity() {
+export async function computeSimilarity({
+  includeSeed,
+}: ComputeOptions): Promise<void> {
   await prisma.$executeRawUnsafe(`TRUNCATE catalog.work_similarity`);
 
-  const seedUnion = seedEnabled
+  const seedUnion = includeSeed
     ? `UNION ALL SELECT user_id, work_key FROM seed.ratings WHERE rating >= ${LIKED_THRESHOLD}`
     : "";
 
@@ -175,24 +190,31 @@ async function reportCoverage() {
 }
 
 async function main() {
+  const includeSeed = process.env.ENABLE_SEED_DATA === "true";
+
   console.log(
-    seedEnabled
+    includeSeed
       ? "Seed data ENABLED — synthetic ratings are included."
       : "Seed data disabled. Set ENABLE_SEED_DATA=true to include it."
   );
 
   console.log("\nRating stats…");
-  await computeRatingStats();
+  await computeRatingStats({ includeSeed });
 
   console.log("Similarity…");
-  await computeSimilarity();
+  await computeSimilarity({ includeSeed });
 
   await reportCoverage();
 }
 
-main()
-  .catch((error) => {
-    console.error("Compute failed:", error);
-    process.exit(1);
-  })
-  .finally(() => prisma.$disconnect());
+// Only when run as a script. Importing this module — which the recommendation
+// tests now do, so that they exercise the shipped ranking rather than a copy of
+// it — must not kick off a rebuild or disconnect the shared client.
+if (require.main === module) {
+  main()
+    .catch((error) => {
+      console.error("Compute failed:", error);
+      process.exit(1);
+    })
+    .finally(() => prisma.$disconnect());
+}
