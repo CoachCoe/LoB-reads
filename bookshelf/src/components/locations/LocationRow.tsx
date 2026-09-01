@@ -51,7 +51,7 @@ export default function LocationRow({
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-medium text-[var(--foreground)]">{name}</span>
-          <span className="rounded-full bg-[#D4A017]/10 px-2 py-0.5 text-xs text-[#D4A017]">
+          <span className="rounded-full bg-[#D4A017]/10 px-2 py-0.5 text-xs text-[var(--color-primary-text)]">
             {typeLabel}
           </span>
           {meta}

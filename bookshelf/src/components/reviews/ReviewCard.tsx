@@ -33,7 +33,7 @@ export default function ReviewCard({ review, showWork = false }: ReviewCardProps
           <div className="flex items-center gap-2 flex-wrap">
             <Link
               href={`/user/${review.user.id}`}
-              className="font-medium text-[var(--foreground)] hover:text-[#D4A017]"
+              className="font-medium text-[var(--foreground)] hover:text-[var(--color-primary-text)]"
             >
               {review.user.name}
             </Link>
@@ -43,7 +43,7 @@ export default function ReviewCard({ review, showWork = false }: ReviewCardProps
                 {review.work ? (
                   <Link
                     href={`/work/${review.workKey}`}
-                    className="font-medium text-[var(--foreground)] hover:text-[#D4A017]"
+                    className="font-medium text-[var(--foreground)] hover:text-[var(--color-primary-text)]"
                   >
                     {review.work.title}
                   </Link>

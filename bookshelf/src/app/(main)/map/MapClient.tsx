@@ -111,7 +111,7 @@ export default function MapClient({
               </p>
               <Link
                 href="/search"
-                className="inline-block mt-4 px-6 py-2 bg-[#D4A017] text-white rounded-full hover:bg-[#B8860B] transition-colors"
+                className="inline-block mt-4 px-6 py-2 bg-[#D4A017] text-[var(--color-primary-contrast)] rounded-full hover:bg-[#B8860B] transition-colors"
               >
                 Discover Books
               </Link>

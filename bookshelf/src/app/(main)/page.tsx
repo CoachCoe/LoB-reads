@@ -34,7 +34,7 @@ export default async function HomePage() {
           <div className="mt-6 flex justify-center gap-3">
             <Link
               href="/register"
-              className="rounded-lg bg-[#D4A017] px-6 py-2.5 font-medium text-white hover:bg-[#B8860B]"
+              className="rounded-lg bg-[#D4A017] px-6 py-2.5 font-medium text-[var(--color-primary-contrast)] hover:bg-[#B8860B]"
             >
               Get started
             </Link>

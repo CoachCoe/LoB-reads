@@ -40,7 +40,7 @@ export default function SearchForm({ initialQuery }: { initialQuery: string }) {
       </div>
       <button
         type="submit"
-        className="rounded-lg bg-[#D4A017] px-5 py-2.5 font-medium text-white transition-colors hover:bg-[#B8860B]"
+        className="rounded-lg bg-[#D4A017] px-5 py-2.5 font-medium text-[var(--color-primary-contrast)] transition-colors hover:bg-[#B8860B]"
       >
         Search
       </button>

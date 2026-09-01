@@ -18,16 +18,16 @@ export default function ProgressBar({
       <div className="flex justify-between items-center mb-1">
         {showLabel && (
           <>
-            <span className="text-sm text-gray-600">
+            <span className="text-sm text-[var(--foreground-secondary)]">
               {value} / {max} pages
             </span>
-            <span className="text-sm font-medium text-[#D4A017]">
+            <span className="text-sm font-medium text-[var(--color-primary-text)] tabular-nums">
               {percentage}%
             </span>
           </>
         )}
       </div>
-      <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+      <div className="w-full bg-[var(--border)] rounded-full h-2.5 overflow-hidden">
         <div
           className="bg-gradient-to-r from-[#D4A017] to-[#D4A017] h-2.5 rounded-full transition-all duration-500"
           style={{ width: `${percentage}%` }}

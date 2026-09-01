@@ -95,7 +95,7 @@ export default async function MyBooksPage() {
           </p>
           <Link
             href="/search"
-            className="inline-flex items-center px-4 py-2 bg-[#D4A017] text-white rounded-lg hover:bg-[#B8860B]"
+            className="inline-flex items-center px-4 py-2 bg-[#D4A017] text-[var(--color-primary-contrast)] rounded-lg hover:bg-[#B8860B]"
           >
             Discover Books
           </Link>

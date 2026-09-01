@@ -207,7 +207,7 @@ export default function AuthorLocationsSection({
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-lg bg-[#D4A017] py-2 text-white hover:bg-[#B8860B] disabled:opacity-50"
+            className="w-full rounded-lg bg-[#D4A017] py-2 text-[var(--color-primary-contrast)] hover:bg-[#B8860B] disabled:opacity-50"
           >
             {submitting ? "Adding…" : "Add Location"}
           </button>

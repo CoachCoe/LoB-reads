@@ -211,7 +211,7 @@ export default function AboutPage() {
         <div className="flex flex-wrap justify-center gap-4">
           <Link
             href="/"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-[#D4A017] text-white rounded-full font-medium hover:bg-[#B8860B] transition-colors"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-[#D4A017] text-[var(--color-primary-contrast)] rounded-full font-medium hover:bg-[#B8860B] transition-colors"
           >
             Explore the App
           </Link>

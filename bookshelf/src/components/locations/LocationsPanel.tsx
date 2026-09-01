@@ -63,7 +63,7 @@ export default function LocationsPanel({
         {canContribute && !formOpen && (
           <button
             onClick={onOpenForm}
-            className="flex items-center gap-1 text-sm font-medium text-[#D4A017] hover:text-[#B8860B]"
+            className="flex items-center gap-1 text-sm font-medium text-[var(--color-primary-text)] hover:underline"
           >
             <Plus className="h-4 w-4" aria-hidden="true" />
             Add Location
@@ -101,7 +101,7 @@ export default function LocationsPanel({
           {canContribute && !formOpen && (
             <button
               onClick={onOpenForm}
-              className="mt-2 text-sm font-medium text-[#D4A017] hover:text-[#B8860B]"
+              className="mt-2 text-sm font-medium text-[var(--color-primary-text)] hover:underline"
             >
               Be the first to add one
             </button>
