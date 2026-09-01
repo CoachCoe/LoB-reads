@@ -32,28 +32,39 @@ const socialLinks = [
   },
 ];
 
+/**
+ * The footer was a solid `#D4A017` slab with black text — the loudest element on
+ * every page, and in dark mode a blazing gold block under a near-black page.
+ *
+ * It is a quiet surface now, with a hairline above it. Gold marks three things in
+ * this product: the logo mark, filled stars, and the one primary action on a
+ * screen. A footer is none of them, and spending the accent here left nothing
+ * for it to mean anywhere else.
+ *
+ * The logo carries `logo-themed`, as the navbar's does — that class is what
+ * inverts it for dark mode. Without it the artwork disappeared into the new
+ * surface, which is why the gold background had been hiding a second problem.
+ */
 export default function Footer() {
   return (
-    <footer className="bg-[#D4A017] py-8">
+    <footer className="border-t border-[var(--border)] bg-[var(--background-secondary)] py-10">
       <div className="max-w-7xl mx-auto px-4 flex flex-col items-center">
-        {/* Logo */}
         <Image
           src="/logo.png"
           alt="Life on Books"
           width={120}
           height={80}
-          className="h-20 w-auto mb-6"
+          className="h-14 w-auto mb-5 logo-themed"
         />
 
-        {/* Social Links */}
-        <div className="flex items-center gap-4 mb-6">
+        <div className="flex items-center gap-3 mb-5">
           {socialLinks.map((social) => (
             <a
               key={social.name}
               href={social.href}
               target="_blank"
               rel="noopener noreferrer"
-              className="p-2 rounded-full bg-black/10 hover:bg-black/20 text-black transition-all"
+              className="p-2 rounded-full text-[var(--foreground-secondary)] transition-colors hover:bg-[var(--border-light)] hover:text-[var(--foreground)]"
               aria-label={social.name}
             >
               {social.icon}
@@ -61,9 +72,9 @@ export default function Footer() {
           ))}
         </div>
 
-        {/* Copyright */}
-        <p className="text-black text-sm font-medium">
-          {new Date().getFullYear()} &copy; ALL RIGHTS RESERVED LIFEONBOOKS.COM
+        <p className="text-xs text-[var(--foreground-secondary)]">
+          {new Date().getFullYear()} &copy; All rights reserved &middot;
+          lifeonbooks.com
         </p>
       </div>
     </footer>

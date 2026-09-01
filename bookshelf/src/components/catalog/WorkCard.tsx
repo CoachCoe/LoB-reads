@@ -1,7 +1,5 @@
 import Link from "next/link";
-import Image from "next/image";
-import { BookOpen } from "lucide-react";
-import { coverUrl } from "@/lib/covers";
+import CoverImage from "@/components/catalog/CoverImage";
 
 interface WorkCardProps {
   olKey: string;
@@ -24,28 +22,19 @@ export default function WorkCard({
   editionCount,
   coverId,
 }: WorkCardProps) {
-  const cover = coverUrl(coverId, "M");
-
   return (
     <Link
       href={`/work/${olKey}`}
       className="group flex flex-col gap-2 rounded-lg p-2 transition-colors hover:bg-gray-50 dark:hover:bg-gray-800"
     >
-      <div className="relative aspect-[2/3] w-full overflow-hidden rounded bg-gray-100 dark:bg-gray-800">
-        {cover ? (
-          <Image
-            src={cover}
-            alt=""
-            fill
-            sizes="(max-width: 640px) 45vw, (max-width: 1024px) 22vw, 160px"
-            className="object-cover transition-transform group-hover:scale-[1.02]"
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center text-gray-300 dark:text-gray-600">
-            <BookOpen className="h-8 w-8" aria-hidden="true" />
-          </div>
-        )}
-      </div>
+      <CoverImage
+        title={title}
+        olKey={olKey}
+        coverId={coverId}
+        size="md"
+        sizes="(max-width: 640px) 45vw, (max-width: 1024px) 22vw, 160px"
+        className="aspect-[2/3] w-full rounded"
+      />
 
       <div className="min-w-0">
         <h3 className="line-clamp-2 text-sm font-medium text-gray-900 dark:text-gray-100">
