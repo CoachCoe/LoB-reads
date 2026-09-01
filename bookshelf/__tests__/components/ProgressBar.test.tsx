@@ -98,3 +98,27 @@ describe("ProgressBar bar width", () => {
     expect(barWidth(container)).toBe(expected);
   });
 });
+
+/**
+ * FLOW-7. The label is hardcoded "{value} / {max} pages", so a caller passing a
+ * percentage against 100 rendered "15 / 100 pages" — directly above the home
+ * card's own, correct "page 47 of 320 · 15%". Two denominators for one book, one
+ * of them 100.
+ *
+ * The bar is not wrong to be percentage-shaped; the label is wrong to assume
+ * pages. Asserted here so the next caller that wants a bare bar has an obvious
+ * way to ask for one.
+ */
+describe("ProgressBar without a label", () => {
+  it("renders no text at all when showLabel is false", () => {
+    const { container } = render(
+      <ProgressBar value={15} max={100} showLabel={false} />
+    );
+
+    expect(container.textContent).toBe("");
+    // The bar itself is still there and still sized.
+    expect(
+      (container.querySelector("[style*='width']") as HTMLElement).style.width
+    ).toBe("15%");
+  });
+});

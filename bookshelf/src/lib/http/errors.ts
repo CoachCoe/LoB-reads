@@ -26,3 +26,17 @@ export class ValidationError extends Error {
     this.name = "ValidationError";
   }
 }
+
+/**
+ * The request body is larger than the endpoint accepts.
+ *
+ * Separate from ValidationError because 413 is not 400: the caller is not
+ * malformed, it is too big, and a client that retries a 400 unchanged should not
+ * retry this one.
+ */
+export class PayloadTooLargeError extends Error {
+  constructor(message = "Request body is too large") {
+    super(message);
+    this.name = "PayloadTooLargeError";
+  }
+}

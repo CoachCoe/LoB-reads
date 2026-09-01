@@ -29,7 +29,7 @@ A modern reading tracker for book lovers. Track your library, discover new stori
 
 ### Discovery & Exploration
 - **Interactive Map** - Explore where books are set on a world map with crowdsourced location data
-- **Fictional Worlds** - Dedicated pages for fantasy/sci-fi universes with multiple map uploads (Middle-earth, Westeros, etc.), each with title and description
+- **Fictional Worlds** - A panel on the map for fantasy/sci-fi universes, each with multiple map uploads, a title and a description (Middle-earth, Westeros, etc.), each with title and description
 
 ### Import & Settings
 - **Goodreads Import** - Import your library via CSV export
@@ -199,7 +199,8 @@ src/
 │   ├── login/             # Login page
 │   └── register/          # Registration page
 ├── components/            # React components
-│   ├── authors/ catalog/ import/ locations/ map/ reviews/ shelves/ social/
+│   ├── authors/ catalog/ import/ layout/ locations/ map/ providers/
+│   ├── reviews/ social/ ui/
 │   ├── layout/           # Navbar, Footer
 │   ├── providers/        # Session, Theme, Toast
 │   └── ui/               # Reusable UI components
@@ -229,7 +230,7 @@ src/
   Library dumps (`-- --fixture` for a small one)
 - `npm run storage:smoke` - Verify object storage against a real blob endpoint
 - `npm run deploy:verify` - Assert a deployment's invariants and exit non-zero
-  if any fail, so it can gate a release. 21 checks over configuration and
+  if any fail, so it can gate a release. Checks over configuration and
   schema (23 when the pooled and direct URLs differ), plus eight more against
   the running app when `BASE_URL` is set
 
@@ -296,7 +297,7 @@ rather than tidiness:
 | --- | --- | --- |
 | `catalog` | Works, editions, authors, subjects, ratings graph | Rebuilt wholesale from Open Library dumps; nothing irreplaceable |
 | `app` | Users, shelves, reviews, progress, locations, imports | User-owned; survives every ingest |
-| `seed` | Restricted-licence ratings corpus | Never served |
+| `seed` | Restricted-licence ratings corpus | Never served raw; aggregates derived from it are served with attribution — PRD §5 |
 
 **No foreign keys point from `app` into `catalog`.** A bad ingest must not
 cascade into anyone's shelves, so write paths check a work exists and read paths

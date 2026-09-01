@@ -64,15 +64,17 @@ with room to spare. Two caveats:
   and leaves the dead tuples behind; the rename in the rebuild-and-swap does
   not compact them. Do not size storage from a freshly-ingested database. This
   is tracked as R2b — the fix is to never insert those rows.
-- **`seed` is CC-BY-SA and nothing derived from it may be served.** It is only
+- **`seed` is CC-BY-SA. The corpus itself is never served; the aggregates
+  computed from it are, with attribution — see PRD §5.** It is only
   reachable behind `ENABLE_SEED_DATA`. There is no reason to restore it to
   Azure at all, which also saves the 853 MB.
 
 ### Do not run the ingest against Azure
 
 Build the catalog locally, where disk and memory are cheap, then dump and
-restore. The ingest is a few passes over ~113M staged rows; it takes **2 h 41
-min** on a well-provisioned machine and wants `max_wal_size` at 24 GB while it
+restore. The ingest is a few passes over ~113M staged rows; **normalize alone**
+takes **2 h 41 min** on a well-provisioned machine, and the whole chain
+(preflight, stage, normalize, slice, index) roughly three hours and wants `max_wal_size` at 24 GB while it
 runs. Pointing it at a burstable instance would be slow at best and would fill
 the volume mid-run at worst.
 
@@ -84,7 +86,7 @@ pg_dump -d bookshelf -Fd -j 8 --schema=catalog -f catalog-dump
 # Drop the schema migrations created first, or the restore collides with it.
 psql "<direct url>" -c "DROP SCHEMA catalog CASCADE;"
 pg_restore -j 8 -h <server>.postgres.database.azure.com -U <user> -d <db> \
-  -j 4 --no-owner --no-privileges catalog-dump
+  --no-owner --no-privileges catalog-dump
 psql "<direct url>" -c "ANALYZE catalog.works; ANALYZE catalog.editions;"
 ```
 
@@ -247,6 +249,7 @@ AZURE_STORAGE_CONNECTION_STRING="<account connection string>" npm run storage:sm
 | `AZURE_STORAGE_PUBLIC_CONTAINER` | `true` only if the container really is public. Leave unset in Azure. |
 | `CDN_URL` | Front Door endpoint. **Required at build time.** |
 | `GOOGLE_BOOKS_API_KEY` | Enrichment worker only |
+| `TRUSTED_PROXY_HOPS` | How many proxies in front append to `X-Forwarded-For`. **Set it explicitly.** Front Door in front of Container Apps is two, because the Container Apps ingress appends as well — and a wrong count returns a proxy's own address, identical for every client, which puts the whole site on one rate-limit bucket. `0` when nothing trusted is in front. |
 
 Do not set a storage connection string in Azure — use the managed identity.
 
@@ -320,7 +323,9 @@ than failing — with Postgres stopped, Prisma blocked on connect for well over
 
 There are none, by design. The baseline migration is the starting point for
 every environment, and `prisma migrate deploy` takes an empty database to
-current in one step — verified against a fresh Postgres 16, all 19 migrations.
+current in one step — verified against a fresh Postgres 16. That run covered 19 migrations; two
+have been added since (`import_row_error`, `enrichment_claimed_at`) and the
+claim has not been re-established against 21.
 
 An earlier revision carried a hand-written upgrade script for a database
 holding the pre-baseline schema. It was removed once no such database existed:
@@ -416,7 +421,8 @@ NEXTAUTH_URL="https://…" NEXTAUTH_SECRET="…" CDN_URL="https://…" \
 BASE_URL="https://…" npm run deploy:verify
 ```
 
-It runs 21 checks over configuration and schema (23 when the pooled and
+It runs every check over configuration and schema that applies to the
+environment it is given (the exact number varies with it — more when the pooled and
 direct URLs differ), and eight more against the
 running app when `BASE_URL` is set. Each corresponds to something that has gone
 wrong or would go wrong silently: the two connection strings the right way round and the
@@ -434,8 +440,9 @@ fail the run — they are legitimate in some topologies.
 
 The script cannot check these, because they need two accounts and a browser.
 
-- `GET /api/users/<id>` returns no `email` and no `passwordHash`
-- `GET /api/shelves/<id>` works signed out and shows owner attribution
+- `/user/<id>` renders signed out and leaks no `email` or `passwordHash`
+  (the read handlers on `/api/users/<id>` and `/api/shelves/<id>` were removed;
+  both routes now export only their mutating method)
 - Registering as `Test@Example.com` then signing in as `test@example.com` works
 - A second account gets 403 deleting the first account's uploaded map
 - Upload an avatar, confirm it renders, then replace it and confirm the old

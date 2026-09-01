@@ -83,6 +83,17 @@ async function seedCatalog() {
 }
 
 async function main() {
+  // The seed creates alice@example.com with a known password and gives her
+  // shelves, reviews, sessions, maps and location contributions. README
+  // documents `npm run db:seed` beside the deployment instructions, and nothing
+  // stopped it being pointed at a live database. FLOW-3.
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "Refusing to seed: NODE_ENV is production. The seed creates a known " +
+        "password and demo content, which must never exist in a deployed database."
+    );
+  }
+
   console.log("🌱 Seeding…");
 
   // User data only. The catalog is left alone: it may hold a real ingest.

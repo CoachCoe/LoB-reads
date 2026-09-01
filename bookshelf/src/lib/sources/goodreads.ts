@@ -1,3 +1,4 @@
+import { cleanIsbn } from "@/lib/sources/isbn";
 export interface GoodreadsBook {
   title: string;
   author: string;
@@ -22,13 +23,23 @@ export interface ImportResult {
   }[];
 }
 
-// Clean ISBN from Goodreads format (often ="0123456789" or "0123456789")
-function cleanISBN(isbn: string | undefined): string | null {
+/**
+ * Pull an ISBN out of a Goodreads cell, which arrives as `="0123456789"`.
+ *
+ * Separators are stripped through the shared `cleanIsbn` rather than by a second
+ * local rule. This used to strip only Excel's wrapper and then require ten or
+ * thirteen bare digits, so a hyphenated `978-0-441-17271-9` — a perfectly good
+ * ISBN-13, and a common export shape — failed the test and was discarded
+ * entirely. An X check digit on an ISBN-10 was dropped for the same reason.
+ * DEAD-1.
+ *
+ * Renamed from `cleanISBN`: it sat one letter away from `cleanIsbn` in a sibling
+ * directory implementing a different rule, which is how the two drifted.
+ */
+function isbnFromCell(isbn: string | undefined): string | null {
   if (!isbn) return null;
-  // Remove leading =" or =", trailing ", and any spaces
-  const cleaned = isbn.replace(/^[="]+|["]+$/g, "").trim();
-  // Validate: ISBN should be 10 or 13 digits
-  if (/^\d{10}$/.test(cleaned) || /^\d{13}$/.test(cleaned)) {
+  const cleaned = cleanIsbn(isbn.replace(/^[="]+|["]+$/g, ""));
+  if (/^[0-9]{13}$/.test(cleaned) || /^[0-9]{9}[0-9X]$/.test(cleaned)) {
     return cleaned;
   }
   // Handle ISBN-10 with X check digit
@@ -183,8 +194,8 @@ export function parseGoodreadsCSV(csvContent: string): GoodreadsBook[] {
     books.push({
       title,
       author,
-      isbn: cleanISBN(values[columnIndex["ISBN"]]),
-      isbn13: cleanISBN(values[columnIndex["ISBN13"]]),
+      isbn: isbnFromCell(values[columnIndex["ISBN"]]),
+      isbn13: isbnFromCell(values[columnIndex["ISBN13"]]),
       myRating: parseInt(values[columnIndex["My Rating"]] || "0", 10) || 0,
       dateRead: parseGoodreadsDate(values[columnIndex["Date Read"]]),
       dateAdded: parseGoodreadsDate(values[columnIndex["Date Added"]]),

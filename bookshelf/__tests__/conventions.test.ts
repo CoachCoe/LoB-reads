@@ -523,6 +523,49 @@ describe("grey text is never unpaired", () => {
   });
 });
 
+/**
+ * Read paths over contributed tables are bounded.
+ *
+ * Anyone signed in can grow `app.work_locations`, `app.author_locations` and
+ * `app.fictional_worlds`, and the public /map read them with no `take` at all —
+ * two unbounded `findMany`s plus a hydration over every distinct work key,
+ * serialised whole into the RSC payload. FLOW-22 fixed the same shape on the
+ * author page and the map was not covered, which is the argument for a
+ * mechanical check rather than another careful reading.
+ *
+ * Listed by function rather than pattern-matched: most `findMany` calls in this
+ * codebase are scoped by a unique key and want no limit, so a blanket rule would
+ * be noise. These five are the ones whose input is other people's contributions.
+ */
+describe("contributed read paths are bounded", () => {
+  const MUST_BE_BOUNDED: [file: string, fn: string][] = [
+    ["src/server/map.ts", "getMappedWorkLocations"],
+    ["src/server/map.ts", "getMappedAuthorLocations"],
+    ["src/server/fictional-worlds.ts", "getAllFictionalWorlds"],
+    ["src/server/work-locations.ts", "getWorkLocations"],
+    ["src/server/authors.ts", "getAuthorLocations"],
+  ];
+
+  /** The body of an exported function, to its closing brace at column 0. */
+  function bodyOf(source: string, fn: string): string {
+    const start = source.indexOf(`export async function ${fn}(`);
+    expect(start).toBeGreaterThan(-1);
+    const end = source.indexOf("\n}", start);
+    return source.slice(start, end === -1 ? undefined : end);
+  }
+
+  it("finds the function it is checking", () => {
+    // So a rename turns into a failure here rather than a silently vacuous pass.
+    expect(bodyOf(read("src/server/map.ts"), "getMappedWorkLocations")).toContain(
+      "workLocation.findMany"
+    );
+  });
+
+  it.each(MUST_BE_BOUNDED)("%s: %s caps what it reads", (file, fn) => {
+    expect(bodyOf(read(file), fn)).toContain("take:");
+  });
+});
+
 describe("schema conventions", () => {
   it("uses every schema it defines", () => {
     // updateProfileSchema was written and left unwired for several commits,

@@ -216,7 +216,7 @@ export default function WorkLocationsSection({
 
           {isFictional ? (
             <LocationField
-              label="Fictional World (optional)"
+              label="Fictional World"
               htmlFor="work-location-world"
             >
               <select
@@ -224,6 +224,7 @@ export default function WorkLocationsSection({
                 value={fictionalWorldId}
                 onChange={(e) => setFictionalWorldId(e.target.value)}
                 className={locationInputClass}
+                required
               >
                 <option value="">Select a world…</option>
                 {fictionalWorlds.map((world) => (

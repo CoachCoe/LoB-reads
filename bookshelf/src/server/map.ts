@@ -34,6 +34,23 @@ export interface MappedAuthorLocation {
   addedBy: string | null;
 }
 
+/**
+ * Most pins the map will render in one response.
+ *
+ * /map is public, anonymous, and PRD R6 has just made it discoverable, so this
+ * table is meant to grow — and every load ran two unbounded findMany calls plus
+ * a getWorksByKeys hydration over every distinct workKey, serialised whole into
+ * the RSC payload and handed to Leaflet. One account inserting in a loop through
+ * the (previously unrated) contribution routes made the page unservable for
+ * everyone.
+ *
+ * A cap rather than pagination because a map is not a list: the right fix is a
+ * viewport query, which is a design change. Newest first, so a cap that bites
+ * shows recent contributions rather than an arbitrary slice. Recorded as
+ * remaining work.
+ */
+export const MAP_PIN_LIMIT = 2000;
+
 /** Real-world book locations. Fictional ones belong to a world, not a point. */
 export async function getMappedWorkLocations(): Promise<MappedWorkLocation[]> {
   const locations = await prisma.workLocation.findMany({
@@ -42,6 +59,8 @@ export async function getMappedWorkLocations(): Promise<MappedWorkLocation[]> {
       fictionalWorld: { select: { name: true } },
       addedBy: { select: { name: true } },
     },
+    orderBy: { createdAt: "desc" },
+    take: MAP_PIN_LIMIT,
   });
 
   const works = await getWorksByKeys(locations.map((l) => l.workKey));
@@ -71,6 +90,8 @@ export async function getMappedAuthorLocations(): Promise<
 > {
   const locations = await prisma.authorLocation.findMany({
     include: { addedBy: { select: { name: true } } },
+    orderBy: { createdAt: "desc" },
+    take: MAP_PIN_LIMIT,
   });
 
   if (locations.length === 0) return [];
