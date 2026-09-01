@@ -56,9 +56,18 @@ export default function LoginPage() {
           </CardContent>
         </Card>
 
-        <p className="mt-4 text-center text-sm text-[var(--foreground-secondary)]">
-          Demo: alice@example.com / password123
-        </p>
+        {/*
+          Development only. prisma/seed.ts hashes a known password for
+          alice@example.com, and this rendered it unconditionally on a page
+          every visitor reaches. README documents `npm run db:seed` and the seed
+          refuses to run in production as of this change, but the credential
+          should not be printed regardless. FLOW-3.
+        */}
+        {process.env.NODE_ENV !== "production" && (
+          <p className="mt-4 text-center text-sm text-[var(--foreground-secondary)]">
+            Demo: alice@example.com / password123
+          </p>
+        )}
       </div>
     </div>
   );

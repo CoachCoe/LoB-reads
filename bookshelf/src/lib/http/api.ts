@@ -54,6 +54,16 @@ export function errorResponse(context: string, error: unknown): NextResponse {
     if (error.code === "P2002") {
       return NextResponse.json({ error: "That already exists" }, { status: 409 });
     }
+    // P2003: a foreign key that does not resolve — the row being pointed at is
+    // gone. followUser is the reachable case: it validates only self-follow, so
+    // pressing Follow on a reader who has since deleted their account raised
+    // P2003 and answered 500 with a generic toast, and POST
+    // /api/users/anything/follow did the same. Every other write path in the app
+    // checks its foreign reference explicitly; this maps the one that does not,
+    // and covers the location writes for free. FLOW-15.
+    if (error.code === "P2003") {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
   }
 
   console.error(`${context}:`, error);

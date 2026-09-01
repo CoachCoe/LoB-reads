@@ -70,7 +70,16 @@ export default function SettingsForm({ user }: SettingsFormProps) {
       const response = await fetch(`/api/users/${user.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, bio, avatarUrl }),
+        body: JSON.stringify({
+          name,
+          bio,
+          // An empty field means "remove my avatar". Sent as "" it reached
+          // z.url(), which rejects it, so clearing the avatar returned
+          // 400 "avatarUrl: Invalid URL" and discarded the bio edit with it —
+          // and the schema's .nullable() branch, the only way to clear the
+          // column, was unreachable from any UI. FLOW-21.
+          avatarUrl: avatarUrl.trim() || null,
+        }),
       });
 
       if (response.ok) {

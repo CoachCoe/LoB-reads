@@ -115,6 +115,20 @@ describe("errorResponse with real Prisma errors", () => {
     expect(response.status).toBe(409);
   });
 
+  /**
+   * FLOW-15. followUser validates only self-follow, so pressing Follow on a
+   * reader who has since deleted their account raised P2003 — an unresolved
+   * foreign key — which fell through to the generic handler and answered 500.
+   * POST /api/users/anything/follow did the same. Every other write path in the
+   * app checks its foreign reference explicitly, so mapping the code here covers
+   * the one that does not, plus the location writes.
+   */
+  it("maps P2003 (foreign key not found) to 404, not 500", async () => {
+    const response = errorResponse("ctx", prismaError("P2003"));
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ error: "Not found" });
+  });
+
   it("does not forward the Prisma message, which names columns", async () => {
     const detailed = new Prisma.PrismaClientKnownRequestError(
       "Unique constraint failed on the fields: (`email`)",
@@ -125,7 +139,11 @@ describe("errorResponse with real Prisma errors", () => {
   });
 
   it("still answers an unrecognised Prisma code with a fixed 500", async () => {
-    const response = errorResponse("ctx", prismaError("P2003"));
+    // Was P2003, which is now deliberately mapped to 404 (see above). Swapped
+    // for a code that really is unhandled rather than relaxing the expectation:
+    // the point of this assertion is that anything we have *not* thought about
+    // stays a fixed 500 with no Prisma detail, and that must keep holding.
+    const response = errorResponse("ctx", prismaError("P1001"));
     expect(response.status).toBe(500);
     await expect(response.json()).resolves.toEqual({
       error: "Something went wrong. Please try again.",
