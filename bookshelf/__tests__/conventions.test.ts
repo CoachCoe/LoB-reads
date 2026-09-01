@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
 /**
@@ -371,6 +371,44 @@ describe("client calls resolve to routes that exist", () => {
         .filter((method) => !exported.includes(method))
         .map((method) => `${file}: ${method} ${url}`);
     });
+
+    expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * Pages a reader with no account must be able to open.
+ *
+ * PRD section 2: the browser "arrives with no account, follows a subject or an
+ * author. Must never hit a login wall to look at a book or a public shelf." /map
+ * is on this list by decision (audit OQ-4): it renders only
+ * community-contributed data, and it was behind `redirect("/login")`, which is
+ * not "buried" — it is a wall.
+ *
+ * Listed rather than derived, so making a public page private is a visible
+ * choice rather than a silent one.
+ */
+describe("public pages stay public", () => {
+  const PUBLIC_PAGES = [
+    "src/app/(main)/page.tsx",
+    "src/app/(main)/about/page.tsx",
+    "src/app/(main)/map/page.tsx",
+    "src/app/(main)/search/page.tsx",
+    "src/app/(main)/work/[olKey]/page.tsx",
+    "src/app/(main)/author/[authorName]/page.tsx",
+    "src/app/(main)/shelf/[shelfId]/page.tsx",
+    "src/app/(main)/user/[userId]/page.tsx",
+  ];
+
+  it("every listed page exists", () => {
+    const missing = PUBLIC_PAGES.filter((file) => !existsSync(file));
+    expect(missing).toEqual([]);
+  });
+
+  it("none of them redirects to the login page", () => {
+    const offenders = PUBLIC_PAGES.filter((file) =>
+      /redirect\(\s*[`"']\/login/.test(withoutComments(read(file)))
+    );
 
     expect(offenders).toEqual([]);
   });

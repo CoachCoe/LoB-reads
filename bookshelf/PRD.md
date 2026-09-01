@@ -120,10 +120,15 @@ tier, because that is R1 and not a configuration problem.
 
 ### P2 — worth doing, nothing waits on it
 
-**R6. Make the location features discoverable.** They are the differentiator
-and they are buried on work and author pages. A reader with no account has no
-route to the map. (`WorkLocationsSection` was in fact unreachable until
-recently — built, wired to nothing.)
+**R6. ~~Make the location features discoverable.~~ Largely done.** `/map` was
+not merely buried — it was behind `redirect("/login")`, so a reader with no
+account could not reach it at all. It is public now (audit OQ-4), and the navbar
+renders Home, Discover, Map and About for signed-out visitors, who previously got
+no navigation whatever and, on a phone, not even a search box. A conventions test
+pins the public-page list so making one private is a visible choice.
+
+What is left is placement rather than access: locations still appear only far
+down work and author pages, and nothing on the home page points at the map.
 
 **R7. Generalise the reachability check.** `core-loop.test.ts` now asserts the
 work page mounts its components, but only that page. Three separate components
