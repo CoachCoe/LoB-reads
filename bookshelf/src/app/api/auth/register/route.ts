@@ -3,22 +3,29 @@ import bcrypt from "bcryptjs";
 import { findUserByEmail, createUserWithDefaultShelves } from "@/server/users";
 import { errorResponse, parseBody } from "@/lib/http/api";
 import { registerSchema } from "@/lib/http/schemas";
-import { checkLimit, getClientIp, LIMITS } from "@/lib/rate-limit";
+import { checkLimit, clientRateLimitKey, LIMITS } from "@/lib/rate-limit";
 
 /** Work factor for password hashing. */
 const BCRYPT_ROUNDS = 10;
 
 export async function POST(request: Request) {
   try {
-    const limit = checkLimit(`register:${getClientIp(request)}`, LIMITS.register);
-    if (!limit.allowed) {
-      return NextResponse.json(
-        { error: "Too many sign-up attempts. Please try again later." },
-        {
-          status: 429,
-          headers: { "Retry-After": String(limit.retryAfterSeconds) },
-        }
-      );
+    // Only when the client is identifiable. getClientIp returns null if nothing
+    // trusted appended X-Forwarded-For, and keying every request on one shared
+    // bucket meant five sign-ups an hour for the entire deployment — closing
+    // registration site-wide from five requests. See SEC-3 and FLOW-2.
+    const key = clientRateLimitKey(request, "register");
+    if (key) {
+      const limit = checkLimit(key, LIMITS.register);
+      if (!limit.allowed) {
+        return NextResponse.json(
+          { error: "Too many sign-up attempts. Please try again later." },
+          {
+            status: 429,
+            headers: { "Retry-After": String(limit.retryAfterSeconds) },
+          }
+        );
+      }
     }
 
     // The schema lowercases and trims the address. Postgres string equality is

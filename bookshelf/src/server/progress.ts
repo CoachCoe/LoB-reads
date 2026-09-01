@@ -132,8 +132,12 @@ export async function startReading(
   const open = await getOpenSession(userId, workKey);
   if (open) return open;
 
+  // getEditionPageCount throws if the edition is not this work's.
   const edition = editionKey
-    ? { olKey: editionKey, numberOfPages: await getEditionPageCount(editionKey) }
+    ? {
+        olKey: editionKey,
+        numberOfPages: await getEditionPageCount(workKey, editionKey),
+      }
     : await getDefaultEdition(workKey);
 
   const session = await prisma.readingSession.create({
@@ -185,31 +189,47 @@ export async function updateProgress(
   return updated;
 }
 
-export async function finishReading(userId: string, workKey: string) {
+/**
+ * Mark a work finished.
+ *
+ * `finishedAt` defaults to now, which is right for a reader pressing the button.
+ * The Goodreads importer passes the date from the CSV instead: it parses every
+ * `Date Read`, and before this parameter existed it used the value only to
+ * decide *whether* to record a finish and then threw it away, stamping the
+ * import time on all of them. A 300-book export spanning 2010-2024 became 300
+ * books finished today, so this year's /wrapped reported all 300 and every
+ * earlier year reported none — against the settings page's explicit promise
+ * that "your books, ratings, shelves, and reading dates will be imported".
+ */
+export async function finishReading(
+  userId: string,
+  workKey: string,
+  finishedAt?: Date
+) {
   const session = await getOpenSession(userId, workKey);
+  const when = finishedAt ?? new Date();
 
   const finished = session
     ? await prisma.readingSession.update({
         where: { id: session.id },
         data: {
-          finishedAt: new Date(),
+          finishedAt: when,
           currentPage: session.pageCount ?? session.currentPage,
         },
       })
     : // Finishing something never started is a legitimate action: a reader
       // logging a book they read before joining.
-      await startAndFinish(userId, workKey);
+      await startAndFinish(userId, workKey, when);
 
   await moveToExclusiveShelf(userId, workKey, "Read");
   return finished;
 }
 
-async function startAndFinish(userId: string, workKey: string) {
+async function startAndFinish(userId: string, workKey: string, when: Date) {
   if (!(await workExists(workKey))) {
     throw new NotFoundError("That book is not in the catalog");
   }
   const edition = await getDefaultEdition(workKey);
-  const now = new Date();
 
   return prisma.readingSession.create({
     data: {
@@ -218,8 +238,11 @@ async function startAndFinish(userId: string, workKey: string) {
       editionKey: edition?.olKey ?? null,
       pageCount: edition?.numberOfPages ?? null,
       currentPage: edition?.numberOfPages ?? 0,
-      startedAt: now,
-      finishedAt: now,
+      // startedAt takes the same date rather than now: getLatestSessionForWork
+      // orders on it, so a 2014 book imported today must not sort ahead of one
+      // finished last week.
+      startedAt: when,
+      finishedAt: when,
     },
   });
 }

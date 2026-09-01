@@ -153,12 +153,54 @@ describe("M2 acceptance: known-title ranking", () => {
     await expect(searchWorks("it's a 'quoted' \"phrase\"")).resolves.toBeInstanceOf(Array);
   });
 
+  /**
+   * TEST-17. This searched for "the" and asserted only that the two pages did
+   * not overlap — which `searchWorks` satisfies by ignoring `offset` entirely,
+   * or by returning [] for any offset above zero.
+   *
+   * It was worse than that. **"the" is an English stopword**, so
+   * `websearch_to_tsquery('english', 'the')` produces an empty query and the
+   * fixture matched nothing on either page. Two empty arrays do not overlap, so
+   * the suite's only pagination test was asserting that [] equals [] and had
+   * never exercised pagination at all.
+   *
+   * A seeded set with a distinctive token instead, and both pages asserted
+   * non-empty — the guard read-path-plans.test.ts already applies to
+   * worksRowsRead ("returns 0 when no line matches, so a bound on its own would
+   * pass vacuously").
+   */
   it("paginates without repeating a result", async () => {
-    const first = await searchWorks("the", { limit: 5, offset: 0 });
-    const second = await searchWorks("the", { limit: 5, offset: 5 });
+    const keys = Array.from({ length: 12 }, (_, i) => `OLPAG${String(i).padStart(3, "0")}W`);
+    for (const [i, key] of keys.entries()) {
+      await prisma.$executeRaw`
+        INSERT INTO catalog.works (ol_key, title, author_names, subjects, edition_count)
+        VALUES (${key}, ${`Pagination Zarquon ${i}`}, 'A', ARRAY['Fiction'], ${100 - i})
+        ON CONFLICT (ol_key) DO UPDATE SET title = EXCLUDED.title`;
+    }
 
-    const overlap = first.filter((a) => second.some((b) => b.olKey === a.olKey));
-    expect(overlap).toEqual([]);
+    try {
+      const first = await searchWorks("Zarquon", { limit: 5, offset: 0 });
+      const second = await searchWorks("Zarquon", { limit: 5, offset: 5 });
+
+      expect(first).toHaveLength(5);
+      expect(second).toHaveLength(5);
+
+      const overlap = first.filter((a) =>
+        second.some((b) => b.olKey === a.olKey)
+      );
+      expect(overlap).toEqual([]);
+
+      // And the offset actually walks the same ordering rather than reshuffling.
+      const third = await searchWorks("Zarquon", { limit: 10, offset: 0 });
+      expect(third.map((w) => w.olKey)).toEqual([
+        ...first.map((w) => w.olKey),
+        ...second.map((w) => w.olKey),
+      ]);
+    } finally {
+      await prisma.$executeRawUnsafe(
+        `DELETE FROM catalog.works WHERE ol_key LIKE 'OLPAG%'`
+      );
+    }
   });
 
   it("counts matches consistently with what it returns", async () => {
@@ -262,10 +304,51 @@ describe("work detail", () => {
     expect(() => JSON.stringify(popular)).not.toThrow();
   });
 
-  it("orders popular works by edition count", async () => {
-    const popular = await getPopularWorks(5);
-    const counts = popular.map((w) => w.editionCount);
-    expect([...counts].sort((a, b) => b - a)).toEqual(counts);
+  /**
+   * TEST-6. This compared the returned counts to their own descending sort,
+   * which **any constant list satisfies** — and the fixture's counts were equal,
+   * so reversing the SQL to `edition_count ASC, ol_key DESC` passed. That
+   * ordering is the exact reverse of works_edition_count_ol_key_idx, so it is
+   * still a no-Sort index scan and read-path-plans.test.ts passed too: index
+   * present, no Sort node, rows read within bounds. /search with no query serves
+   * getPopularWorks(24), so the front door would have shown the 24 most obscure
+   * works in a 6.9M-row catalog.
+   *
+   * Absolute identity instead, over a seeded spread.
+   */
+  it("orders popular works by edition count, most first", async () => {
+    const spread = [
+      { key: "OLPOP001W", count: 5 },
+      { key: "OLPOP002W", count: 90 },
+      { key: "OLPOP003W", count: 40 },
+    ];
+    for (const w of spread) {
+      await prisma.$executeRaw`
+        INSERT INTO catalog.works (ol_key, title, author_names, subjects, edition_count)
+        VALUES (${w.key}, ${"Popularity " + w.key}, 'A', ARRAY['Fiction'], ${w.count})
+        ON CONFLICT (ol_key) DO UPDATE SET edition_count = EXCLUDED.edition_count`;
+    }
+
+    try {
+      const popular = await getPopularWorks(50);
+      const seeded = popular.filter((w) => w.olKey.startsWith("OLPOP"));
+
+      // The seeded works appear most-editions-first, by key, not merely in some
+      // order that sorts to itself.
+      expect(seeded.map((w) => w.olKey)).toEqual([
+        "OLPOP002W",
+        "OLPOP003W",
+        "OLPOP001W",
+      ]);
+
+      // And a strict inequality, so a constant list cannot pass.
+      const counts = popular.map((w) => w.editionCount);
+      expect(counts[0]).toBeGreaterThan(counts[counts.length - 1]);
+    } finally {
+      await prisma.$executeRawUnsafe(
+        `DELETE FROM catalog.works WHERE ol_key LIKE 'OLPOP%'`
+      );
+    }
   });
 });
 

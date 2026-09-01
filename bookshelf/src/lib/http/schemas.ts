@@ -92,7 +92,15 @@ export const createReviewSchema = z.object({
 export const updateProgressSchema = z
   .object({
     workKey,
-    editionKey: z.string().trim().max(40).optional(),
+    // Shaped like a key, as `workKey` above already is. Length alone let any
+    // 40-character string through to a lookup that did not check which work the
+    // edition belonged to — see FLOW-5.
+    editionKey: z
+      .string()
+      .trim()
+      .max(40)
+      .regex(/^OL[0-9A-Za-z]+M$/, "Not a valid edition key")
+      .optional(),
     action: z.enum(["start", "finish"]).optional(),
     // Was entirely unvalidated: negative page numbers were accepted.
     currentPage: z.int().min(0).max(100_000).optional(),

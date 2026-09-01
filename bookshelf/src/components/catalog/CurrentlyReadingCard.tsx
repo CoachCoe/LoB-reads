@@ -38,7 +38,17 @@ export default function CurrentlyReadingCard({
         <div className="mt-2">
           {session.percent !== null ? (
             <>
-              <ProgressBar value={session.percent} max={100} />
+              {/*
+                ProgressBar's label is hardcoded "{value} / {max} pages", so
+                passing a percentage against 100 rendered "15 / 100 pages"
+                directly above this card's own "page 47 of 320 · 15%". The card
+                already states the numbers, so the bar carries none. FLOW-7.
+              */}
+              <ProgressBar
+                value={session.percent}
+                max={100}
+                showLabel={false}
+              />
               <p className="mt-1 text-xs tabular-nums text-gray-500 dark:text-gray-400">
                 page {session.currentPage} of {session.pageCount} ·{" "}
                 {session.percent}%

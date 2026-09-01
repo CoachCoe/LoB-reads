@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
+import { NotFoundError } from "@/lib/http/errors";
 
 /**
  * Reads over the Open Library catalog.
@@ -471,14 +472,35 @@ export async function getWorksByKeys(
   return new Map(rows.map((row) => [row.olKey, row]));
 }
 
-/** Page count for a specific edition, used when starting a reading session. */
+/**
+ * Page count for one edition **of a given work**.
+ *
+ * Scoped by `work_key` as well as `ol_key`. Without it a reader could start a
+ * session on a 480-page book naming an edition of something else entirely, and
+ * the session's `pageCount` snapshot — which the progress UI now treats as the
+ * single source of truth, and which `updateProgress` validates page numbers
+ * against — would be that other book's. The row is frozen by design, so it stays
+ * wrong permanently, and /wrapped reports the work as the reader's longest of the
+ * year. `getDefaultEdition` below has always filtered on `work_key`; only the
+ * explicit-editionKey path did not. See FLOW-5.
+ *
+ * Throws `NotFoundError` when the work has no such edition. It returns `null`
+ * for "that edition states no page count", which is a normal answer — and a
+ * signature carrying both absences as values invites `if (!pages)`, which is
+ * wrong for exactly one of them.
+ */
 export async function getEditionPageCount(
+  workKey: string,
   editionKey: string
 ): Promise<number | null> {
   const rows = await prisma.$queryRaw<{ pages: number | null }[]>`
-    SELECT number_of_pages AS pages FROM catalog.editions WHERE ol_key = ${editionKey}
+    SELECT number_of_pages AS pages FROM catalog.editions
+    WHERE ol_key = ${editionKey} AND work_key = ${workKey}
   `;
-  return rows[0]?.pages ?? null;
+  if (rows.length === 0) {
+    throw new NotFoundError("That edition is not part of this book");
+  }
+  return rows[0].pages;
 }
 
 /** The edition a reader is most likely to hold, for a default page count. */

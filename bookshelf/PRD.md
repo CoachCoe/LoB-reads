@@ -38,7 +38,7 @@ is table stakes that has to be good enough not to get in the way.
 Six milestones are built: ingest, search, shelves on `work_key`, an enrichment
 worker, the social layer, and Goodreads import with a review queue. A 6.9
 million-work catalog is loaded, 11 GB, with 5.5M ratings behind
-recommendations. 498 tests pass.
+recommendations. 600 tests pass.
 
 The gaps are not features that were forgotten; they are the consequences of
 running at real scale for the first time. See `STATUS.md`.
@@ -122,7 +122,7 @@ Server allocation with room to spare.
 There is also a release gate now: `npm run deploy:verify` checks connection
 strings are the right way round, extensions, migrations, `work_mem`, the four
 search indexes, the search trigger, statistics, catalog contents, both probes,
-and the CSP's CDN origin — 21 checks, or 29 with a running app to point at. It
+and the CSP's CDN origin, plus eight more with a running app to point at. It
 exits non-zero, so it gates a release rather than being a checklist someone
 reads.
 *Needs from you:* an Azure subscription, and `GOOGLE_BOOKS_API_KEY`.
@@ -154,12 +154,12 @@ quadratic past 10,000 keys and keyed on the client-controlled end of
 
 Also open from that audit, and not housekeeping: `/my-books` was shipping Prisma
 to the browser and never hydrated (fixed), CI's release gate could never pass
-(fixed), and two documented features — custom shelves and creating a fictional
+(fixed), and, historically, two documented features — custom shelves and creating a fictional
 world — have working API routes with no UI to reach them. See
 `docs/audit/2026-08-31-work-completed.md` for what was deferred and why. `.env.local`
 is deleted and `npm run dev` works; `work_mem` now travels in a migration
 instead of being set by hand; the test database is built from the migration
-chain rather than `db push`; and all 19 migrations apply cleanly to Postgres 16,
+chain rather than `db push`; and all 21 migrations apply cleanly to Postgres 16,
 which local development still does not run.
 
 ---

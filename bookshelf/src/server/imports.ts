@@ -11,6 +11,7 @@ import { getUserShelfSummaries, addWorkToShelf } from "@/server/shelves";
 import { createOrUpdateReview } from "@/server/reviews";
 import { finishReading } from "@/server/progress";
 import { NotFoundError, ValidationError } from "@/lib/http/errors";
+import { canonicalIsbn13 } from "@/lib/sources/isbn";
 
 /**
  * Goodreads import as a reviewable session.
@@ -95,7 +96,15 @@ export async function createImportSession(
           rowNumber: index + 1,
           title: row.title,
           author: row.author,
-          isbn13: row.isbn13 ?? row.isbn,
+          // Canonicalised, not raw. This column is compared against
+          // catalog.editions.isbn13, which the ingest guarantees is a validated
+          // 13-digit string — so an ISBN-10 or a hyphenated ISBN-13 stored as
+          // it arrived joins against nothing and the row falls through to fuzzy
+          // matching or the review queue. canonicalIsbn13's own docstring states
+          // the rule ("every cross-source join keys on ISBN-13, so ISBN-10s are
+          // converted rather than stored as a second dialect") and it had no
+          // caller in src/ at all. DEAD-1.
+          isbn13: canonicalIsbn13(row.isbn13 ?? row.isbn),
           myRating: Number.isInteger(row.myRating) ? row.myRating : null,
           exclusiveShelf: row.exclusiveShelf,
           dateRead: row.dateRead,
@@ -389,7 +398,9 @@ async function applyRow(
 
   if (row.dateRead && row.exclusiveShelf === "read") {
     try {
-      await finishReading(userId, row.workKey);
+      // The parsed date, not now. It was already being read from the CSV and
+      // stored on the row; only this call site discarded it. See FLOW-10.
+      await finishReading(userId, row.workKey, row.dateRead);
     } catch {
       // Nice to have, and already implied by the "Read" shelf.
     }

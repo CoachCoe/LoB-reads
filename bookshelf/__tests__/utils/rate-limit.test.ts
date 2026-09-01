@@ -1,12 +1,7 @@
 /**
  * @jest-environment node
  */
-import {
-  checkLimit,
-  getClientIp,
-  clientIpFromHeaders,
-  __resetRateLimits,
-} from "@/lib/rate-limit";
+import { checkLimit, getClientIp, clientIpFromHeaders, __resetRateLimits, refundHit, clientRateLimitKey } from "@/lib/rate-limit";
 
 describe("checkLimit", () => {
   beforeEach(() => {
@@ -131,9 +126,26 @@ describe("getClientIp", () => {
     expect(getClientIp(request)).toBe("203.0.113.9");
   });
 
-  it("buckets unidentifiable clients together rather than exempting them", () => {
+  /**
+   * This assertion used to expect the string "unknown", and its name said
+   * "buckets unidentifiable clients together rather than exempting them" — i.e.
+   * it encoded the shared bucket as the deliberate, safe choice.
+   *
+   * It is the opposite of safe. If nothing in front appends X-Forwarded-For
+   * (a misconfigured TRUSTED_PROXY_HOPS, or a platform whose ingress does not
+   * set x-real-ip) then EVERY request is unidentified, so they all share one
+   * bucket. `login:ip:unknown` at 10 per 15 minutes means ten attempts from one
+   * attacker refuse sign-in to every user of the site, indefinitely, from forty
+   * requests an hour. Five requests close registration.
+   *
+   * Per-client that reasoning is sound; across the whole population it is a
+   * self-service outage. Callers now fall back to their per-account limit
+   * instead, which is what `refuses to let one origin lock out the site` below
+   * pins.
+   */
+  it("cannot identify a client with no proxy headers at all", () => {
     const request = new Request("https://example.com");
-    expect(getClientIp(request)).toBe("unknown");
+    expect(getClientIp(request)).toBeNull();
   });
 });
 
@@ -160,14 +172,18 @@ describe("clientIpFromHeaders trusted-hop configuration", () => {
 
   it("ignores the header entirely when nothing trusted is in front", () => {
     withHops("0", () => {
-      expect(clientIpFromHeaders("203.0.113.5, 70.41.3.18")).toBe("unknown");
+      expect(clientIpFromHeaders("203.0.113.5, 70.41.3.18")).toBeNull();
       expect(clientIpFromHeaders("203.0.113.5", "10.0.0.9")).toBe("10.0.0.9");
     });
   });
 
-  it("shares one bucket when the chain is shorter than the trusted hop count", () => {
+  it("declines to guess when the chain is shorter than the trusted hop count", () => {
+    // The SEC-3 case: hops configured higher than the real topology. Returning
+    // an element here would hand back a proxy's own address, shared by every
+    // client behind it — the same outage as the no-header case, but harder to
+    // spot because a plausible-looking IP comes back.
     withHops("3", () => {
-      expect(clientIpFromHeaders("203.0.113.5, 70.41.3.18")).toBe("unknown");
+      expect(clientIpFromHeaders("203.0.113.5, 70.41.3.18")).toBeNull();
     });
   });
 
@@ -175,5 +191,115 @@ describe("clientIpFromHeaders trusted-hop configuration", () => {
     withHops("banana", () => {
       expect(clientIpFromHeaders("203.0.113.5, 70.41.3.18")).toBe("70.41.3.18");
     });
+  });
+});
+
+/**
+ * SEC-4: a correct password must not spend the budget an attacker is draining.
+ *
+ * The login path called `checkLimit` before knowing whether the password was
+ * right, so ten wrong guesses every fifteen minutes locked a known address out
+ * permanently — and FLOW-1 meant the reader was told their password was wrong.
+ *
+ * The first attempt at this was a check-without-recording call, and /bastion was
+ * right to reject it: `checkLimit` is a single synchronous check-and-record, so
+ * it bounds concurrency. Reading the bucket, awaiting bcrypt for ~100ms and
+ * recording afterwards let parallel attempts all observe an empty bucket and all
+ * proceed. The concurrency assertion below is the one that would have caught it.
+ */
+describe("refundHit", () => {
+  beforeEach(() => {
+    __resetRateLimits();
+  });
+
+  const options = { limit: 3, windowMs: 60_000 };
+
+  it("gives one attempt back", () => {
+    checkLimit("k", options);
+    checkLimit("k", options);
+    expect(checkLimit("k", options).allowed).toBe(true);
+    expect(checkLimit("k", options).allowed).toBe(false);
+
+    refundHit("k");
+    expect(checkLimit("k", options).allowed).toBe(true);
+  });
+
+  it("does nothing to a key with no hits", () => {
+    refundHit("never-seen");
+    expect(checkLimit("never-seen", options).remaining).toBe(2);
+  });
+
+  it("keeps a reader signing in indefinitely without spending the budget", () => {
+    const key = "login:email:reader@example.com";
+
+    // Ten successful sign-ins: record then refund each time.
+    for (let i = 0; i < 10; i++) {
+      expect(checkLimit(key, options).allowed).toBe(true);
+      refundHit(key);
+    }
+
+    // The budget is untouched, so an attacker has not been handed a lockout and
+    // the reader has not locked themselves out either.
+    expect(checkLimit(key, options).allowed).toBe(true);
+  });
+
+  it("still bounds attempts that are never refunded", () => {
+    const key = "login:email:victim@example.com";
+    for (let i = 0; i < 3; i++) checkLimit(key, options);
+
+    // Three failures, no refunds: the limiter still does its job.
+    expect(checkLimit(key, options).allowed).toBe(false);
+  });
+
+  /**
+   * The regression /bastion found, asserted directly.
+   *
+   * With a check-then-act split, N concurrent attempts all read an empty bucket
+   * before any of them writes, so a limit of 3 admits N. Recording on arrival is
+   * what makes this hold, and it holds only because checkLimit does both halves
+   * in one synchronous step.
+   */
+  it("admits no more than the limit under concurrent arrival", async () => {
+    const key = "login:ip:203.0.113.1";
+
+    const attempts = await Promise.all(
+      Array.from({ length: 50 }, async () => {
+        const result = checkLimit(key, options);
+        // An await between the check and whatever follows it, as bcrypt is.
+        await Promise.resolve();
+        return result.allowed;
+      })
+    );
+
+    expect(attempts.filter(Boolean)).toHaveLength(options.limit);
+  });
+});
+
+/**
+ * The key builder exists because `string | null` is not a guard.
+ *
+ * TypeScript accepts `` `login:ip:${ip}` `` with a nullable `ip` and produces the
+ * literal "login:ip:null" — one shared bucket for the entire internet, which is
+ * the outage the null was introduced to prevent, reintroduced by writing the
+ * obvious thing. Returning the key already built means there is no null to
+ * interpolate.
+ */
+describe("clientRateLimitKey", () => {
+  const request = (headers: Record<string, string> = {}) =>
+    new Request("https://example.com", { headers });
+
+  it("builds a prefixed key for an identifiable client", () => {
+    expect(
+      clientRateLimitKey(request({ "x-real-ip": "203.0.113.9" }), "register")
+    ).toBe("register:203.0.113.9");
+  });
+
+  it("returns null rather than a key naming null", () => {
+    const key = clientRateLimitKey(request(), "register");
+
+    expect(key).toBeNull();
+    // The failure mode, stated: any string here would be shared by every caller.
+    expect(key).not.toBe("register:null");
+    expect(key).not.toBe("register:unknown");
   });
 });

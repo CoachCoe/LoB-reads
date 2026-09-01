@@ -25,6 +25,16 @@ export interface WorkLocationData {
   createdAt: Date;
 }
 
+/**
+ * Most contributed locations shown for one work or author.
+ *
+ * Sibling read paths are all bounded — getShelfById pages, getAuthorByKey caps
+ * at AUTHOR_WORKS_LIMIT, getWorkEditions pages — and these two were not. Well
+ * above any real book's set of places, and a bound on a contributed table that
+ * anyone signed in can grow.
+ */
+export const LOCATIONS_PER_ENTITY = 200;
+
 export async function getWorkLocations(
   workKey: string
 ): Promise<WorkLocationData[]> {
@@ -39,6 +49,7 @@ export async function getWorkLocations(
       },
     },
     orderBy: { createdAt: "desc" },
+    take: LOCATIONS_PER_ENTITY,
   });
 
   return locations.map((loc) => ({

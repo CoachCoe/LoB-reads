@@ -4,6 +4,7 @@ import { ZodError, ZodType } from "zod";
 import {
   AuthorizationError,
   NotFoundError,
+  PayloadTooLargeError,
   ValidationError,
 } from "@/lib/http/errors";
 
@@ -25,6 +26,10 @@ export function errorResponse(context: string, error: unknown): NextResponse {
 
   if (error instanceof ValidationError) {
     return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+
+  if (error instanceof PayloadTooLargeError) {
+    return NextResponse.json({ error: error.message }, { status: 413 });
   }
 
   if (error instanceof ZodError) {
@@ -49,6 +54,16 @@ export function errorResponse(context: string, error: unknown): NextResponse {
     if (error.code === "P2002") {
       return NextResponse.json({ error: "That already exists" }, { status: 409 });
     }
+    // P2003: a foreign key that does not resolve — the row being pointed at is
+    // gone. followUser is the reachable case: it validates only self-follow, so
+    // pressing Follow on a reader who has since deleted their account raised
+    // P2003 and answered 500 with a generic toast, and POST
+    // /api/users/anything/follow did the same. Every other write path in the app
+    // checks its foreign reference explicitly; this maps the one that does not,
+    // and covers the location writes for free. FLOW-15.
+    if (error.code === "P2003") {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
   }
 
   console.error(`${context}:`, error);
@@ -62,13 +77,82 @@ export function errorResponse(context: string, error: unknown): NextResponse {
  * Parse a request body against a schema. Throws ZodError, which
  * `errorResponse` turns into a 400 carrying the first readable message.
  */
+/**
+ * Largest JSON body any route accepts.
+ *
+ * The biggest legitimate one in the app is a review: `longText` caps content at
+ * 10,000 characters, and a location description the same, so 64 KB leaves
+ * several times the headroom needed even after JSON escaping and multibyte
+ * characters. Upload routes do not come through here — they read `formData()`
+ * and carry their own, larger limit.
+ */
+export const MAX_JSON_BODY_BYTES = 64 * 1024;
+
+/**
+ * Read a body, refusing to buffer more than `maxBytes` of it.
+ *
+ * `request.json()` accumulates the whole body before anything can object, and
+ * Content-Length is advisory and absent on a chunked request — so the declared
+ * check below is a cheap first gate and this is the one that actually holds.
+ * Bytes are counted as they arrive and the stream is cancelled the moment the
+ * limit is passed, so an attacker sending 200 MB has 64 KB of it read and the
+ * producer is told to stop rather than left to finish sending.
+ */
+async function readBounded(request: Request, maxBytes: number): Promise<string> {
+  const body = request.body;
+  if (!body) return "";
+
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    total += value.byteLength;
+    if (total > maxBytes) {
+      // cancel(), not releaseLock(). Releasing the lock only gives up the
+      // reader; it leaves the rest of the body to be received, so the heap is
+      // bounded and the work the connection does is not. cancel() signals the
+      // producer to stop, which is the whole point of refusing early.
+      await reader.cancel();
+      throw new PayloadTooLargeError();
+    }
+    chunks.push(value);
+  }
+
+  return new TextDecoder().decode(
+    chunks.length === 1 ? chunks[0] : Buffer.concat(chunks)
+  );
+}
+
+/**
+ * Parse a request body against a schema. Throws ZodError, which
+ * `errorResponse` turns into a 400 carrying the first readable message.
+ *
+ * The size gate is here rather than at each route because this is the single
+ * place every JSON body passes through. `declaredBodyTooLarge` already existed
+ * for the same purpose but had only ever been wired to the three multipart
+ * routes, so the eleven routes that post JSON — reviews, shelves, progress, both
+ * location types, worlds, profiles, import confirmations — would each buffer
+ * whatever they were sent. Twenty concurrent 200 MB posts is 4 GB of heap and an
+ * OOM-killed container, from one signed-in account.
+ */
 export async function parseBody<T>(
   request: Request,
-  schema: ZodType<T>
+  schema: ZodType<T>,
+  { maxBytes = MAX_JSON_BODY_BYTES }: { maxBytes?: number } = {}
 ): Promise<T> {
+  if (declaredBodyTooLarge(request, maxBytes)) {
+    throw new PayloadTooLargeError();
+  }
+
+  const text = await readBounded(request, maxBytes);
+
   let raw: unknown;
   try {
-    raw = await request.json();
+    raw = JSON.parse(text);
   } catch {
     throw new ValidationError("Request body must be valid JSON");
   }

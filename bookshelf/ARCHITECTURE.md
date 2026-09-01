@@ -363,15 +363,17 @@ own chips linked straight into the worst case:
 
 A title or author search — what people actually type — barely moves. Subjects
 are indexed for containment instead, so a chip is a browse:
-`/search?subject=Fiction` answers in 95ms with an exact count from
+`/search?subject=Fiction` answers in 0.031s with an exact count from
 `subject_counts`, against 110 seconds before.
 
-Typing a generic word into the search box is still slower than it should be
-(4.2s for "Fiction"), because 10,061 matching rows are fetched from a 3.4GB
-table with `shared_buffers` at 128MB — the same query costs 213,848 block
-reads cold and 67 warm. Raising `shared_buffers` toward 8GB on a 64GB host
-would keep the catalog resident; it needs a restart, so it belongs with the
-deployment settings rather than in a migration.
+This diagnosis was wrong and is kept only because it was acted on: the
+paragraph here used to blame `shared_buffers` at 128MB for a 4.2s `Fiction`
+query and conclude that the fix "belongs with the deployment settings rather
+than in a migration". The real cause was a lossy bitmap at the 4MB `work_mem`
+default — see STATUS.md's "what the numbers actually showed" — the page is
+1.23s after raising it, `shared_buffers` at 3GB leaves it at 1.2s, and the
+setting *does* travel in a migration
+(`20260821120000_work_mem_for_bitmap_scans`), asserted by `deploy:verify`.
 
 **The older note below is kept because the reasoning still holds for any large
 match set.** "Fiction" matches 735,956

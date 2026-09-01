@@ -53,7 +53,7 @@ vanishing. This is the single most load-bearing decision in the schema.
 
 ```
 catalog   works 6,943,467   editions 8,885,863   authors 3,244,953
-social    rated works 8,663   ratings 5,518,744   similarity pairs 173,156
+social    rated works 8,663   ratings 5,518,739   similarity pairs 173,156
 derived   subject counts 875,472
 database  11 GB
 ```
@@ -91,7 +91,7 @@ cause turned out to be a lossy bitmap. 1.23 s is that query after raising
 
 ## Quality posture
 
-498 tests: 202 unit, 296 integration. Integration runs against real Postgres
+600 tests: 263 unit, 337 integration. Integration runs against real Postgres
 and must run serially — they share a database and truncate between tests.
 
 The 2026-08-31 audit added 127 of those, and the reason is worth stating plainly:
@@ -141,7 +141,11 @@ four-second search page, and a component wired to nothing.
   in a body is not covered; and nothing yet asserts that a given page mounts a
   given component beyond the work page. The audit found five "built, wired to
   nothing" cases that remain — see the work-completed doc.
-- **Anything visual.** No screenshot or DOM-level assertions. The dark-mode
+- **Layout and spacing.** No screenshot assertions. Component DOM assertions
+  exist for seven components, colour contrast is computed from the stylesheet
+  tokens (`contrast.test.ts`), and two conventions suites guard the palette
+  ("gold is never a text colour", "grey text is never unpaired"). What is still
+  unchecked is layout, spacing and anything needing a rendered page. The
   sweep was verified by grep and a build, not by looking.
 - **Behaviour at catalog scale.** Deliberately: plan assertions replace it.
 
@@ -343,11 +347,11 @@ those differs from `npm run dev` in a way that has hidden a real failure.
 |---|---|
 | image | 479 MB, `output: "standalone"`, Debian, unprivileged |
 | `next build` | 5.4 s, ~2 GB peak — more than a burstable instance has, so CI builds it |
-| migrations | all 19 apply to an empty Postgres 16 |
+| migrations | all 21 apply to an empty Postgres 16 |
 | catalog dump | **103 s**, 1.7 GB compressed from 10 GB |
 | storage | 11/11 checks against a real blob endpoint, both private and public postures |
 | probes | liveness stays 200 with the database stopped; readiness returns 503 in 2.0 s |
-| release check | `npm run deploy:verify` — 21 assertions over config and schema (23 with distinct pooled/direct URLs), 29 with a running app |
+| release check | `npm run deploy:verify` — every config and schema assertion that applies to the environment given, plus eight more against a running app; exits non-zero if any fail |
 
 The pooled-versus-direct connection split had never been exercised — local
 development points both variables at the same string. Under PgBouncer in

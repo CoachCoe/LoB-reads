@@ -289,6 +289,14 @@ each decision produced.
 | **OQ-4** is `/map` public? | Yes | Redirect removed; the navbar now renders Home, Discover, Map and About for signed-out visitors, who previously got no navigation at all and, on a phone, not even a search box. A conventions test pins the public-page list. |
 | **OQ-6** registration enumeration | Recommendation accepted | Message kept. Without email verification, a generic response means a reader who forgot they have an account gets a success message and no account — a frequent harm against a modest disclosure — and SEC-2 made the 5/hour cap real. Reasoning recorded next to the code with the condition that would reopen it. |
 | **OQ-8** which table owns work↔world | Recommendation accepted | Counted from `app.work_locations`, the table readers actually write, DISTINCT by work. Every world previously read "0 books" outside a dev-seeded database. |
+> **Corrected 2026-09-01 (ORG-8).** The bounding described in this
+> section was **reverted** in `92128f3`: it made `?q=dune` 500x slower
+> (71 s query, 116 s page) against the real 6.9M-work catalog, because
+> `ORDER BY edition_count DESC LIMIT n` invited an index-order walk that
+> filtered 6,943,467 rows. `src/server/catalog.ts` is a single unbounded
+> ranking pass, and `read-path-plans.test.ts` now asserts exactly one
+> `LIMIT`. PRD R1 is open. The text below is left as written.
+
 | **OQ-3** approximate search results? | Yes | R1's candidate set is now bounded — see below. |
 
 **BLOCK-3 and BLOCK-4 followed from OQ-7.** Both had working, tested routes and
@@ -336,6 +344,18 @@ carries the same `NEXTAUTH_SECRET` as the live `.env`, and `bookshelf/.vercel/`,
 which is stale now the target is Azure.
 
 ---
+
+> **Corrected 2026-09-01 (ORG-1).** This document's summary claims the
+> list below "is now accurate rather than aspirational". It is not: it
+> still presents as deferred at least fourteen items that its own later
+> rounds fixed, and the code confirms fixed — BLOCK-3, BLOCK-4, FLOW-2,
+> FLOW-4, FLOW-13, FLOW-14, FLOW-24, FLOW-25, SEC-5, SEC-12, TEST-9,
+> TEST-10, TEST-1/2/3, OQ-7 and OQ-8. As of 2026-09-01 the genuinely
+> deferred items from this round are **FLOW-5, FLOW-10 and SPEC-2**
+> (verified: `getRecentImports`, `getWorkReviews` and `getAverageRating(s)`
+> still have no caller in `src/`). The table below is left as written
+> rather than edited, because a dated record that keeps being rewritten
+> is worth less than one with its errors marked.
 
 ## Deferred, with reasons
 

@@ -47,7 +47,19 @@ export default function LoginForm() {
       });
 
       if (result?.error) {
-        setError("Invalid email or password");
+        // The server's message when it wrote one for the reader, otherwise the
+        // generic line. authorize() throws "Too many sign-in attempts. Please
+        // wait a few minutes and try again." — written specifically to tell
+        // someone to stop and wait — and this discarded it, so a lockout was
+        // reported as a wrong password. The reader then retried, and before the
+        // SEC-4 fix each retry extended the window. NextAuth collapses
+        // unrecognised failures to "CredentialsSignin", which is the case the
+        // fallback covers.
+        setError(
+          result.error === "CredentialsSignin"
+            ? "Invalid email or password"
+            : result.error
+        );
       } else {
         router.push(callbackUrl);
         router.refresh();

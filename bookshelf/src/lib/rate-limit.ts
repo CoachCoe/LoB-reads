@@ -43,6 +43,32 @@ export interface RateLimitResult {
  */
 const MAX_BUCKETS = 10_000;
 
+/**
+ * Give back one recorded hit.
+ *
+ * The budget is spent by an attempt when it arrives, atomically, and refunded if
+ * the attempt turns out not to have been abuse — a correct password, or a request
+ * the schema rejected before any work was done.
+ *
+ * This exists instead of a check-without-recording call, which was tried and was
+ * a concurrency bypass: reading the bucket, awaiting bcrypt for ~100ms and
+ * recording afterwards let a hundred parallel sign-in attempts all observe an
+ * empty bucket and all proceed, so a limit of ten became a hundred. `checkLimit`
+ * is a single synchronous check-and-record and bounds concurrency for free;
+ * anything that splits it does not.
+ *
+ * Removes the most recent hit, so a refund cannot resurrect one that has already
+ * aged out of the window.
+ */
+export function refundHit(key: string): void {
+  const hits = buckets.get(key);
+  if (!hits || hits.length === 0) return;
+
+  hits.pop();
+  if (hits.length === 0) buckets.delete(key);
+  else buckets.set(key, hits);
+}
+
 export function checkLimit(
   key: string,
   { limit, windowMs }: RateLimitOptions
@@ -131,7 +157,7 @@ function trustedProxyHops(): number {
 export function clientIpFromHeaders(
   forwardedFor: string | null | undefined,
   realIp?: string | null
-): string {
+): string | null {
   const hops = trustedProxyHops();
 
   if (hops > 0) {
@@ -143,15 +169,49 @@ export function clientIpFromHeaders(
     if (chain.length >= hops) return chain[chain.length - hops];
   }
 
-  return realIp?.trim() || "unknown";
+  const direct = realIp?.trim();
+  if (direct) return direct;
+
+  // Null, not the string "unknown".
+  //
+  // Sharing one bucket looked like the safe direction and is the opposite. If
+  // nothing in front appends X-Forwarded-For — a misconfigured
+  // TRUSTED_PROXY_HOPS, or a platform whose ingress does not set x-real-ip —
+  // then EVERY request is unidentified, so they all key on the same bucket, and
+  // `login:ip:unknown` at 10 per 15 minutes means ten attempts from one
+  // attacker refuse sign-in to every user of the site. Forty requests an hour
+  // for an indefinite authentication outage. Five closes registration.
+  //
+  // A caller that cannot identify the client must fall back to a per-account
+  // limit rather than a global one. See SEC-3 and FLOW-2.
+  return null;
 }
 
-/** `clientIpFromHeaders` for a standard `Request`. */
-export function getClientIp(request: Request): string {
+/** `clientIpFromHeaders` for a standard `Request`. Null when unidentifiable. */
+export function getClientIp(request: Request): string | null {
   return clientIpFromHeaders(
     request.headers.get("x-forwarded-for"),
     request.headers.get("x-real-ip")
   );
+}
+
+/**
+ * A rate-limit key for the client behind a request, or null if there is no
+ * identifiable client.
+ *
+ * Prefer this to interpolating `getClientIp` yourself. TypeScript accepts
+ * `` `login:ip:${ip}` `` with a `string | null` and produces the literal
+ * "login:ip:null" — one shared bucket for the entire internet, which is the
+ * outage this whole mechanism exists to avoid, reintroduced by writing the
+ * obvious thing. Returning the key already built means there is no null to
+ * interpolate.
+ */
+export function clientRateLimitKey(
+  request: Request,
+  prefix: string
+): string | null {
+  const ip = getClientIp(request);
+  return ip ? `${prefix}:${ip}` : null;
 }
 
 /** Shared limits, kept here so they're visible in one place. */
@@ -159,6 +219,10 @@ export const LIMITS = {
   register: { limit: 5, windowMs: 60 * 60 * 1000 },
   login: { limit: 10, windowMs: 15 * 60 * 1000 },
   upload: { limit: 20, windowMs: 60 * 60 * 1000 },
+  // Contributing a location or a world. Generous for a person adding pins to
+  // the books they have read; a bound on an account inserting rows in a loop
+  // into the tables the public /map reads on every request.
+  contribute: { limit: 60, windowMs: 60 * 60 * 1000 },
 } as const satisfies Record<string, RateLimitOptions>;
 
 /** Test-only escape hatch; not exported through any route. */

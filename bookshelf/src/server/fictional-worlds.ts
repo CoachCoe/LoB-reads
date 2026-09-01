@@ -80,10 +80,22 @@ const toWorld = (
   workCount,
 });
 
+/**
+ * Most worlds returned by the public list.
+ *
+ * There is no delete path for a world anywhere in the API (SEC-6), so spam is
+ * permanent until an operator intervenes; a cap keeps that from taking the map
+ * page with it.
+ */
+export const WORLD_LIST_LIMIT = 500;
+
 export async function getAllFictionalWorlds(): Promise<FictionalWorldWithWorks[]> {
   const rows = await prisma.fictionalWorld.findMany({
     include: fictionalWorldInclude,
     orderBy: { name: "asc" },
+    // GET /api/fictional-worlds is public and returned every world with every
+    // map. Unrated creation made that a one-account denial of the map page.
+    take: WORLD_LIST_LIMIT,
   });
 
   const counts = await workCountsByWorld(rows.map((row) => row.id));
