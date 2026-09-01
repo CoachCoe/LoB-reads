@@ -1,27 +1,9 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/options";
-import { followUser, unfollowUser, isFollowing } from "@/server/users";
+import { followUser, unfollowUser } from "@/server/users";
 import { errorResponse, unauthorized } from "@/lib/http/api";
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ userId: string }> }
-) {
-  const session = await getServerSession(authOptions);
-
-  if (!session?.user?.id) {
-    return unauthorized();
-  }
-
-  try {
-    const { userId } = await params;
-    const following = await isFollowing(session.user.id, userId);
-    return NextResponse.json({ isFollowing: following });
-  } catch (error) {
-    return errorResponse("Check follow error", error);
-  }
-}
 
 export async function POST(
   request: Request,

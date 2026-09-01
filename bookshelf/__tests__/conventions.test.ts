@@ -119,11 +119,7 @@ describe("API route conventions", () => {
     const follow = handlersOf(
       read(path.join(API_DIR, "users/[userId]/follow/route.ts"))
     );
-    expect(follow.map((h) => h.method).sort()).toEqual([
-      "DELETE",
-      "GET",
-      "POST",
-    ]);
+    expect(follow.map((h) => h.method).sort()).toEqual(["DELETE", "POST"]);
   });
 
   it("never puts a raw error message into an error response", () => {

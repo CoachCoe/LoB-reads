@@ -255,20 +255,24 @@ shelves and reviews were repointed from `app.books` onto catalog work keys.
 ### Authors
 - `GET/POST/DELETE /api/authors/[authorName]/locations` - Crowdsourced author locations
 
+> These exist because a client component fetches them. Anything a page can read
+> server-side is not a route — there is no public API here, so a handler with no
+> in-app caller is a leftover rather than a product. Six were removed on that
+> basis in the 2026-08-31 audit.
+
 ### Shelves
 - `GET/POST /api/shelves` - List/create shelves
-- `GET/DELETE /api/shelves/[shelfId]` - Read (public) or delete a shelf
+- `DELETE /api/shelves/[shelfId]` - Delete a custom shelf
 - `POST/DELETE /api/shelves/[shelfId]/works` - Add/remove a work
 
 ### Reviews
-- `GET/POST /api/reviews` - List/create reviews
+- `POST /api/reviews` - Create or update your review of a work
 - `DELETE /api/reviews/[reviewId]` - Delete review (a re-POST updates)
 
 ### Users
-- `GET/PATCH /api/users/[userId]` - Get/update user profile
+- `PATCH /api/users/[userId]` - Update your own profile
 - `POST /api/users/[userId]/avatar` - Upload avatar
-- `GET/POST/DELETE /api/users/[userId]/follow` - Follow status, follow, unfollow
-- `GET /api/users/feed` - Get activity feed
+- `POST/DELETE /api/users/[userId]/follow` - Follow or unfollow
 
 ### Progress
 - `GET/POST /api/progress` - Read open sessions, or update reading progress
@@ -280,7 +284,6 @@ shelves and reviews were repointed from `app.books` onto catalog work keys.
 
 ### Fictional Worlds
 - `GET/POST /api/fictional-worlds` - List/create worlds
-- `GET /api/fictional-worlds/[worldId]` - Get world details
 - `POST /api/fictional-worlds/[worldId]/upload` - Upload world map
 - `DELETE/PATCH /api/fictional-worlds/maps/[mapId]` - Delete or update map details
 
