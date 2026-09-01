@@ -126,8 +126,37 @@ export function checkLimit(
 }
 
 /**
+ * A single header the platform sets and the client cannot reach, if one exists.
+ *
+ * Azure Front Door sets `X-Azure-ClientIP`, and reading it removes the
+ * hop-counting problem outright — no arithmetic about how many proxies append to
+ * `X-Forwarded-For`, and nothing to get off by one.
+ *
+ * It is **opt-in by configuration and must stay that way.** The header is only
+ * unforgeable if the app cannot be reached except through the proxy that sets
+ * it: a Container App's own ingress FQDN is public by default, so an attacker
+ * who can reach it directly can send whatever `X-Azure-ClientIP` they like and
+ * pick a fresh rate-limit bucket per request. Trusting it therefore depends on a
+ * deployment fact this code cannot observe — that direct ingress is blocked, by
+ * Front Door ID validation or an access restriction — so it is named explicitly
+ * rather than sniffed.
+ *
+ * Empty means "not configured", which falls through to hop counting below.
+ */
+function trustedClientIpHeader(): string | null {
+  const configured = process.env.TRUSTED_CLIENT_IP_HEADER?.trim().toLowerCase();
+  return configured ? configured : null;
+}
+
+/**
  * How many proxies we sit behind and therefore trust to have appended to
- * `X-Forwarded-For`. One by default: Azure Front Door, per DEPLOYMENT.md.
+ * `X-Forwarded-For`.
+ *
+ * One by default, which is wrong for the documented topology and is why
+ * `TRUSTED_CLIENT_IP_HEADER` exists: Front Door in front of Container Apps is
+ * two appending hops, because the Container Apps ingress appends as well. A
+ * count lower than the real chain returns a proxy's own address — identical for
+ * every client — and a count higher than it returns nothing.
  *
  * Set to 0 to ignore the header entirely, which is the right answer when
  * nothing trusted is in front of the app.
@@ -156,8 +185,14 @@ function trustedProxyHops(): number {
  */
 export function clientIpFromHeaders(
   forwardedFor: string | null | undefined,
-  realIp?: string | null
+  realIp?: string | null,
+  platformIp?: string | null
 ): string | null {
+  // A configured platform header wins: it is one value the client cannot write,
+  // rather than a position in a list whose length we have to guess.
+  const trusted = platformIp?.trim();
+  if (trustedClientIpHeader() && trusted) return trusted;
+
   const hops = trustedProxyHops();
 
   if (hops > 0) {
@@ -189,10 +224,17 @@ export function clientIpFromHeaders(
 
 /** `clientIpFromHeaders` for a standard `Request`. Null when unidentifiable. */
 export function getClientIp(request: Request): string | null {
+  const header = trustedClientIpHeader();
   return clientIpFromHeaders(
     request.headers.get("x-forwarded-for"),
-    request.headers.get("x-real-ip")
+    request.headers.get("x-real-ip"),
+    header ? request.headers.get(header) : null
   );
+}
+
+/** True when this deployment can identify a client at all. */
+export function clientIdentificationConfigured(): boolean {
+  return trustedClientIpHeader() !== null || trustedProxyHops() > 0;
 }
 
 /**

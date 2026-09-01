@@ -289,6 +289,66 @@ async function main() {
   );
   check("search_vector trigger exists", Number(trigger) === 1);
 
+  // Rate limiting is only a control if a client can be told apart.
+  //
+  // SEC-3: with no platform header configured and no trusted proxy hops, every
+  // request is unidentified — so the per-IP limits do not apply at all, and
+  // login:ip / register are simply absent. That is a silent condition: the app
+  // starts, serves, and looks healthy. It also removes the premise that made the
+  // registration enumeration oracle an acceptable trade (OQ-6), whose recorded
+  // reasoning ends "what made the trade acceptable is that the 5/hour cap above
+  // is now real".
+  //
+  // Read from the environment rather than imported, because this script runs
+  // against a deployed configuration rather than inside the app.
+  const trustedHeader = process.env.TRUSTED_CLIENT_IP_HEADER?.trim();
+  const hopsRaw = process.env.TRUSTED_PROXY_HOPS?.trim();
+  const hops = Number(hopsRaw ?? "1");
+  const canIdentify = Boolean(trustedHeader) || (Number.isInteger(hops) && hops > 0);
+  check(
+    "a client can be identified for rate limiting",
+    canIdentify,
+    canIdentify
+      ? trustedHeader
+        ? `via ${trustedHeader}`
+        : `via ${hops} trusted proxy hop(s)`
+      : "set TRUSTED_CLIENT_IP_HEADER (x-azure-clientip behind Front Door, with direct ingress blocked) or TRUSTED_PROXY_HOPS > 0 — otherwise the per-IP limits silently do not apply"
+  );
+
+  // And the hop count must be chosen, not inherited.
+  //
+  // The default of 1 is wrong for the topology DEPLOYMENT.md documents: Front
+  // Door in front of Container Apps is two appending hops. A count below the
+  // real chain returns a proxy's own egress address, which is identical for
+  // every client on the internet, so ten sign-in attempts refuse sign-in to
+  // everyone.
+  const explicit = Boolean(trustedHeader) || hopsRaw !== undefined;
+  check(
+    "the client-IP strategy is explicit",
+    explicit,
+    explicit
+      ? ""
+      : "TRUSTED_PROXY_HOPS is unset and defaulting to 1; behind Front Door -> Container Apps the real chain is 2, and guessing low puts every client on one bucket"
+  );
+
+  // The in-memory limiter only holds on one replica.
+  //
+  // DEPLOYMENT.md documents this and names the mitigation — "pin the app to one
+  // replica, or move the limiter to a shared store" — and nothing enforced it,
+  // so effective limits become limit x replicas and Container Apps adds replicas
+  // under exactly the load an attacker generates (SEC-8).
+  const maxReplicas = process.env.MAX_REPLICAS?.trim();
+  const replicasOk = maxReplicas === "1" || Boolean(process.env.RATE_LIMIT_STORE_URL);
+  check(
+    "the rate limiter's replica assumption holds",
+    replicasOk,
+    replicasOk
+      ? process.env.RATE_LIMIT_STORE_URL
+        ? "shared store configured"
+        : "pinned to one replica"
+      : "the limiter is per-process: set MAX_REPLICAS=1 to record that the revision is pinned, or RATE_LIMIT_STORE_URL once a shared store exists"
+  );
+
   // No foreign key from app into catalog.
   //
   // ARCHITECTURE.md calls this the single most load-bearing decision in the
