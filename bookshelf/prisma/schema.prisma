@@ -641,6 +641,8 @@ model ImportRow {
 
   /// matched | needs_review | confirmed | skipped | failed
   status    String  @default("needs_review")
+  /// Why a `failed` row did not apply. Null for every other status.
+  error     String?
   /// How it was resolved: isbn | title_author | confirmed_by_user
   matchedBy String? @map("matched_by")
   workKey   String? @map("work_key")

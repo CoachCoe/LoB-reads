@@ -281,3 +281,68 @@ describe("candidate scoring", () => {
     expect(await findCandidates("Zzzqqx Vvwwyy", "Nobody")).toEqual([]);
   });
 });
+
+/**
+ * A row is only "matched" if something was actually applied.
+ *
+ * applyRow used to swallow all three of its steps and the caller wrote
+ * `status: "matched"` regardless, so a row that shelved nothing counted toward
+ * matchRate — the signal PRD section 6 names for "is import working?".
+ *
+ * The reachable case is not exotic: mapExclusiveShelf returns null for any
+ * value outside Goodreads' three shelves, and a Goodreads export can carry
+ * others.
+ */
+describe("a row that applies nothing is not reported as matched", () => {
+  it("records failed, with a reason, when the export carries no usable shelf", async () => {
+    const csv = [
+      HEADER,
+      `1,Dune,Frank Herbert,="0441172717",="9780441172719",5,Ace,412,1965,,2024/01/01,,,,1`,
+    ].join("\n");
+
+    const { sessionId } = await importCsv(csv);
+
+    const row = await prisma.importRow.findFirst({ where: { sessionId } });
+    expect(row?.workKey).toBe(WORKS.dune.key); // the match itself was right
+    expect(row?.status).toBe("failed");
+    expect(row?.error).toMatch(/shelf/i);
+
+    // And nothing was shelved, which is the point.
+    expect(
+      await prisma.shelfItem.count({ where: { userId, workKey: WORKS.dune.key } })
+    ).toBe(0);
+  });
+
+  it("keeps such a row out of matchRate", async () => {
+    const csv = [
+      HEADER,
+      // One good row, one that matches but can shelve nothing.
+      `1,Dune,Frank Herbert,="0441172717",="9780441172719",5,Ace,412,1965,,2024/01/01,,read,,1`,
+      `2,The Hobbit,J.R.R. Tolkien,="0547928221",="9780547928227",4,HMH,300,1937,,2024/01/02,,,,1`,
+    ].join("\n");
+
+    const { sessionId } = await importCsv(csv);
+    const summary = await getImportSession(userId, sessionId);
+
+    expect(summary!.matched).toBe(1);
+    expect(summary!.failed).toBe(1);
+    // 1 of 2, not 2 of 2 — the number the old code reported.
+    expect(summary!.matchRate).toBe(50);
+  });
+
+  it("still applies, and reports matched, when the shelf is usable", async () => {
+    const csv = [
+      HEADER,
+      `1,Dune,Frank Herbert,="0441172717",="9780441172719",5,Ace,412,1965,2024/02/01,2024/01/01,,read,,1`,
+    ].join("\n");
+
+    const { sessionId } = await importCsv(csv);
+
+    const row = await prisma.importRow.findFirst({ where: { sessionId } });
+    expect(row?.status).toBe("matched");
+    expect(row?.error).toBeNull();
+    expect(
+      await prisma.shelfItem.count({ where: { userId, workKey: WORKS.dune.key } })
+    ).toBe(1);
+  });
+});

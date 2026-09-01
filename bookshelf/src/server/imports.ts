@@ -144,12 +144,18 @@ export async function matchSession(
       isbnMatch ?? (await findWorkKeyByTitleAuthor(row.title, row.author));
 
     if (workKey) {
-      await applyRow(userId, { ...row, workKey }, shelfIdByName);
+      const applied = await applyRow(
+        userId,
+        { ...row, workKey },
+        shelfIdByName
+      );
       await prisma.importRow.update({
         where: { id: row.id },
         data: {
           workKey,
-          status: "matched",
+          // `failed` already existed on ImportRow and nothing ever set it.
+          status: applied.shelved ? "matched" : "failed",
+          error: applied.reason ?? null,
           matchedBy: isbnMatch ? "isbn" : "title_author",
           // Clear any suggestions from an earlier pass; they are now noise.
           candidates: Prisma.DbNull,
@@ -233,10 +239,15 @@ export async function confirmMatch(
     (await getUserShelfSummaries(userId)).map((s) => [s.name, s.id])
   );
 
-  await applyRow(userId, { ...row, workKey }, shelfIdByName);
+  const applied = await applyRow(userId, { ...row, workKey }, shelfIdByName);
   await prisma.importRow.update({
     where: { id: rowId },
-    data: { workKey, status: "confirmed", matchedBy: "confirmed_by_user" },
+    data: {
+      workKey,
+      status: applied.shelved ? "confirmed" : "failed",
+      error: applied.reason ?? null,
+      matchedBy: "confirmed_by_user",
+    },
   });
   await finalizeSession(row.sessionId);
 }
@@ -313,6 +324,19 @@ export async function getRecentImports(userId: string, limit = 10) {
  * shelved book, and reading history is the least important of the three. The
  * row itself is already stored either way, so nothing here can lose it.
  */
+/**
+ * Whether the row actually landed on a shelf.
+ *
+ * This used to return void and swallow all three steps, and the caller then
+ * recorded `matched` unconditionally — so a row that shelved nothing was
+ * indistinguishable from one that worked, and `matchRate` (the signal PRD
+ * section 6 names for "is import working?") counted it as a success.
+ *
+ * The shelving step is the one that decides: a rating or a finish date without
+ * a shelf entry is not an imported book. The other two stay best-effort, since
+ * the book IS in the reader's library either way and both are recoverable by
+ * hand.
+ */
 async function applyRow(
   userId: string,
   row: {
@@ -322,18 +346,35 @@ async function applyRow(
     dateRead: Date | null;
   },
   shelfIdByName: Map<string, string>
-): Promise<void> {
-  if (row.exclusiveShelf) {
+): Promise<{ shelved: boolean; reason?: string }> {
+  let shelved = false;
+  let reason: string | undefined;
+
+  if (!row.exclusiveShelf) {
+    // mapExclusiveShelf returns null for any value outside Goodreads' three
+    // shelves, and those rows were previously shelved nowhere and still counted
+    // as matched.
+    reason = "no shelf in the export";
+  } else {
     const shelfId = shelfIdByName.get(
       getShelfDisplayName(
         row.exclusiveShelf as "read" | "currently-reading" | "to-read"
       )
     );
-    if (shelfId) {
+
+    if (!shelfId) {
+      reason = "no matching shelf on this account";
+    } else {
       try {
         await addWorkToShelf(shelfId, row.workKey, userId);
-      } catch {
-        // Already on the shelf. Re-importing an export is a normal thing to do.
+        shelved = true;
+      } catch (error) {
+        // The old comment here said "already on the shelf, re-importing is
+        // normal" — a case that cannot occur, because addWorkToShelf upserts for
+        // custom shelves and deletes-then-creates for the exclusive ones. What
+        // it actually hid was NotFoundError("That book is not in the catalog")
+        // and any Prisma failure.
+        reason = error instanceof Error ? error.message : "could not be shelved";
       }
     }
   }
@@ -353,6 +394,8 @@ async function applyRow(
       // Nice to have, and already implied by the "Read" shelf.
     }
   }
+
+  return { shelved, reason };
 }
 
 async function requireOwnedRow(userId: string, rowId: string) {
