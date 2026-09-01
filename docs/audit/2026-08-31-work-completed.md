@@ -25,13 +25,13 @@ From a clean state — `rm -rf .next node_modules`, then `npm ci`:
 |---|---|---|
 | typecheck | `npx tsc --noEmit` | exit 0 |
 | lint | `npx eslint .` | exit 0 |
-| unit | `npx jest --selectProjects unit --ci` | 196/196 |
-| integration | `npx jest --selectProjects integration --ci --runInBand` | 271/271 |
+| unit | `npx jest --selectProjects unit --ci` | 200/200 |
+| integration | `npx jest --selectProjects integration --ci --runInBand` | 286/286 |
 | build | `npx next build` | exit 0 |
 | migrations | `db:deploy:test`, `db:status:test` | 19/19, up to date |
 | release gate | `deploy:verify` | 21/24 — see note |
 
-467 tests, up from 371. **No suppression was introduced anywhere in the diff**:
+486 tests, up from 371. **No suppression was introduced anywhere in the diff**:
 zero `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`, `eslint-disable`,
 `.skip`, `.only`, `xit`, `xdescribe`, `.todo`, or `istanbul ignore` in any added
 line, no `any` widening, and no change to `tsconfig.json`, `eslint.config.mjs`,
@@ -202,6 +202,78 @@ called the delivered rebuild-and-swap "Not yet implemented"; it also claimed
 there was no index on `subjects` while `deploy:verify` asserts that index exists.
 `README.md` documented three API methods that do not exist. `M4` was marked Done
 while covers are not served at all.
+
+---
+
+## Second round — the deferred defects, after review
+
+Everything below was originally deferred and has since been fixed. What remains
+deferred is only what needs a product decision or is feature work; the list at
+the end of this document is now accurate rather than aspirational.
+
+**SEC-5 — `isModerator` frozen in a rolling JWT.** The flag was copied in at
+sign-in and never re-read, and NextAuth re-encodes with a fresh expiry on every
+session read, so for an active user the 30-day default never arrived. Demoting a
+moderator did nothing: they kept deleting other readers' maps and blobs. Now
+re-read on a five-minute interval, with `session.maxAge` bounded to 24h, and a
+deleted account's token blanked so the route guards SEC-16 made consistent turn
+it into a 401. Seven tests calling the callback directly.
+
+**FLOW-13 — import rows reported as matched when nothing applied.** `applyRow`
+swallowed all three steps and the callers wrote `matched` regardless, so
+`matchRate` — the metric PRD section 6 names — counted failures as successes. It
+now reports whether the row reached a shelf; `failed` (which already existed and
+nothing set) is recorded with a reason, carried by a new `error` column.
+
+**FLOW-14 — a finished book reverted to "Start Reading".** The panel read the
+open-sessions list, so a finished book looked unread; pressing the button opened
+a second session and double-counted it in `/wrapped`. `GET /api/progress` now
+accepts `?workKey=`.
+
+**TEST-10 — `reclaimStale` measured from the wrong column.** `created_at` is
+when a job was enqueued, so a worker's live batch was handed to a second worker.
+A migration adds `claimed_at`, set in the same UPDATE that claims the row.
+
+**FLOW-24, FLOW-25** — one definition of "books read" (finished sessions, as
+`/wrapped` uses), and a shelf page that can be paged instead of showing 100 of
+800.
+
+**TEST-9 — authentication checked per handler.** The old check asked whether a
+route FILE mentioned a session helper; six files export more than one mutating
+handler. Removing the session call from only `follow`'s DELETE now fails and
+names it, while the file still contains `getServerSession` three times.
+
+**TEST-1, TEST-2, TEST-3 — the three tests that asserted against copies of the
+code they guard.** These were called "the most valuable remaining work in this
+repo" and they are done:
+
+- `read-path-plans` now EXPLAINs `Prisma.Sql` builders exported from
+  `catalog.ts`. All three mutations its own header lists are caught. One needed
+  a better assertion as well as real SQL: at fixture scale the mutated
+  `getPopularWorks` ordering still uses the index and still has no external
+  merge, so the discriminating property is the presence of a **Sort node** —
+  which holds at any scale, unlike the row bound.
+- `recommendations` now calls the shipped `computeRatingStats` /
+  `computeSimilarity`, with the seed decision passed as a parameter rather than
+  read from `process.env` at module scope (the TEST-19 shape). Mutating the
+  cosine score to raw co-occurrence now fails. Recorded honestly in the test:
+  mutating the window's `ORDER BY` alone still passes, because that only picks
+  which neighbours survive the cut and the read path orders by the stored score.
+- `core-loop`'s gap is closed in `conventions.test.ts` instead, so it covers
+  every component rather than one page — which is also PRD R7. Every `/api/...`
+  literal must resolve to a route, and every method a fetch names must be
+  exported by it. The M3 defect now fails the suite.
+
+**TEST-20 — a fixture inheriting the previous test file's rows.** Found while
+doing the above: `beforeAll` runs before the first `beforeEach`, so
+`recommendations` built its aggregates over whatever `app.reviews` the preceding
+file left. Diagnosed rather than papered over — reverting the fix reproduces
+`Expected: 8, Received: 7` deterministically with `import-routes` running first.
+
+Two stale things fell out of the mechanical checks: `ImportReviewList` composed
+its URL from an interpolated action (unresolvable, now written out), and
+`useCrowdsourcedLocations` documented its endpoint as `/api/books/...` — the
+path M3 retired.
 
 ---
 

@@ -90,10 +90,10 @@ cause turned out to be a lossy bitmap. 1.23 s is that query after raising
 
 ## Quality posture
 
-467 tests: 196 unit, 271 integration. Integration runs against real Postgres
+486 tests: 200 unit, 286 integration. Integration runs against real Postgres
 and must run serially — they share a database and truncate between tests.
 
-The 2026-08-31 audit added 96 of those, and the reason is worth stating plainly:
+The 2026-08-31 audit added 115 of those, and the reason is worth stating plainly:
 all five checks were green — typecheck, lint, 128 unit, 243 integration, build —
 while four blockers sat in the tree, including a page that threw on load. A green
 suite here has repeatedly meant "the tests that exist pass", not "the app works".
@@ -129,14 +129,17 @@ four-second search page, and a component wired to nothing.
 
 ### What the tests still do not catch
 
-- **Reachability** — now partly covered. `core-loop.test.ts` asserts the work
-  page mounts each component and that the routes accept exactly what those
-  components send — though the request bodies and route paths in it are
-  hand-typed, so it verifies what the TEST sends, not what the component sends
-  (audit TEST-3). Nothing generalises the mount check to other pages yet, and
-  the audit found five more "built, wired to nothing" cases. `conventions.test.ts`
-  now mechanically forbids the one shape that produced a blocker: a client
-  component value-importing `src/server/*` or `@/lib/prisma`.
+- **Reachability** — largely covered now, mechanically and for every component
+  rather than one page. `conventions.test.ts` asserts that every `/api/...`
+  literal in the source resolves to a route directory and that every method a
+  fetch names is exported by it — so the M3 defect (components left calling
+  routes that had moved) fails the suite rather than 404ing silently for three
+  milestones. It also forbids a client component value-importing `src/server/*`
+  or `@/lib/prisma`, which is the shape that produced the /my-books blocker.
+  `core-loop.test.ts` still hand-types its request BODIES, so field-name drift
+  in a body is not covered; and nothing yet asserts that a given page mounts a
+  given component beyond the work page. The audit found five "built, wired to
+  nothing" cases that remain — see the work-completed doc.
 - **Anything visual.** No screenshot or DOM-level assertions. The dark-mode
   sweep was verified by grep and a build, not by looking.
 - **Behaviour at catalog scale.** Deliberately: plan assertions replace it.
@@ -310,11 +313,11 @@ is the only fix.
   plus any app↔DB clock skew. The test now passes an explicit 3600-second
   backoff, and the jitter it used to depend on is asserted separately without
   racing it.
-- **`reclaimStale` has a wrong predicate, and no test.** It selects
-  `status: "running", createdAt < cutoff`, but `createdAt` is when the job was
-  *enqueued*, not claimed, and the schema has no `claimed_at`. On a real queue a
-  worker's freshly claimed batch is returned to `pending` while it is still being
-  processed. Left alone: the fix needs a migration. Audit TEST-10.
+- ~~**`reclaimStale` has a wrong predicate, and no test.**~~ Fixed. It measured
+  from `created_at` — when the job was *enqueued* — so on a real queue a freshly
+  claimed batch was handed to a second worker. A migration added `claimed_at`,
+  set in the same UPDATE that claims the row, and two tests now fail against the
+  old predicate.
 
 ---
 
