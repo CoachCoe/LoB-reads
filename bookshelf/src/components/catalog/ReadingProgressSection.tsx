@@ -166,12 +166,29 @@ export default function ReadingProgressSection({
     );
   }
 
+  // The denominator has to come from the same book as the numerator.
+  //
+  // `progress.currentPage` belongs to this reading session, and the write path
+  // validates it against `session.pageCount` (server/progress.ts:167). The
+  // `pageCount` prop is whichever edition of the work happened to state a page
+  // count first — by a line whose own comment concedes "Editions disagree about
+  // page counts". Dividing one by the other produced "310 / 162 pages - 191%"
+  // on a real page: a legitimate page 310 of a 480-page edition, shown against
+  // a 162-page one.
+  //
+  // The session's snapshot is the honest figure. It is what the reader was
+  // looking at when they started, it is what the server enforces, and it is
+  // deliberately frozen — "snapshot, so history survives an ingest" — so it
+  // stays correct when the catalog is rebuilt underneath it. The prop remains
+  // the fallback for a session that never recorded one.
+  const totalPages = progress.pageCount ?? pageCount;
+
   return (
     <div className="space-y-3">
-      {pageCount && (
+      {totalPages && (
         <ProgressBar
           value={progress.currentPage}
-          max={pageCount}
+          max={totalPages}
         />
       )}
 
@@ -182,11 +199,11 @@ export default function ReadingProgressSection({
             value={pageInput}
             onChange={(e) => setPageInput(e.target.value)}
             min={0}
-            max={pageCount || undefined}
+            max={totalPages || undefined}
             className="w-24"
           />
           <span className="text-gray-500 dark:text-gray-400">
-            / {pageCount || "?"} pages
+            / {totalPages || "?"} pages
           </span>
           <Button
             onClick={handleUpdateProgress}
