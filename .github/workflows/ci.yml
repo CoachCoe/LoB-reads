@@ -93,11 +93,24 @@ jobs:
       #
       # NEXTAUTH_* are overridden because CI's own values are deliberately
       # placeholders, and the check exists to reject placeholders.
+      #
+      # The rate-limit variables are set for the same reason the others are: this
+      # step simulates a *valid* deployment, and a valid deployment sets them.
+      # Leaving them unset would make the two checks that exist to catch a
+      # silently-unlimited deployment fail on every run, and the only ways to get
+      # CI green again would be to weaken them or to ignore them — which is how a
+      # check stops meaning anything.
       - name: Verify deployment invariants
         env:
           NEXTAUTH_SECRET: ${{ github.sha }}-not-a-placeholder
           NEXTAUTH_URL: https://ci.example.com
           CDN_URL: https://cdn.example.invalid
+          # Explicit rather than defaulted: 1 is wrong for Front Door in front of
+          # Container Apps, which is two appending hops.
+          TRUSTED_PROXY_HOPS: "2"
+          # The limiter is per-process; the deployed revision is pinned to one
+          # replica, and infra/main.bicep sets maxReplicas to match.
+          MAX_REPLICAS: "1"
         run: npm run deploy:verify
 
   # A separate job: it needs no database and should not wait on the test suite.

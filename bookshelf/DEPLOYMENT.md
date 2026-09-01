@@ -249,6 +249,8 @@ AZURE_STORAGE_CONNECTION_STRING="<account connection string>" npm run storage:sm
 | `AZURE_STORAGE_PUBLIC_CONTAINER` | `true` only if the container really is public. Leave unset in Azure. |
 | `CDN_URL` | Front Door endpoint. **Required at build time.** |
 | `GOOGLE_BOOKS_API_KEY` | Enrichment worker only |
+| `TRUSTED_CLIENT_IP_HEADER` | **Preferred over hop counting.** `x-azure-clientip` behind Front Door — one value the client cannot write, instead of arithmetic about chain length. Only set it once direct ingress is blocked (Front Door ID validation or an access restriction), because the container app's own FQDN is public by default and a client that reaches it directly can forge the header and take a fresh rate-limit bucket per request. |
+| `MAX_REPLICAS` | Records the replica cap so `deploy:verify` can assert the rate limiter's assumption still holds. Must be `1` until a shared limiter store exists. |
 | `TRUSTED_PROXY_HOPS` | How many proxies in front append to `X-Forwarded-For`. **Set it explicitly.** Front Door in front of Container Apps is two, because the Container Apps ingress appends as well — and a wrong count returns a proxy's own address, identical for every client, which puts the whole site on one rate-limit bucket. `0` when nothing trusted is in front. |
 
 Do not set a storage connection string in Azure — use the managed identity.
@@ -256,6 +258,37 @@ Do not set a storage connection string in Azure — use the managed identity.
 ## Building and running the app
 
 The image is built by CI and run unchanged; the app host never builds.
+
+Until now that was only half true: `ci.yml` built the image, started it, probed
+it and threw it away — there was no registry, no tag and no push, so deploying
+meant building by hand on somebody's laptop. `.github/workflows/deploy.yml` now
+closes that.
+
+It is **inert until Azure is configured**. The first step reads three secrets
+through `env` and, if any is missing, records a notice and skips the rest — so the
+workflow is green and does nothing rather than failing on every push. A
+permanently red run that means nothing is how people learn to ignore red runs.
+The secrets it needs:
+
+| secret | what for |
+| --- | --- |
+| `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` | federated sign-in, so no service principal password is stored |
+| `AZURE_REGISTRY` | e.g. `myregistry.azurecr.io` |
+| `AZURE_RESOURCE_GROUP`, `CONTAINER_APP_NAME` | what to roll |
+| `CDN_URL` | baked into the image at build time |
+| `DIRECT_URL`, `DATABASE_URL` | migrations, and the release check |
+| `NEXTAUTH_URL`, `NEXTAUTH_SECRET` | checked by `deploy:verify` before the rollout is accepted |
+
+Plus a `production` environment, which is what makes the deployment reviewable
+and gives the job somewhere to hang approvals. It runs on `workflow_run` after CI completes on `main` and refuses
+to proceed unless CI concluded success, checks out the SHA CI actually tested
+rather than the branch tip, pushes to ACR, and then hands off to
+`scripts/deploy/azure.sh release`, which applies migrations **before** rolling
+the revision and runs `deploy:verify` afterwards.
+
+`CDN_URL` is baked in at build time — `next.config.ts` reads it for the image
+allowlist and the CSP — so an image is specific to one environment and cannot be
+promoted between them unchanged.
 
 `next build` wants roughly **2 GB of memory**, which is more than a burstable
 instance has. It is also fast where memory is available — **5.4 s** — so there

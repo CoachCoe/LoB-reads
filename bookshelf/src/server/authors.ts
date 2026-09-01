@@ -101,13 +101,34 @@ export async function getAuthorByKey(
 }
 
 /** Resolve a display name to a catalog author, for name-based URLs. */
+/**
+ * The catalog key for an author name, most prolific first when names collide.
+ *
+ * Compares against `name_norm`, not `lower(a.name)`. Two reasons, both from
+ * DEAD-4 — and catalog.ts:16-20 states the rule: "Comparisons therefore go
+ * against `title_norm` / `author_names_norm`, never `unaccent(lower(title))`…
+ * Wrapping the column is how the fuzzy path silently became a sequential scan
+ * once already."
+ *
+ * `catalog.authors` had no index but its primary key, so wrapping the column
+ * meant every author page load and every location read or write scanned 3.2M
+ * rows. And `lower()` does not fold accents, so this returned null for "Gabriel
+ * Garcia Marquez" while `findWorkKeyByTitleAuthor` matched the same query
+ * through `works.author_names_norm` — leaving the location routes answering
+ * "That author is not in the catalog" for an author whose page the reader was
+ * looking at.
+ *
+ * The ORDER BY stays a correlated count, which is fine now that it runs over the
+ * handful of rows an indexed equality returns rather than every match of a
+ * sequential scan.
+ */
 export async function findAuthorKeyByName(
   name: string
 ): Promise<string | null> {
   const rows = await prisma.$queryRaw<{ olKey: string }[]>`
     SELECT a.ol_key AS "olKey"
     FROM catalog.authors a
-    WHERE lower(a.name) = lower(${name})
+    WHERE a.name_norm = lower(unaccent(${name}))
     ORDER BY (SELECT count(*) FROM catalog.work_authors wa
               WHERE wa.author_key = a.ol_key) DESC
     LIMIT 1

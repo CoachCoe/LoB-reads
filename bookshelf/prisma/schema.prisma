@@ -283,6 +283,10 @@ model AuthorLocation {
 model CatalogAuthor {
   olKey        String   @id @map("ol_key") // OL34184A
   name         String
+  // unaccent(lower(name)), maintained by a trigger. Queries compare against
+  // this, never lower(name) — see the migration for why, and catalog.ts:16-20
+  // for the rule.
+  nameNorm     String?  @map("name_norm")
   personalName String?  @map("personal_name")
   birthDate    String?  @map("birth_date") // raw, unparsed
   deathDate    String?  @map("death_date")
@@ -293,6 +297,10 @@ model CatalogAuthor {
 
   works CatalogWorkAuthor[]
 
+  // btree, not GIN trigram: the lookup is equality on the whole name. This is
+  // the only index on the table besides its primary key, and without it every
+  // author page was a sequential scan over 3.2M rows.
+  @@index([nameNorm])
   @@map("authors")
   @@schema("catalog")
 }

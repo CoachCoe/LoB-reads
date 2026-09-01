@@ -1,0 +1,123 @@
+name: Deploy
+
+# Separate from ci.yml on purpose: CI is the gate, this is the consequence.
+# Keeping them apart means a change to how the app is released cannot quietly
+# alter what "passing" means.
+#
+# Never runs on its own. `workflow_run` fires only after CI has completed on
+# main, and the job then refuses to proceed unless CI concluded success — a push
+# that broke the build must not reach a registry, let alone the app.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Tag to deploy. Defaults to the triggering commit."
+        required: false
+
+permissions:
+  contents: read
+  id-token: write # federated credential; no stored service principal secret
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # workflow_run reports the upstream conclusion; a dispatch has none.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: bookshelf
+
+    steps:
+      # Skip cleanly when Azure is not configured yet, rather than failing.
+      #
+      # This workflow fires on every CI completion on main, so before the
+      # secrets exist it would go red on every push — a permanently failing run
+      # that means nothing, which is how people learn to ignore a red run.
+      #
+      # The `secrets` context is not available in a job-level `if`, which is why
+      # this is a step rather than a condition on the job. The value is read
+      # through `env` rather than interpolated into the script body, so the
+      # secret never lands in the shell's arguments.
+      - name: Is Azure configured?
+        id: config
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_REGISTRY: ${{ secrets.AZURE_REGISTRY }}
+          CONTAINER_APP_NAME: ${{ secrets.CONTAINER_APP_NAME }}
+        run: |
+          if [[ -z "${AZURE_CLIENT_ID:-}" || -z "${AZURE_REGISTRY:-}" || -z "${CONTAINER_APP_NAME:-}" ]]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Deployment skipped::Azure secrets are not set, so there is nothing to deploy to. This is not a failure. See DEPLOYMENT.md for the list."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.config.outputs.configured == 'true'
+        with:
+          # For workflow_run the default ref is the default branch, not the
+          # commit CI actually passed on. Pin to the tested SHA.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: azure/login@v2
+        if: steps.config.outputs.configured == 'true'
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve the image tag
+        if: steps.config.outputs.configured == 'true'
+        id: tag
+        run: |
+          sha="${{ github.event.workflow_run.head_sha || github.sha }}"
+          echo "tag=${{ inputs.image_tag || '' }}" >> "$GITHUB_OUTPUT"
+          echo "sha=${sha::12}" >> "$GITHUB_OUTPUT"
+
+      # CDN_URL is baked in at build time — next.config reads it for the image
+      # allowlist and the CSP — so the image is environment-specific and cannot
+      # be promoted between environments unchanged.
+      - name: Build and push
+        if: steps.config.outputs.configured == 'true'
+        env:
+          REGISTRY: ${{ secrets.AZURE_REGISTRY }}
+          CDN_URL: ${{ secrets.CDN_URL }}
+        run: |
+          tag="${{ steps.tag.outputs.tag || steps.tag.outputs.sha }}"
+          image="$REGISTRY/lob-app:$tag"
+          az acr login --name "${REGISTRY%%.*}"
+          docker build --build-arg CDN_URL="$CDN_URL" -t "$image" .
+          docker push "$image"
+          echo "IMAGE=$image" >> "$GITHUB_ENV"
+
+      # Migrations, then the rollout, then the release checks — in that order,
+      # and stopping at the first failure. scripts/deploy/azure.sh owns the
+      # ordering so that running it by hand does the same thing this does.
+      - name: Install dependencies for the release step
+        if: steps.config.outputs.configured == 'true'
+        run: npm ci
+
+      - name: Release
+        if: steps.config.outputs.configured == 'true'
+        env:
+          AZURE_RESOURCE_GROUP: ${{ secrets.AZURE_RESOURCE_GROUP }}
+          CONTAINER_APP_NAME: ${{ secrets.CONTAINER_APP_NAME }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
+          NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          CDN_URL: ${{ secrets.CDN_URL }}
+          TRUSTED_CLIENT_IP_HEADER: x-azure-clientip
+          MAX_REPLICAS: "1"
+        run: scripts/deploy/azure.sh release "$IMAGE"

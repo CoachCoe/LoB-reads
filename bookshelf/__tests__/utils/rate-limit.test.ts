@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { checkLimit, getClientIp, clientIpFromHeaders, __resetRateLimits, refundHit, clientRateLimitKey } from "@/lib/rate-limit";
+import { checkLimit, getClientIp, clientIpFromHeaders, __resetRateLimits, refundHit, clientRateLimitKey, clientIdentificationConfigured } from "@/lib/rate-limit";
 
 describe("checkLimit", () => {
   beforeEach(() => {
@@ -301,5 +301,88 @@ describe("clientRateLimitKey", () => {
     // The failure mode, stated: any string here would be shared by every caller.
     expect(key).not.toBe("register:null");
     expect(key).not.toBe("register:unknown");
+  });
+});
+
+/**
+ * A platform-set client-IP header, which is how the hop-counting problem is
+ * meant to be avoided rather than tuned.
+ *
+ * Front Door sets `X-Azure-ClientIP`. Reading it removes the arithmetic — but
+ * only if the app cannot be reached except through Front Door, because a
+ * Container App's own ingress FQDN is public by default and an attacker who
+ * reaches it directly can set the header themselves and take a fresh bucket per
+ * request. That is a deployment fact this code cannot observe, so trust is
+ * opt-in by configuration and the default must remain "not trusted".
+ */
+describe("a configured platform client-IP header", () => {
+  const withEnv = <T,>(vars: Record<string, string | undefined>, run: () => T): T => {
+    const previous: Record<string, string | undefined> = {};
+    for (const [k, v] of Object.entries(vars)) {
+      previous[k] = process.env[k];
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
+    try {
+      return run();
+    } finally {
+      for (const [k, v] of Object.entries(previous)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  };
+
+  const request = (headers: Record<string, string>) =>
+    new Request("https://example.com", { headers });
+
+  it("is ignored unless it is configured", () => {
+    // The assertion that matters most. Without this, anyone reaching the app
+    // directly picks their own bucket.
+    withEnv({ TRUSTED_CLIENT_IP_HEADER: undefined, TRUSTED_PROXY_HOPS: "1" }, () => {
+      expect(
+        getClientIp(
+          request({
+            "x-azure-clientip": "9.9.9.9",
+            "x-forwarded-for": "203.0.113.5, 70.41.3.18",
+          })
+        )
+      ).toBe("70.41.3.18");
+    });
+  });
+
+  it("wins over the forwarded chain once configured", () => {
+    withEnv({ TRUSTED_CLIENT_IP_HEADER: "x-azure-clientip", TRUSTED_PROXY_HOPS: "1" }, () => {
+      expect(
+        getClientIp(
+          request({
+            "x-azure-clientip": "9.9.9.9",
+            "x-forwarded-for": "203.0.113.5, 70.41.3.18",
+          })
+        )
+      ).toBe("9.9.9.9");
+    });
+  });
+
+  it("falls back to the chain when the configured header is absent", () => {
+    // A revision reachable both ways, or a misconfigured name: fall back rather
+    // than collapsing everyone onto one bucket.
+    withEnv({ TRUSTED_CLIENT_IP_HEADER: "x-azure-clientip", TRUSTED_PROXY_HOPS: "1" }, () => {
+      expect(
+        getClientIp(request({ "x-forwarded-for": "203.0.113.5, 70.41.3.18" }))
+      ).toBe("70.41.3.18");
+    });
+  });
+
+  it("reports whether this deployment can identify a client at all", () => {
+    withEnv({ TRUSTED_CLIENT_IP_HEADER: undefined, TRUSTED_PROXY_HOPS: "0" }, () => {
+      expect(clientIdentificationConfigured()).toBe(false);
+    });
+    withEnv({ TRUSTED_CLIENT_IP_HEADER: "x-azure-clientip", TRUSTED_PROXY_HOPS: "0" }, () => {
+      expect(clientIdentificationConfigured()).toBe(true);
+    });
+    withEnv({ TRUSTED_CLIENT_IP_HEADER: undefined, TRUSTED_PROXY_HOPS: "2" }, () => {
+      expect(clientIdentificationConfigured()).toBe(true);
+    });
   });
 });

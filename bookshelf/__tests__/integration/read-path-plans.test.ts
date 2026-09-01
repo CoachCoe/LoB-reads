@@ -323,3 +323,80 @@ describe("a work page must read one work", () => {
     expect(explained).toContain("editions_work_key_idx");
   });
 });
+
+/**
+ * DEAD-4: the author lookup compared a function of the column.
+ *
+ * `findAuthorKeyByName` used `lower(a.name) = lower($1)`, breaking the rule
+ * catalog.ts states at the top of the file — comparisons go against a normalised
+ * column, never a function of the raw one, because "wrapping the column is how
+ * the fuzzy path silently became a sequential scan once already."
+ *
+ * `catalog.authors` carried no index but its primary key, so every author page
+ * load and every location read or write scanned the table. Measured against the
+ * real 3.2M-row catalog, on the worst case of a name that is not present so
+ * LIMIT 1 cannot terminate early:
+ *
+ *   before   Parallel Seq Scan   1053 ms
+ *   after    Bitmap Index Scan      0.13 ms
+ *
+ * A plan assertion rather than a timing one, for the reason STATUS.md gives:
+ * "the same answer at 3,000 rows as at 7 million".
+ */
+describe("the author name lookup is indexed", () => {
+  /*
+   * No plan assertion here, deliberately.
+   *
+   * `catalog.authors` is all but empty in the fixture, and a sequential scan of
+   * twelve rows is the correct plan — so "not Seq Scan" cannot be asserted at
+   * this scale without asserting something about the planner rather than about
+   * the schema. This is the same limit that let the R1 regression through: the
+   * bad plan did not reproduce at 3,000 rows either.
+   *
+   * What is assertable, and is what actually protects the fix: the index exists
+   * in the database, the trigger keeps the column in step, and the shipped query
+   * compares against the column rather than a function of the raw one. The last
+   * of those is a source check and lives in conventions.test.ts, beside the
+   * other rules of that kind.
+   *
+   * Measured separately against the real 3.2M-row catalog, worst case of a name
+   * that is absent so LIMIT 1 cannot stop early:
+   *   before  Parallel Seq Scan   1053 ms
+   *   after   Bitmap Index Scan      0.13 ms
+   */
+
+  it("has the index the query depends on", async () => {
+    // The first draft of the migration declared this index in schema.prisma and
+    // never wrote the CREATE INDEX, which left the column indexed in the schema
+    // file and sequentially scanned in the database. Asserted directly.
+    const indexes = await prisma.$queryRaw<{ indexname: string }[]>`
+      SELECT indexname FROM pg_indexes
+      WHERE schemaname = 'catalog' AND tablename = 'authors'
+    `;
+    expect(indexes.map((i) => i.indexname)).toContain("authors_name_norm_idx");
+  });
+
+  it("keeps name_norm in step with name, so a later write cannot orphan it", async () => {
+    // The trigger, which CREATE TABLE ... LIKE INCLUDING ALL does not copy —
+    // so 03-normalize.sql re-creates it after the swap. Without it a renamed
+    // author silently stops being findable.
+    const key = "OLTRIG001A";
+    await prisma.$executeRaw`
+      INSERT INTO catalog.authors (ol_key, name) VALUES (${key}, 'Émile Zola')
+      ON CONFLICT (ol_key) DO UPDATE SET name = EXCLUDED.name`;
+
+    try {
+      const inserted = await prisma.$queryRaw<{ name_norm: string }[]>`
+        SELECT name_norm FROM catalog.authors WHERE ol_key = ${key}`;
+      expect(inserted[0].name_norm).toBe("emile zola");
+
+      await prisma.$executeRaw`
+        UPDATE catalog.authors SET name = 'Édouard Manet' WHERE ol_key = ${key}`;
+      const updated = await prisma.$queryRaw<{ name_norm: string }[]>`
+        SELECT name_norm FROM catalog.authors WHERE ol_key = ${key}`;
+      expect(updated[0].name_norm).toBe("edouard manet");
+    } finally {
+      await prisma.$executeRaw`DELETE FROM catalog.authors WHERE ol_key = ${key}`;
+    }
+  });
+});
