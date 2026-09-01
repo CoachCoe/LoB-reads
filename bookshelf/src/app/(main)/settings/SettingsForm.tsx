@@ -231,7 +231,7 @@ export default function SettingsForm({ user }: SettingsFormProps) {
               type="url"
               value={avatarUrl}
               onChange={(e) => setAvatarUrl(e.target.value)}
-              placeholder="https://example.com/avatar.jpg"
+              placeholder="Upload a photo above, or paste a URL from this site's image storage"
             />
 
             <Input
