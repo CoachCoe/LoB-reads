@@ -91,7 +91,7 @@ cause turned out to be a lossy bitmap. 1.23 s is that query after raising
 
 ## Quality posture
 
-600 tests: 263 unit, 337 integration. Integration runs against real Postgres
+606 tests: 267 unit, 339 integration. Integration runs against real Postgres
 and must run serially — they share a database and truncate between tests.
 
 The 2026-08-31 audit added 127 of those, and the reason is worth stating plainly:

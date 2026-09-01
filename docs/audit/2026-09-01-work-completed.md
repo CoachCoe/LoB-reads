@@ -6,9 +6,9 @@ any source change.
 
 - **Branch:** `audit/2026-09-01`, cut from `dev` at `f85ef16`
 - **Findings:** 99 (4 blocker, 47 major, 48 minor), plus 1 new open question
-- **Fixed:** 4 blockers and 21 majors/minors, in 13 commits
-- **Verification:** typecheck 0, lint 0, **263 unit**, **337 integration**,
-  build 0 — from a clean `npm ci`
+- **Fixed:** 4 blockers and 21 majors/minors, in 15 commits, plus 6 review findings
+- **Verification:** typecheck 0, lint 0, **267 unit**, **339 integration**,
+  build 0 — from a clean `npm ci`, re-run after the review round
 
 ## Baseline, so nothing here is confused with a pre-existing failure
 
@@ -54,7 +54,7 @@ respectively against the same code.
 |---|---|
 | SEC-1 | `parseBody` buffered any JSON body before Zod ran. The existing size gate had only ever been wired to the three multipart routes, so the entry point eleven routes share was uncapped: twenty concurrent 200 MB posts is 4 GB of heap. Now bounded inside `parseBody`, counting bytes as they arrive — Content-Length is advisory and absent on a chunked request, so a check that trusts it is not a limit |
 | SEC-2 / FLOW-20 | five unbounded reads behind the public, anonymous `/map`, fed by three unrated contribution routes. Caps on all five, `LIMITS.contribute` on all three, and a mechanical guard listing the read paths whose input is other people's contributions |
-| SEC-3 / SEC-4 / FLOW-2 | one root cause: an unidentifiable client keyed on the literal string `"unknown"`, so ten sign-in attempts from one attacker refused sign-in to **every user of the site**. And the limiter recorded a hit before checking the password, so a victim's own correct password spent the budget the attacker was draining. Now null rather than a shared bucket, and hits recorded only on failure |
+| SEC-3 / SEC-4 / FLOW-2 | one root cause: an unidentifiable client keyed on the literal string `"unknown"`, so ten sign-in attempts from one attacker refused sign-in to **every user of the site**. And the limiter recorded a hit before checking the password, so a victim's own correct password spent the budget the attacker was draining. Now null rather than a shared bucket. The first attempt at the second half recorded only on failure, which /bastion correctly rejected as a concurrency bypass — see the review section below; it records on arrival and refunds a correct password |
 | FLOW-1 | every sign-in failure rendered as "Invalid email or password", including the lockout message written specifically to tell someone to wait. Verified in next-auth's own source that a thrown error's message does arrive, so the fix is not cosmetic |
 | FLOW-5 | `editionKey` was constrained only by length and the lookup did not check which work the edition belonged to — so the snapshot FLOW-28 had just made the source of truth could come from a different book, permanently |
 | FLOW-7 | the home card passed a percentage against `max={100}` into a bar whose label is hardcoded "pages", rendering "15 / 100 pages" above its own correct "page 47 of 320 · 15%" |
@@ -127,6 +127,41 @@ A root `README.md` was added, because `docs/` was reachable from nothing, and th
 repo's real invariants were added to `AGENTS.md`, which until now was entirely
 vendor-injected Next.js boilerplate — so none of them reached a new developer or
 an agent.
+
+## Phase 4 review — /bastion, and a regression it caught
+
+Six findings, all valid. One was a live security regression introduced by this
+branch, which is the most useful thing the review produced.
+
+**The concurrency bypass.** Fixing SEC-4 by splitting `checkLimit` into a
+read-only `isLimited` plus a later write turned an atomic check-and-record into
+check-then-act with a ~100ms `bcrypt` await in the middle. A hundred concurrent
+sign-in attempts all observe an empty bucket, all proceed, and only then record —
+`LIMITS.login`'s ten per fifteen minutes becomes a hundred guesses. Demonstrated
+directly: the split ordering admits **50 of 50** against a limit of 3; the atomic
+one admits 3.
+
+The error was conflating "do not count a success" with "do not record until the
+answer is known". Only the first was required. `checkLimit` is called on arrival
+as before, and `refundHit` gives the attempt back when the password proves
+correct — both properties, no window. The concurrency assertion that would have
+caught it is now in the suite.
+
+**The other five.**
+
+| finding | what was wrong |
+|---|---|
+| `readBounded` | `releaseLock()` gives up the reader; it does not cancel the stream, so the rest of the body was still to be received — heap bounded, connection's work not. The comment asserted the guarantee the call lacked. Now `await reader.cancel()`, and the test asserts the producer's `cancel()` ran |
+| `getClientIp: string \| null` | not a guard. TypeScript accepts a null in a template literal and yields `"login:ip:null"` — one shared bucket for the internet, the exact outage the null was introduced to prevent. `clientRateLimitKey` returns the key already built |
+| a vacuous assertion of my own | `rejects.toBeInstanceOf(Error)` is satisfied by every rejection. Now `ZodError`, and explicitly not `PayloadTooLargeError`. A second assertion counted undici's chunk pulls rather than this code's behaviour, and now counts bytes the producer was asked for |
+| policy inconsistency | contribution limits recorded before validation — sixty mistyped latitudes would lock a contributor out for an hour having written nothing. The same SEC-4 shape, three routes over. One policy now: record on arrival so the check stays atomic, refund on every path that wrote nothing |
+| `number \| null \| undefined` | two absences distinguished only by flavour, where `if (!pages)` is wrong for exactly one. `getEditionPageCount` throws at the source |
+
+Nothing was disputed and nothing was recorded as out of scope. The review's
+closing assessment of what was already sound — the `pg_constraint` guard's
+vacuity check, verifying next-auth's source before claiming FLOW-1 was a real
+fix, and the mutation-plus-baseline reporting format — is worth keeping as the
+standard for the next round.
 
 ## Deferred, with reasons
 
