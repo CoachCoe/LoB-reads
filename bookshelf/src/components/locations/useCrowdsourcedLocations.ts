@@ -15,7 +15,7 @@ import { useToast } from "@/components/providers/ToastProvider";
  * looking at a form that appeared to do nothing. They now surface as toasts.
  */
 export interface LocationEndpoint<T> {
-  /** e.g. `/api/books/abc123/locations` */
+  /** e.g. /api/works/OL45804W/locations */
   basePath: string;
   /** Endpoints differ: one returns `{ locations }`, the other a bare array. */
   extractList: (payload: unknown) => T[];

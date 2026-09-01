@@ -31,11 +31,27 @@ export default function ImportReviewList({ rows }: { rows: ReviewRow[] }) {
 
   const remaining = rows.filter((r) => !resolved.has(r.id));
 
-  async function act(rowId: string, path: string, body?: object) {
+  /**
+   * Whole URLs rather than a composed suffix. A path whose last segment is
+   * interpolated cannot be resolved by static analysis, and conventions.test.ts
+   * checks that every API path a component names resolves to a route exporting
+   * the method it uses — the check that would have caught the M3 repoint
+   * leaving these components on routes that had moved.
+   */
+  const actionUrl = {
+    confirm: (rowId: string) => `/api/import/rows/${rowId}/confirm`,
+    skip: (rowId: string) => `/api/import/rows/${rowId}/skip`,
+  } as const;
+
+  async function act(
+    rowId: string,
+    action: keyof typeof actionUrl,
+    body?: object
+  ) {
     setPending(rowId);
     setError(null);
     try {
-      const response = await fetch(`/api/import/rows/${rowId}/${path}`, {
+      const response = await fetch(actionUrl[action](rowId), {
         method: "POST",
         headers: body ? { "Content-Type": "application/json" } : undefined,
         body: body ? JSON.stringify(body) : undefined,

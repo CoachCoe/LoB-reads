@@ -49,6 +49,21 @@ function handlersOf(source: string): { method: string; body: string }[] {
   }));
 }
 
+/**
+ * Source with comments removed, so a checker reads code rather than prose.
+ *
+ * Line comments are only stripped when they start the line, so a `https://`
+ * inside a string survives. Enough for the mechanical checks here, and it means
+ * a doc comment naming an example URL is not mistaken for a call.
+ */
+function withoutComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .filter((line) => !/^\s*\/\//.test(line))
+    .join("\n");
+}
+
 function read(file: string): string {
   return readFileSync(file, "utf8");
 }
@@ -198,6 +213,167 @@ describe("client/server boundary", () => {
             .some((s) => !s.startsWith("type "));
         })
         .map(([match]) => `${file}: ${match.replace(/\s+/g, " ")}`);
+    });
+
+    expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * Every URL a client component fetches must resolve to a route that exports
+ * that method.
+ *
+ * The M3 repoint moved the shelf routes and left the components calling the old
+ * paths, so shelving silently 404'd for three milestones. core-loop.test.ts was
+ * written to stop that recurring, and it half does: it asserts the components
+ * are mounted, but it hand-types the URLs and bodies it sends to the handlers —
+ * so it verifies that the routes accept what the TEST sends. Pointing
+ * AddToShelfButton at `/api/shelves/${id}/books` again would not fail it.
+ *
+ * This reads the URLs out of the components instead, and covers every component
+ * rather than the one page core-loop looks at (PRD R7).
+ */
+describe("client calls resolve to routes that exist", () => {
+  /** Route directories as segment lists: shelves/[shelfId]/works -> [...]. */
+  const routeSegments = (): { segments: string[]; file: string }[] =>
+    routeFiles().map((file) => ({
+      file,
+      segments: path
+        .relative(API_DIR, path.dirname(file))
+        .split(path.sep)
+        .filter(Boolean),
+    }));
+
+  /** `/api/shelves/${shelf.id}/works?x=1` -> ["shelves", "*", "works"]. */
+  const urlSegments = (url: string): string[] | null => {
+    const withoutQuery = url.split("?")[0];
+    if (!withoutQuery.startsWith("/api/")) return null;
+    return withoutQuery
+      .slice("/api/".length)
+      .split("/")
+      .filter(Boolean)
+      .map((segment) => (segment.includes("${") ? "*" : segment));
+  };
+
+  /**
+   * How specifically a route matches a URL, or null for no match.
+   *
+   * The rules matter more than they look. An interpolated segment (`*`) may
+   * fill a dynamic route segment but NOT a literal one — without that,
+   * `/api/fictional-worlds/maps/${mapId}` "matches"
+   * `fictional-worlds/[worldId]/upload`. And a catch-all swallows the rest,
+   * which is why `/api/auth/register` would otherwise resolve to
+   * `auth/[...nextauth]`. The score is the number of literal segments matched,
+   * so the most specific route wins.
+   */
+  const specificity = (url: string[], route: string[]): number | null => {
+    let score = 0;
+    let i = 0;
+
+    for (; i < route.length; i++) {
+      const segment = route[i];
+
+      if (segment.startsWith("[...")) {
+        // Catch-all: consumes whatever is left, and never wins on specificity.
+        return i <= url.length ? score : null;
+      }
+
+      if (i >= url.length) return null;
+
+      if (segment.startsWith("[")) continue; // dynamic: any single segment
+      if (url[i] !== segment) return null; // literal: must match exactly
+      score++;
+    }
+
+    return i === url.length ? score : null;
+  };
+
+  const routeFor = (
+    url: string[],
+    routes: { segments: string[]; file: string }[]
+  ) =>
+    routes
+      .map((route) => ({ route, score: specificity(url, route.segments) }))
+      .filter((c): c is { route: typeof routes[number]; score: number } =>
+        c.score !== null
+      )
+      .sort((a, b) => b.score - a.score)[0]?.route;
+
+  /** Every fetch("...") / fetch(`...`) in the app, with the methods it names. */
+  const clientCalls = (): { file: string; url: string; methods: string[] }[] => {
+    const calls: { file: string; url: string; methods: string[] }[] = [];
+
+    for (const file of walk("src", (f) => /\.tsx?$/.test(f))) {
+      const source = read(file);
+      const pattern = /fetch\(\s*[`"']([^`"']*)[`"']\s*(?:,\s*\{([\s\S]*?)\})?\s*\)/g;
+
+      for (const match of source.matchAll(pattern)) {
+        const url = match[1];
+        if (!url.startsWith("/api/")) continue;
+        const options = match[2] ?? "";
+        const methods = [...options.matchAll(/method:\s*[^,}]*?["'](\w+)["']/g)].map(
+          (m) => m[1]
+        );
+        // A fetch with no method is a GET.
+        calls.push({ file, url, methods: methods.length ? methods : ["GET"] });
+      }
+    }
+
+    return calls;
+  };
+
+  it("finds the client calls (guards against a broken scan)", () => {
+    expect(clientCalls().length).toBeGreaterThan(10);
+  });
+
+  /**
+   * Every `/api/...` literal in the app, not only those written inline in a
+   * fetch call — a component may build its URLs in a lookup table, and those
+   * still have to resolve.
+   */
+  const apiUrlLiterals = (): { file: string; url: string }[] => {
+    const found: { file: string; url: string }[] = [];
+
+    for (const file of walk("src", (f) => /\.tsx?$/.test(f))) {
+      if (file.startsWith(API_DIR)) continue; // the routes themselves
+      for (const match of withoutComments(read(file)).matchAll(
+        /[`"'](\/api\/[^`"'\s]*)[`"']/g
+      )) {
+        found.push({ file, url: match[1] });
+      }
+    }
+
+    return found;
+  };
+
+  it("never names an API path with no matching route", () => {
+    const routes = routeSegments();
+
+    const offenders = apiUrlLiterals().filter(({ url }) => {
+      const segments = urlSegments(url);
+      return segments !== null && !routeFor(segments, routes);
+    });
+
+    expect(offenders.map((o) => `${o.file}: ${o.url}`)).toEqual([]);
+  });
+
+  it("never calls a method the matching route does not export", () => {
+    const routes = routeSegments();
+
+    const offenders = clientCalls().flatMap(({ file, url, methods }) => {
+      const segments = urlSegments(url);
+      if (!segments) return [];
+
+      const route = routeFor(segments, routes);
+      if (!route) return []; // reported by the test above
+
+      const exported = [
+        ...read(route.file).matchAll(/export async function ([A-Z]+)\s*\(/g),
+      ].map((m) => m[1]);
+
+      return methods
+        .filter((method) => !exported.includes(method))
+        .map((method) => `${file}: ${method} ${url}`);
     });
 
     expect(offenders).toEqual([]);
