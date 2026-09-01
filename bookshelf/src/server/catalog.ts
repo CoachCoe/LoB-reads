@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 
 /**
  * Reads over the Open Library catalog.
@@ -145,14 +146,20 @@ export const COUNT_CEILING = 1000;
  * one of them. An indexed array containment lookup answers the question the
  * subject chips are actually asking, and does it in milliseconds.
  */
-export async function getWorksBySubject(
+/**
+ * The statements behind the hot read paths, as `Prisma.Sql` rather than inline
+ * tagged templates.
+ *
+ * read-path-plans.test.ts used to EXPLAIN SQL typed into the test, so it
+ * asserted the shape of its own copy: three of the four bugs its header lists
+ * could be reintroduced here while it stayed green. Exporting the builder means
+ * the plan assertions run against the statement this module actually sends.
+ */
+export function worksBySubjectSql(
   subject: string,
   { limit = 24, offset = 0 }: { limit?: number; offset?: number } = {}
-): Promise<WorkSearchResult[]> {
-  const trimmed = subject.trim();
-  if (trimmed.length === 0) return [];
-
-  return prisma.$queryRaw<WorkSearchResult[]>`
+): Prisma.Sql {
+  return Prisma.sql`
     SELECT
       w.ol_key             AS "olKey",
       w.title,
@@ -165,10 +172,22 @@ export async function getWorksBySubject(
       0::double precision  AS rank
     FROM catalog.works w
     LEFT JOIN catalog.editions e ON e.ol_key = w.cover_edition_key
-    WHERE w.subjects @> ARRAY[${trimmed}]::text[]
+    WHERE w.subjects @> ARRAY[${subject}]::text[]
     ORDER BY w.edition_count DESC, w.ol_key
     LIMIT ${limit} OFFSET ${offset}
   `;
+}
+
+export async function getWorksBySubject(
+  subject: string,
+  { limit = 24, offset = 0 }: { limit?: number; offset?: number } = {}
+): Promise<WorkSearchResult[]> {
+  const trimmed = subject.trim();
+  if (trimmed.length === 0) return [];
+
+  return prisma.$queryRaw<WorkSearchResult[]>(
+    worksBySubjectSql(trimmed, { limit, offset })
+  );
 }
 
 /**
@@ -201,26 +220,32 @@ export async function countWorksBySubject(
   return { count, atCeiling: count >= COUNT_CEILING };
 }
 
-export async function countWorkMatches(
-  query: string
-): Promise<{ count: number; atCeiling: boolean }> {
-  const trimmed = query.trim();
-  if (trimmed.length === 0) return { count: 0, atCeiling: false };
-
-  const rows = await prisma.$queryRaw<{ count: bigint }[]>`
+export function countWorkMatchesSql(query: string): Prisma.Sql {
+  return Prisma.sql`
     SELECT count(*) AS count FROM (
       SELECT 1
       FROM catalog.works w
       CROSS JOIN (
         SELECT
-          websearch_to_tsquery('english', unaccent(${trimmed})) AS tsq,
-          unaccent(lower(${trimmed}))                           AS norm
+          websearch_to_tsquery('english', unaccent(${query})) AS tsq,
+          unaccent(lower(${query}))                           AS norm
       ) q
       WHERE w.search_vector @@ q.tsq
          OR w.title_norm % q.norm
       LIMIT ${COUNT_CEILING}
     ) matched
   `;
+}
+
+export async function countWorkMatches(
+  query: string
+): Promise<{ count: number; atCeiling: boolean }> {
+  const trimmed = query.trim();
+  if (trimmed.length === 0) return { count: 0, atCeiling: false };
+
+  const rows = await prisma.$queryRaw<{ count: bigint }[]>(
+    countWorkMatchesSql(trimmed)
+  );
   const count = Number(rows[0]?.count ?? 0);
   return { count, atCeiling: count >= COUNT_CEILING };
 }
@@ -320,8 +345,8 @@ export async function getOtherWorksByAuthor(
 }
 
 /** Browse entry point: the works with the most editions. */
-export async function getPopularWorks(limit = 24): Promise<WorkSearchResult[]> {
-  return prisma.$queryRaw<WorkSearchResult[]>`
+export function popularWorksSql(limit = 24): Prisma.Sql {
+  return Prisma.sql`
     SELECT
       w.ol_key             AS "olKey",
       w.title,
@@ -339,6 +364,10 @@ export async function getPopularWorks(limit = 24): Promise<WorkSearchResult[]> {
   `;
 }
 
+export async function getPopularWorks(limit = 24): Promise<WorkSearchResult[]> {
+  return prisma.$queryRaw<WorkSearchResult[]>(popularWorksSql(limit));
+}
+
 /** Distinct subjects across the catalog, for browse filters. */
 /**
  * The most common subjects, for the discover page.
@@ -353,12 +382,18 @@ export async function getPopularWorks(limit = 24): Promise<WorkSearchResult[]> {
  * aggregate: that fallback would be invisible on a small catalog and would
  * reintroduce the four-second page the moment the table went missing.
  */
-export async function getCatalogSubjects(limit = 40): Promise<string[]> {
-  const rows = await prisma.$queryRaw<{ subject: string }[]>`
+export function catalogSubjectsSql(limit = 40): Prisma.Sql {
+  return Prisma.sql`
     SELECT subject FROM catalog.subject_counts
     ORDER BY work_count DESC, subject
     LIMIT ${limit}
   `;
+}
+
+export async function getCatalogSubjects(limit = 40): Promise<string[]> {
+  const rows = await prisma.$queryRaw<{ subject: string }[]>(
+    catalogSubjectsSql(limit)
+  );
   return rows.map((r) => r.subject);
 }
 
