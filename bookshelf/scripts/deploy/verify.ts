@@ -289,6 +289,29 @@ async function main() {
   );
   check("search_vector trigger exists", Number(trigger) === 1);
 
+  // No foreign key from app into catalog.
+  //
+  // ARCHITECTURE.md calls this the single most load-bearing decision in the
+  // schema, and until now nothing enforced it. The integration suite covers the
+  // schema Prisma generates; this covers the database that actually shipped,
+  // which is not the same claim — a hand-written migration or a restore from a
+  // dump made elsewhere can carry a constraint Prisma never saw, and a release
+  // is exactly when that difference surfaces.
+  const crossSchemaFks = (await client.query(
+    `SELECT c.conname, rn.nspname || '.' || r.relname AS from_table
+       FROM pg_constraint c
+       JOIN pg_class     r  ON r.oid  = c.conrelid
+       JOIN pg_namespace rn ON rn.oid = r.relnamespace
+       JOIN pg_class     f  ON f.oid  = c.confrelid
+       JOIN pg_namespace fn ON fn.oid = f.relnamespace
+      WHERE c.contype = 'f' AND rn.nspname = 'app' AND fn.nspname IN ('catalog', 'seed')`
+  )).rows.map((r) => `${r.from_table} (${r.conname})`);
+  check(
+    "no foreign key from app into catalog",
+    crossSchemaFks.length === 0,
+    crossSchemaFks.length ? `found: ${crossSchemaFks.join(", ")}` : ""
+  );
+
   // Statistics. A dump carries none, so a freshly restored catalog plans blind
   // until someone runs ANALYZE.
   const unanalyzed = (await client.query(
