@@ -33,6 +33,7 @@ import {
   POST as progressPost,
 } from "@/app/api/progress/route";
 import { startReading } from "@/server/progress";
+import { getReadingStats, finishReading } from "@/server/progress";
 
 const json = (body: unknown, method = "POST") =>
   new Request("http://localhost/api", {
@@ -286,3 +287,64 @@ describe("FLOW-5: starting a session with an explicit edition", () => {
     expect(session.pageCount).toBe(412);
   });
 });
+
+/**
+ * TEST-9: `getReadingStats` is the "books read" number on two pages and had no
+ * test at all.
+ *
+ * Dropping `finishedAt: { not: null }` from the count made every profile count
+ * in-progress books as read, and nothing failed. `pagesRead` is equally exposed:
+ * `_sum: { pageCount: true }` -> `_sum: { currentPage: true }` changes the number
+ * on /my-books and breaks nothing either.
+ *
+ * This is FLOW-24 — "one definition of books read" — with no regression test
+ * behind the fix. Absolute values, so a mutation that shifts a count cannot pass
+ * by still being internally consistent.
+ */
+describe("TEST-9: getReadingStats", () => {
+  it("counts finished sessions as read and open ones as in progress", async () => {
+    const user = await makeUserWithShelves();
+    const a = await makeWork({ pages: 100 });
+    const b = await makeWork({ pages: 250 });
+    const c = await makeWork({ pages: 400 });
+
+    await startAndFinishFor(user.id, a.olKey);
+    await startAndFinishFor(user.id, b.olKey);
+    await startReading(user.id, c.olKey);
+
+    const stats = await getReadingStats(user.id);
+
+    expect(stats.booksRead).toBe(2);
+    expect(stats.currentlyReading).toBe(1);
+    // Finished sessions only, and their snapshot page counts: 100 + 250.
+    expect(stats.pagesRead).toBe(350);
+  });
+
+  it("reports zeroes for a reader who has started nothing", async () => {
+    const user = await makeUserWithShelves();
+    const stats = await getReadingStats(user.id);
+
+    expect(stats).toMatchObject({
+      booksRead: 0,
+      currentlyReading: 0,
+      pagesRead: 0,
+    });
+  });
+
+  it("does not count another reader's books", async () => {
+    const mine = await makeUserWithShelves();
+    const theirs = await makeUserWithShelves();
+    const work = await makeWork({ pages: 100 });
+
+    await startAndFinishFor(theirs.id, work.olKey);
+
+    expect((await getReadingStats(mine.id)).booksRead).toBe(0);
+    expect((await getReadingStats(theirs.id)).booksRead).toBe(1);
+  });
+});
+
+/** Start and finish in one step, the way the importer does. */
+async function startAndFinishFor(userId: string, workKey: string) {
+  await startReading(userId, workKey);
+  await finishReading(userId, workKey);
+}
