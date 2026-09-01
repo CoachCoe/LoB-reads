@@ -1,4 +1,4 @@
-import { prisma } from "./setup";
+import { prisma, resetDatabase } from "./setup";
 import { getSimilarWorks, getWorkRating, getWorkRatings } from "@/server/catalog";
 import { makeWork } from "./factories";
 import {
@@ -28,6 +28,14 @@ interface Fixture {
 }
 
 async function seedRatingGraph(): Promise<Fixture> {
+  // beforeAll runs BEFORE the first beforeEach, so without this the fixture
+  // inherits whatever app.reviews rows the previous test FILE happened to leave
+  // — and computeRatingStats builds from app.reviews UNION seed.ratings, so a
+  // single stale review becomes an eighth work in work_rating_stats with no
+  // co-raters and therefore no neighbours. That made
+  // "covers 100% of the top works" fail as 7 of 8, depending purely on which
+  // file ran before this one.
+  await resetDatabase();
   await prisma.$executeRawUnsafe(`TRUNCATE seed.ratings, seed.users CASCADE`);
   await prisma.$executeRawUnsafe(`TRUNCATE catalog.work_similarity`);
   await prisma.$executeRawUnsafe(`TRUNCATE catalog.work_rating_stats`);
