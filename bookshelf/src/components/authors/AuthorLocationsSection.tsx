@@ -27,7 +27,7 @@ const LOCATION_TYPES = [
   { value: "birthplace", label: "Birthplace", icon: Heart, color: "text-pink-500" },
   { value: "residence", label: "Residence", icon: Home, color: "text-blue-500" },
   { value: "worked", label: "Worked", icon: Briefcase, color: "text-amber-500" },
-  { value: "death", label: "Place of Death", icon: MapPin, color: "text-gray-500" },
+  { value: "death", label: "Place of Death", icon: MapPin, color: "text-gray-500 dark:text-gray-400" },
 ];
 
 /**
