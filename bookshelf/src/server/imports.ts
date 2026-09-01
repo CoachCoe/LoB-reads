@@ -389,7 +389,9 @@ async function applyRow(
 
   if (row.dateRead && row.exclusiveShelf === "read") {
     try {
-      await finishReading(userId, row.workKey);
+      // The parsed date, not now. It was already being read from the CSV and
+      // stored on the row; only this call site discarded it. See FLOW-10.
+      await finishReading(userId, row.workKey, row.dateRead);
     } catch {
       // Nice to have, and already implied by the "Read" shelf.
     }

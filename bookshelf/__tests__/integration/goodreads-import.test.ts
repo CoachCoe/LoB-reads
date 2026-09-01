@@ -346,3 +346,88 @@ describe("a row that applies nothing is not reported as matched", () => {
     ).toBe(1);
   });
 });
+
+/**
+ * FLOW-10: the reading dates the importer promises to import.
+ *
+ * `Date Read` was parsed, stored on the import row, and then used only as a
+ * boolean — `if (row.dateRead && exclusiveShelf === "read")` — while
+ * `finishReading` stamped `new Date()`. Every imported book was therefore
+ * finished at the moment of import.
+ *
+ * The consequence is not local to the import: `getWrappedStats` selects finished
+ * sessions between 1 January and 31 December of a year, so a 300-book export
+ * spanning 2010-2024 made this year's /wrapped report 300 books read and every
+ * earlier year report none. The settings page promises the opposite in as many
+ * words: "Your books, ratings, shelves, and reading dates will be imported."
+ */
+describe("FLOW-10: imported books keep the date they were actually read", () => {
+  const csv = [
+    HEADER,
+    `1,Dune,Frank Herbert,"=""0441172717""","=""9780441172719""",5,Ace,412,1965,2014/03/15,2024/01/02,sci-fi,read,"",1`,
+    `2,The Great Gatsby,F. Scott Fitzgerald,"","",4,Scribner,180,1925,2019/11/02,2024/04/01,classics,read,"",1`,
+  ].join("\n");
+
+  it("stamps the CSV date, not the import time", async () => {
+    await importCsv(csv);
+
+    const sessions = await prisma.readingSession.findMany({
+      where: { userId },
+      orderBy: { finishedAt: "asc" },
+      select: { workKey: true, startedAt: true, finishedAt: true },
+    });
+
+    expect(sessions).toHaveLength(2);
+
+    // Absolute dates, not "before now": stamping the import time also satisfies
+    // any inequality against now, which is how this survived.
+    expect(sessions[0].finishedAt?.toISOString().slice(0, 10)).toBe("2014-03-15");
+    expect(sessions[1].finishedAt?.toISOString().slice(0, 10)).toBe("2019-11-02");
+  });
+
+  it("dates the start from the same day, so ordering stays meaningful", async () => {
+    await importCsv(csv);
+
+    const sessions = await prisma.readingSession.findMany({
+      where: { userId },
+      orderBy: { startedAt: "asc" },
+      select: { startedAt: true },
+    });
+
+    // getLatestSessionForWork orders on startedAt. Left at `now`, a book read in
+    // 2014 and imported today would sort ahead of one finished last week.
+    expect(sessions[0].startedAt.toISOString().slice(0, 10)).toBe("2014-03-15");
+    expect(sessions[1].startedAt.toISOString().slice(0, 10)).toBe("2019-11-02");
+  });
+
+  it("lands those books in the year they belong to, not this one", async () => {
+    await importCsv(csv);
+
+    const inThisYear = await prisma.readingSession.count({
+      where: {
+        userId,
+        finishedAt: { gte: new Date(`${new Date().getFullYear()}-01-01`) },
+      },
+    });
+
+    // The assertion that fails on the old code with `Received: 2`. This is the
+    // /wrapped defect stated directly.
+    expect(inThisYear).toBe(0);
+  });
+
+  it("still records a finish for a read row, and still skips one without a date", async () => {
+    // The date must not become a silent gate on whether the finish happens.
+    await importCsv(
+      [
+        HEADER,
+        `1,Dune,Frank Herbert,"","",5,Ace,412,1965,2014/03/15,2024/01/02,sci-fi,read,"",1`,
+        `2,The Hobbit,J.R.R. Tolkien,"","",0,Houghton,300,1937,,2024/06/01,fantasy,currently-reading,"",0`,
+      ].join("\n")
+    );
+
+    const finished = await prisma.readingSession.count({
+      where: { userId, finishedAt: { not: null } },
+    });
+    expect(finished).toBe(1);
+  });
+});
