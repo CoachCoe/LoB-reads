@@ -1,9 +1,8 @@
 "use client";
 
-import { coverUrl } from "@/lib/covers";
+import CoverImage from "@/components/catalog/CoverImage";
 import { useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { ChevronRight, X } from "lucide-react";
 import type { ShelfWithItems } from "@/server/shelves";
 import { useToast } from "@/components/providers/ToastProvider";
@@ -85,22 +84,14 @@ export default function ShelfSection({ shelf }: ShelfSectionProps) {
             <div key={item.id} className="group relative">
               <Link href={`/work/${item.workKey}`}>
                 <div className="bg-[var(--card-bg)] rounded-lg shadow-sm border border-[var(--card-border)] overflow-hidden hover:shadow-md transition-shadow">
-                  <div className="aspect-[2/3] relative bg-[var(--border-light)]">
-                    {coverUrl(item.work?.coverId) ? (
-                      <Image
-                        src={coverUrl(item.work?.coverId) ?? ""}
-                        alt={item.work?.title ?? "Not in the current catalog"}
-                        fill
-                        className="object-cover"
-                        sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 16vw"
-                        unoptimized
-                      />
-                    ) : (
-                      <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-purple-500/20 to-pink-500/20">
-                        <span className="text-3xl">📚</span>
-                      </div>
-                    )}
-                  </div>
+                  <CoverImage
+                    title={item.work?.title ?? "Not in the current catalog"}
+                    olKey={item.workKey}
+                    coverId={item.work?.coverId}
+                    size="md"
+                    sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 16vw"
+                    className="aspect-[2/3] w-full"
+                  />
                   <div className="p-2">
                     <h3 className="font-medium text-sm text-[var(--foreground)] line-clamp-1">
                       {item.work?.title ?? "Not in the current catalog"}

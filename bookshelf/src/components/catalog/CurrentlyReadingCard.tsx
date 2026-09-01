@@ -1,8 +1,6 @@
 import Link from "next/link";
-import Image from "next/image";
-import { BookOpen } from "lucide-react";
 import ProgressBar from "@/components/ui/ProgressBar";
-import { coverUrl } from "@/lib/covers";
+import CoverImage from "@/components/catalog/CoverImage";
 import type { SessionWithWork } from "@/server/progress";
 
 /** An open reading session, shown on the home page. */
@@ -11,7 +9,6 @@ export default function CurrentlyReadingCard({
 }: {
   session: SessionWithWork;
 }) {
-  const cover = coverUrl(session.work?.coverId, "M");
   const title = session.work?.title ?? "Unknown work";
 
   return (
@@ -19,15 +16,14 @@ export default function CurrentlyReadingCard({
       href={`/work/${session.workKey}`}
       className="flex gap-3 rounded-lg border border-gray-200 p-3 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
     >
-      <div className="relative h-24 w-16 flex-shrink-0 overflow-hidden rounded bg-gray-100 dark:bg-gray-800">
-        {cover ? (
-          <Image src={cover} alt="" fill sizes="64px" className="object-cover" />
-        ) : (
-          <div className="flex h-full items-center justify-center text-gray-300 dark:text-gray-600">
-            <BookOpen className="h-5 w-5" aria-hidden="true" />
-          </div>
-        )}
-      </div>
+      <CoverImage
+        title={session.work?.title ?? "Untitled"}
+        olKey={session.workKey}
+        coverId={session.work?.coverId}
+        size="sm"
+        sizes="64px"
+        className="h-24 w-16 flex-shrink-0 rounded"
+      />
 
       <div className="min-w-0 flex-1">
         <h3 className="line-clamp-2 font-medium text-gray-900 dark:text-gray-100">

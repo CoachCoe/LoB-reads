@@ -243,7 +243,7 @@ export default function FictionalWorldsPanel({
                 aria-label="Back to all fictional worlds"
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors mr-1"
               >
-                <ChevronLeft className="h-5 w-5 text-gray-500" />
+                <ChevronLeft className="h-5 w-5 text-gray-500 dark:text-gray-400" />
               </button>
             )}
             <Sparkles className="h-5 w-5 text-purple-600" />
@@ -256,7 +256,7 @@ export default function FictionalWorldsPanel({
             aria-label="Close fictional worlds panel"
             className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
           >
-            <X className="h-5 w-5 text-gray-500" />
+            <X className="h-5 w-5 text-gray-500 dark:text-gray-400" />
           </button>
         </div>
 
@@ -290,7 +290,7 @@ export default function FictionalWorldsPanel({
 
                 {selectedWorld.maps.length === 0 ? (
                   <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-8 text-center">
-                    <Map className="h-12 w-12 mx-auto mb-2 text-gray-400" />
+                    <Map className="h-12 w-12 mx-auto mb-2 text-gray-400 dark:text-gray-500" />
                     <p className="text-sm text-gray-500 dark:text-gray-400">No maps uploaded yet</p>
                     <button
                       onClick={() => setShowUploadForm(true)}
@@ -384,7 +384,7 @@ export default function FictionalWorldsPanel({
               )}
 
               {worlds.length === 0 ? (
-                <div className="text-center py-8 text-gray-400">
+                <div className="text-center py-8 text-[var(--foreground-secondary)]">
                   <Sparkles className="h-12 w-12 mx-auto mb-2" />
                   <p>No fictional worlds yet</p>
                   {!currentUserId && (
@@ -409,7 +409,7 @@ export default function FictionalWorldsPanel({
                             className="w-full h-full object-cover"
                           />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center text-gray-400">
+                          <div className="w-full h-full flex items-center justify-center text-gray-400 dark:text-gray-500">
                             <Map className="h-5 w-5" />
                           </div>
                         )}
@@ -478,7 +478,7 @@ export default function FictionalWorldsPanel({
                   onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
                   className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-purple-50 file:text-purple-700 hover:file:bg-purple-100 dark:file:bg-purple-900 dark:file:text-purple-300"
                 />
-                <p className="text-xs text-gray-500 mt-1">JPEG, PNG, GIF, or WebP. Max 5MB.</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">JPEG, PNG, GIF, or WebP. Max 5MB.</p>
               </div>
             </div>
 
@@ -529,7 +529,7 @@ export default function FictionalWorldsPanel({
                     title="Edit"
                     aria-label={`Edit details for ${viewingMap.title}`}
                   >
-                    <Edit2 className="h-4 w-4 text-gray-500" />
+                    <Edit2 className="h-4 w-4 text-gray-500 dark:text-gray-400" />
                   </button>
                 )}
                 {/* Deletion is destructive, so it matches the API rule:
@@ -550,7 +550,7 @@ export default function FictionalWorldsPanel({
                   className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
                   aria-label="Close map viewer"
                 >
-                  <X className="h-5 w-5 text-gray-500" />
+                  <X className="h-5 w-5 text-gray-500 dark:text-gray-400" />
                 </button>
               </div>
             </div>

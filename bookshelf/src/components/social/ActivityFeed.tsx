@@ -1,10 +1,9 @@
 import Link from "next/link";
-import Image from "next/image";
 import { BookOpen, Star, BookMarked, CheckCircle2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import Avatar from "@/components/ui/Avatar";
 import StarRating from "@/components/ui/StarRating";
-import { coverUrl } from "@/lib/covers";
+import CoverImage from "@/components/catalog/CoverImage";
 import type { FeedItem } from "@/server/users";
 
 /**
@@ -57,7 +56,6 @@ const ICONS = {
 function FeedRow({ item }: { item: FeedItem }) {
   const Icon = ICONS[item.type];
   const title = item.work?.title ?? "a book no longer in the catalog";
-  const cover = coverUrl(item.work?.coverId, "S");
 
   return (
     <article className="flex gap-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
@@ -72,7 +70,7 @@ function FeedRow({ item }: { item: FeedItem }) {
             {item.user.name}
           </Link>{" "}
           <Icon
-            className="inline h-3.5 w-3.5 align-[-2px] text-gray-400"
+            className="inline h-3.5 w-3.5 align-[-2px] text-gray-400 dark:text-gray-500"
             aria-hidden="true"
           />{" "}
           {item.type === "shelf_add" && (
@@ -116,14 +114,15 @@ function FeedRow({ item }: { item: FeedItem }) {
         </time>
       </div>
 
-      {cover && (
+      {item.work && (
         <Link href={`/work/${item.workKey}`} className="shrink-0">
-          <Image
-            src={cover}
-            alt=""
-            width={40}
-            height={60}
-            className="rounded object-cover"
+          <CoverImage
+            title={item.work.title}
+            olKey={item.workKey}
+            coverId={item.work.coverId}
+            size="xs"
+            sizes="40px"
+            className="h-[60px] w-10 rounded"
           />
         </Link>
       )}

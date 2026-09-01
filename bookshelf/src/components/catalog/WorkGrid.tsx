@@ -36,7 +36,7 @@ export default function WorkGrid({ items, emptyMessage }: WorkGridProps) {
             <p className="text-xs text-gray-500 dark:text-gray-400">
               Not in the current catalog
             </p>
-            <p className="font-mono text-[10px] text-gray-400">{item.workKey}</p>
+            <p className="font-mono text-[10px] text-gray-400 dark:text-gray-500">{item.workKey}</p>
           </div>
         )
       )}

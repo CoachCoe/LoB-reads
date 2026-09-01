@@ -101,7 +101,7 @@ export default function MapClient({
         {worksCount === 0 && authorsCount === 0 ? (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-50 dark:bg-gray-800">
             <div className="text-center px-4">
-              <MapPin className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+              <MapPin className="h-16 w-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
               <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">
                 No locations yet
               </h2>

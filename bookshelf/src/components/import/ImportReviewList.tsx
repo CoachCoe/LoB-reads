@@ -139,7 +139,7 @@ export default function ImportReviewList({ rows }: { rows: ReviewRow[] }) {
                         {candidate.authorNames ?? "Unknown author"}
                       </span>
                     </span>
-                    <span className="shrink-0 text-xs text-gray-400">
+                    <span className="shrink-0 text-xs text-[var(--foreground-secondary)]">
                       This one
                     </span>
                   </button>

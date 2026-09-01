@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getUserProfile, isFollowing } from "@/server/users";
 import { getUserReviews } from "@/server/reviews";
-import { coverUrl } from "@/lib/covers";
+import CoverImage from "@/components/catalog/CoverImage";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getReadingStats } from "@/server/progress";
 import Avatar from "@/components/ui/Avatar";
@@ -110,16 +110,14 @@ export default async function UserProfilePage({ params }: Props) {
                 {shelf.shelfItems.length > 0 && (
                   <div className="flex -space-x-2 mt-3">
                     {shelf.shelfItems.slice(0, 4).map((item) => (
-                      <div
+                      <CoverImage
                         key={item.id}
-                        className="w-10 h-14 rounded border-2 border-white overflow-hidden"
-                        style={{
-                          backgroundImage: coverUrl(item.work?.coverId)
-                            ? `url(${coverUrl(item.work?.coverId)})`
-                            : undefined,
-                          backgroundSize: "cover",
-                          backgroundColor: "#f3f4f6",
-                        }}
+                        title={item.work?.title ?? ""}
+                        olKey={item.workKey}
+                        coverId={item.work?.coverId}
+                        size="xs"
+                        sizes="40px"
+                        className="h-14 w-10 rounded border-2 border-[var(--card-bg)]"
                       />
                     ))}
                   </div>
