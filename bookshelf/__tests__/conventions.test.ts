@@ -566,6 +566,49 @@ describe("contributed read paths are bounded", () => {
   });
 });
 
+/**
+ * Normalised columns are compared directly, never through a function.
+ *
+ * catalog.ts:16-20 states the rule: "Comparisons therefore go against
+ * `title_norm` / `author_names_norm`, never `unaccent(lower(title))`… Wrapping
+ * the column is how the fuzzy path silently became a sequential scan once
+ * already." It happened a second time in `findAuthorKeyByName`
+ * (`lower(a.name) = lower($1)`), where `catalog.authors` had no index but its
+ * primary key — 1053 ms per author page against the real 3.2M-row table, and no
+ * accent folding, so an accented author 404'd on their own page.
+ *
+ * A source check because the behaviour is not assertable at fixture scale: a
+ * sequential scan of a near-empty table is the correct plan, so a plan assertion
+ * there would be about the planner rather than the query. Same limit that let the
+ * R1 regression through.
+ */
+describe("SQL compares against normalised columns", () => {
+  /** `lower(col)` or `unaccent(col)` on the left of a comparison. */
+  const WRAPPED_COLUMN =
+    /(?:lower|unaccent)\s*\(\s*(?:[a-z_]+\.)?(?:name|title|author_names)\s*\)\s*(?:=|LIKE|%)/i;
+
+  it("catches a wrapped column, and passes a direct comparison", () => {
+    // Without this the regex above could rot into something that matches
+    // nothing and the check below would pass forever.
+    expect(WRAPPED_COLUMN.test("WHERE lower(a.name) = lower($1)")).toBe(true);
+    expect(WRAPPED_COLUMN.test("WHERE unaccent(title) LIKE $1")).toBe(true);
+    expect(WRAPPED_COLUMN.test("WHERE a.name_norm = lower(unaccent($1))")).toBe(
+      false
+    );
+    expect(
+      WRAPPED_COLUMN.test("WHERE w.title_norm % q.norm")
+    ).toBe(false);
+  });
+
+  it("never wraps a comparable column in src/server", () => {
+    const offenders = walk("src/server", (f) => f.endsWith(".ts")).filter((file) =>
+      WRAPPED_COLUMN.test(withoutComments(read(file)))
+    );
+
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe("schema conventions", () => {
   it("uses every schema it defines", () => {
     // updateProfileSchema was written and left unwired for several commits,

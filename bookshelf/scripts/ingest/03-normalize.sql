@@ -115,10 +115,16 @@ BEGIN
 END
 $$;
 
-INSERT INTO catalog.authors_new (ol_key, name, personal_name, birth_date, death_date, bio, photo_id)
+-- name_norm is computed here rather than left to the trigger. LIKE ... INCLUDING
+-- ALL does not copy triggers, so authors_new starts without one, and computing
+-- the value in the SELECT is one expression per row instead of a per-row trigger
+-- dispatch across 3.2M of them. The trigger is created after the swap, below, so
+-- that later writes to the live table maintain it.
+INSERT INTO catalog.authors_new (ol_key, name, name_norm, personal_name, birth_date, death_date, bio, photo_id)
 SELECT
   s.ol_key,
   coalesce(s.data ->> 'name', '(unknown)'),
+  lower(unaccent(coalesce(s.data ->> 'name', '(unknown)'))),
   s.data ->> 'personal_name',
   s.data ->> 'birth_date',
   s.data ->> 'death_date',
@@ -542,6 +548,19 @@ BEGIN
   END LOOP;
 END
 $$;
+
+-- Re-create the name_norm trigger on the swapped-in authors table.
+--
+-- LIKE ... INCLUDING ALL does not copy triggers, so authors_new arrived without
+-- one and the insert above computed name_norm inline. After the swap the live
+-- table needs the trigger back, or a later write to an author's name would leave
+-- name_norm stale and findAuthorKeyByName would stop finding them — a silent
+-- failure the next monthly ingest would reintroduce every time. The works
+-- search_vector trigger is re-created for exactly this reason, above.
+CREATE TRIGGER authors_name_norm_trigger
+  BEFORE INSERT OR UPDATE OF name
+  ON catalog.authors
+  FOR EACH ROW EXECUTE FUNCTION catalog.authors_name_norm_update();
 
 -- Nothing should be left carrying the temporary name. Failing here is far
 -- better than committing a catalog that silently disagrees with its migrations.
