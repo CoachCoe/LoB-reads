@@ -1,8 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
 import type { Metadata } from "next";
-import { BookOpen, Calendar, Layers } from "lucide-react";
+import { Calendar, Layers } from "lucide-react";
 import {
   getWorkByKey,
   getOtherWorksByAuthor,
@@ -10,7 +9,7 @@ import {
   getWorkRating,
   EDITIONS_PAGE_SIZE,
 } from "@/server/catalog";
-import { coverUrl } from "@/lib/covers";
+import CoverImage from "@/components/catalog/CoverImage";
 import StarRating from "@/components/ui/StarRating";
 import WorkCard from "@/components/catalog/WorkCard";
 import EditionList from "./EditionList";
@@ -103,31 +102,23 @@ export default async function WorkPage({ params }: Props) {
   const coverEdition = work.editions.find(
     (e) => e.olKey === work.coverEditionKey
   );
-  const cover = coverUrl(
-    coverEdition?.coverId ?? work.editions.find((e) => e.coverId)?.coverId,
-    "L"
-  );
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
       <div className="flex flex-col gap-8 sm:flex-row">
         <div className="mx-auto w-40 shrink-0 sm:mx-0 sm:w-48">
-          <div className="relative aspect-[2/3] w-full overflow-hidden rounded-lg bg-gray-100 shadow-sm dark:bg-gray-800">
-            {cover ? (
-              <Image
-                src={cover}
-                alt={`Cover of ${work.title}`}
-                fill
-                sizes="192px"
-                className="object-cover"
-                priority
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center text-gray-300 dark:text-gray-600">
-                <BookOpen className="h-10 w-10" aria-hidden="true" />
-              </div>
-            )}
-          </div>
+          <CoverImage
+            title={work.title}
+            olKey={work.olKey}
+            coverId={
+              coverEdition?.coverId ??
+              work.editions.find((e) => e.coverId)?.coverId
+            }
+            size="lg"
+            sizes="(max-width: 640px) 160px, 192px"
+            priority
+            className="aspect-[2/3] w-full rounded-lg shadow-sm"
+          />
         </div>
 
         <div className="min-w-0 flex-1">

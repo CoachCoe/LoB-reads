@@ -23,5 +23,13 @@ export function coverUrl(
   storedUrl?: string | null
 ): string | null {
   if (storedUrl) return storedUrl;
-  return coverId ? `https://covers.openlibrary.org/b/id/${coverId}-${size}.jpg` : null;
+  if (!coverId) return null;
+
+  // `default=false` matters. Without it, a cover id Open Library has no image
+  // for is answered with 200 and a 43-byte blank placeholder — so the browser
+  // reports success and every fallback in the app is unreachable. With it the
+  // same request 404s, which is a state a component can actually respond to.
+  // (scripts/enrich/covers.ts already guards the same behaviour server-side
+  // with MIN_IMAGE_BYTES.) Verified: a real cover returns 200 either way.
+  return `https://covers.openlibrary.org/b/id/${coverId}-${size}.jpg?default=false`;
 }
