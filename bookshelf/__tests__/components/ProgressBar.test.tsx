@@ -23,9 +23,45 @@ describe("ProgressBar component", () => {
     expect(screen.getByText("100%")).toBeInTheDocument();
   });
 
-  it("handles over 100% (value > max)", () => {
+  /**
+   * This assertion used to expect "150%", pinning the behaviour as correct.
+   *
+   * It is not correct, and it is how FLOW-28 survived: a work page showed
+   * "310 / 162 pages - 191%" with a saturated bar, and the suite was green
+   * because a test said 191% was fine. The root cause was a numerator and
+   * denominator taken from different editions, fixed in
+   * ReadingProgressSection; this clamp is the second line of defence, and it
+   * matches what server/progress.ts percentOf has always done.
+   *
+   * Changed rather than deleted, and it still asserts something stronger than
+   * before: the percentage is capped, and the raw counts are reported honestly
+   * instead of being massaged to agree with it.
+   */
+  it("caps the percentage at 100 but still reports the real counts", () => {
     render(<ProgressBar value={150} max={100} />);
-    expect(screen.getByText("150%")).toBeInTheDocument();
+
+    expect(screen.getByText("100%")).toBeInTheDocument();
+    expect(screen.queryByText("150%")).not.toBeInTheDocument();
+
+    // The numbers are not rewritten to fit the cap — if they disagree, the
+    // reader can still see that they disagree.
+    expect(screen.getByText("150 / 100 pages")).toBeInTheDocument();
+  });
+
+  it("never renders a bar wider than its track", () => {
+    const { container } = render(<ProgressBar value={310} max={162} />);
+    const bar = container.querySelector("[style*='width']") as HTMLElement;
+
+    // 191% overflowed the rounded track it sits in.
+    expect(bar.style.width).toBe("100%");
+  });
+
+  it("does not render a negative width", () => {
+    const { container } = render(<ProgressBar value={-20} max={100} />);
+    const bar = container.querySelector("[style*='width']") as HTMLElement;
+
+    expect(bar.style.width).toBe("0%");
+    expect(screen.getByText("0%")).toBeInTheDocument();
   });
 
   it("hides label when showLabel is false", () => {
