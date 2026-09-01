@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { z } from "zod";
+import { z, ZodError } from "zod";
 import { parseBody, errorResponse, MAX_JSON_BODY_BYTES } from "@/lib/http/api";
 import { PayloadTooLargeError } from "@/lib/http/errors";
 
@@ -97,18 +97,24 @@ describe("parseBody size limit", () => {
     ).rejects.toBeInstanceOf(PayloadTooLargeError);
   });
 
-  it("stops reading instead of buffering the whole oversized body", async () => {
-    // 8 MB offered in 64 KB chunks. If the limit were enforced after the read,
-    // every chunk would be pulled; the point is that it is not.
-    let pulled = 0;
+  it("stops reading, and cancels the stream instead of draining it", async () => {
+    // 8 MB offered in 64 KB chunks, with the producer counting the BYTES it was
+    // asked for rather than the pulls it received. An earlier version of this
+    // asserted a pull count, which measures undici's buffering rather than this
+    // code and would go quietly wrong on a dependency bump.
+    let offered = 0;
+    let cancelled = false;
     const stream = new ReadableStream<Uint8Array>({
       pull(controller) {
-        pulled += 1;
-        if (pulled > 128) {
+        if (offered >= 8 * 1024 * 1024) {
           controller.close();
           return;
         }
+        offered += 64 * 1024;
         controller.enqueue(new Uint8Array(64 * 1024).fill(0x61));
+      },
+      cancel() {
+        cancelled = true;
       },
     });
 
@@ -123,9 +129,14 @@ describe("parseBody size limit", () => {
       PayloadTooLargeError
     );
 
-    // A couple of chunks, not 128. Exact count depends on undici's buffering,
-    // so this asserts the order of magnitude rather than a specific number.
-    expect(pulled).toBeLessThan(10);
+    // Bounded well below the 8 MB on offer: the read stopped near the limit
+    // rather than after it.
+    expect(offered).toBeLessThan(MAX_JSON_BODY_BYTES * 8);
+
+    // And the producer was told to stop. releaseLock() would have left this
+    // false while the heap looked bounded — the connection would still have had
+    // 8 MB to receive.
+    expect(cancelled).toBe(true);
   });
 
   it("still reports invalid JSON as a 400, not a size problem", async () => {
@@ -141,9 +152,17 @@ describe("parseBody size limit", () => {
   });
 
   it("still reports a schema violation as a schema violation", async () => {
+    // Was `rejects.toBeInstanceOf(Error)`, which every rejection satisfies —
+    // including a PayloadTooLargeError thrown by mistake, or a failure in the
+    // body reader. It asserted nothing about the schema at all.
     await expect(
       parseBody(jsonRequest({ content: 42 }), schema)
-    ).rejects.toBeInstanceOf(Error);
+    ).rejects.toBeInstanceOf(ZodError);
+
+    // And not the size error, which is the confusion the weak version allowed.
+    await expect(
+      parseBody(jsonRequest({ content: 42 }), schema)
+    ).rejects.not.toBeInstanceOf(PayloadTooLargeError);
   });
 
   it("honours a route-specific limit", async () => {

@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { checkLimit, getClientIp, clientIpFromHeaders, __resetRateLimits, isLimited } from "@/lib/rate-limit";
+import { checkLimit, getClientIp, clientIpFromHeaders, __resetRateLimits, refundHit, clientRateLimitKey } from "@/lib/rate-limit";
 
 describe("checkLimit", () => {
   beforeEach(() => {
@@ -195,53 +195,111 @@ describe("clientIpFromHeaders trusted-hop configuration", () => {
 });
 
 /**
- * SEC-4 / SEC-3: the two ways the login limiter locked out the wrong people.
+ * SEC-4: a correct password must not spend the budget an attacker is draining.
  *
- * `checkLimit` both checks and records, and the login path called it before
- * knowing whether the password was right. So a correct password spent the same
- * budget an attacker was draining: ten wrong guesses every fifteen minutes
- * locked a known address out permanently, and FLOW-1 meant the reader was told
- * their password was wrong.
+ * The login path called `checkLimit` before knowing whether the password was
+ * right, so ten wrong guesses every fifteen minutes locked a known address out
+ * permanently — and FLOW-1 meant the reader was told their password was wrong.
+ *
+ * The first attempt at this was a check-without-recording call, and /bastion was
+ * right to reject it: `checkLimit` is a single synchronous check-and-record, so
+ * it bounds concurrency. Reading the bucket, awaiting bcrypt for ~100ms and
+ * recording afterwards let parallel attempts all observe an empty bucket and all
+ * proceed. The concurrency assertion below is the one that would have caught it.
  */
-describe("isLimited does not spend the budget", () => {
+describe("refundHit", () => {
   beforeEach(() => {
     __resetRateLimits();
   });
 
   const options = { limit: 3, windowMs: 60_000 };
 
-  it("reports the state without recording an attempt", () => {
+  it("gives one attempt back", () => {
+    checkLimit("k", options);
+    checkLimit("k", options);
+    expect(checkLimit("k", options).allowed).toBe(true);
+    expect(checkLimit("k", options).allowed).toBe(false);
+
+    refundHit("k");
+    expect(checkLimit("k", options).allowed).toBe(true);
+  });
+
+  it("does nothing to a key with no hits", () => {
+    refundHit("never-seen");
+    expect(checkLimit("never-seen", options).remaining).toBe(2);
+  });
+
+  it("keeps a reader signing in indefinitely without spending the budget", () => {
+    const key = "login:email:reader@example.com";
+
+    // Ten successful sign-ins: record then refund each time.
     for (let i = 0; i < 10; i++) {
-      expect(isLimited("k", options).allowed).toBe(true);
+      expect(checkLimit(key, options).allowed).toBe(true);
+      refundHit(key);
     }
-    // Ten checks, no hits recorded — so a reader who signs in correctly ten
-    // times has spent nothing.
-    expect(isLimited("k", options).remaining).toBe(3);
+
+    // The budget is untouched, so an attacker has not been handed a lockout and
+    // the reader has not locked themselves out either.
+    expect(checkLimit(key, options).allowed).toBe(true);
   });
 
-  it("agrees with checkLimit once hits are recorded", () => {
-    checkLimit("k", options);
-    checkLimit("k", options);
-    expect(isLimited("k", options).remaining).toBe(1);
-
-    checkLimit("k", options);
-    expect(isLimited("k", options).allowed).toBe(false);
-    expect(isLimited("k", options).retryAfterSeconds).toBeGreaterThan(50);
-  });
-
-  it("keeps a victim's own sign-in possible while an attacker guesses", () => {
-    // The lockout, stated as the scenario. The attacker's failures fill the
-    // per-account bucket; what must not happen is the victim's correct password
-    // filling it too.
+  it("still bounds attempts that are never refunded", () => {
     const key = "login:email:victim@example.com";
     for (let i = 0; i < 3; i++) checkLimit(key, options);
-    expect(isLimited(key, options).allowed).toBe(false);
 
-    // A fresh window: the victim gets in, and checking does not re-close it.
-    __resetRateLimits();
-    expect(isLimited(key, options).allowed).toBe(true);
-    expect(isLimited(key, options).allowed).toBe(true);
-    expect(isLimited(key, options).allowed).toBe(true);
-    expect(isLimited(key, options).allowed).toBe(true);
+    // Three failures, no refunds: the limiter still does its job.
+    expect(checkLimit(key, options).allowed).toBe(false);
+  });
+
+  /**
+   * The regression /bastion found, asserted directly.
+   *
+   * With a check-then-act split, N concurrent attempts all read an empty bucket
+   * before any of them writes, so a limit of 3 admits N. Recording on arrival is
+   * what makes this hold, and it holds only because checkLimit does both halves
+   * in one synchronous step.
+   */
+  it("admits no more than the limit under concurrent arrival", async () => {
+    const key = "login:ip:203.0.113.1";
+
+    const attempts = await Promise.all(
+      Array.from({ length: 50 }, async () => {
+        const result = checkLimit(key, options);
+        // An await between the check and whatever follows it, as bcrypt is.
+        await Promise.resolve();
+        return result.allowed;
+      })
+    );
+
+    expect(attempts.filter(Boolean)).toHaveLength(options.limit);
+  });
+});
+
+/**
+ * The key builder exists because `string | null` is not a guard.
+ *
+ * TypeScript accepts `` `login:ip:${ip}` `` with a nullable `ip` and produces the
+ * literal "login:ip:null" — one shared bucket for the entire internet, which is
+ * the outage the null was introduced to prevent, reintroduced by writing the
+ * obvious thing. Returning the key already built means there is no null to
+ * interpolate.
+ */
+describe("clientRateLimitKey", () => {
+  const request = (headers: Record<string, string> = {}) =>
+    new Request("https://example.com", { headers });
+
+  it("builds a prefixed key for an identifiable client", () => {
+    expect(
+      clientRateLimitKey(request({ "x-real-ip": "203.0.113.9" }), "register")
+    ).toBe("register:203.0.113.9");
+  });
+
+  it("returns null rather than a key naming null", () => {
+    const key = clientRateLimitKey(request(), "register");
+
+    expect(key).toBeNull();
+    // The failure mode, stated: any string here would be shared by every caller.
+    expect(key).not.toBe("register:null");
+    expect(key).not.toBe("register:unknown");
   });
 });

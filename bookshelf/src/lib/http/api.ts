@@ -94,8 +94,9 @@ export const MAX_JSON_BODY_BYTES = 64 * 1024;
  * `request.json()` accumulates the whole body before anything can object, and
  * Content-Length is advisory and absent on a chunked request — so the declared
  * check below is a cheap first gate and this is the one that actually holds.
- * Bytes are counted as they arrive and the stream is abandoned the moment the
- * limit is passed, so an attacker sending 200 MB has 64 KB of it read.
+ * Bytes are counted as they arrive and the stream is cancelled the moment the
+ * limit is passed, so an attacker sending 200 MB has 64 KB of it read and the
+ * producer is told to stop rather than left to finish sending.
  */
 async function readBounded(request: Request, maxBytes: number): Promise<string> {
   const body = request.body;
@@ -105,19 +106,20 @@ async function readBounded(request: Request, maxBytes: number): Promise<string> 
   const chunks: Uint8Array[] = [];
   let total = 0;
 
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      total += value.byteLength;
-      if (total > maxBytes) {
-        throw new PayloadTooLargeError();
-      }
-      chunks.push(value);
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    total += value.byteLength;
+    if (total > maxBytes) {
+      // cancel(), not releaseLock(). Releasing the lock only gives up the
+      // reader; it leaves the rest of the body to be received, so the heap is
+      // bounded and the work the connection does is not. cancel() signals the
+      // producer to stop, which is the whole point of refusing early.
+      await reader.cancel();
+      throw new PayloadTooLargeError();
     }
-  } finally {
-    // Releases the connection whether we finished or bailed out.
-    reader.releaseLock();
+    chunks.push(value);
   }
 
   return new TextDecoder().decode(

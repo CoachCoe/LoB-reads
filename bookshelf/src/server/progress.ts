@@ -132,16 +132,13 @@ export async function startReading(
   const open = await getOpenSession(userId, workKey);
   if (open) return open;
 
-  let edition: { olKey: string; numberOfPages: number | null } | null;
-  if (editionKey) {
-    const pages = await getEditionPageCount(workKey, editionKey);
-    if (pages === undefined) {
-      throw new NotFoundError("That edition is not part of this book");
-    }
-    edition = { olKey: editionKey, numberOfPages: pages };
-  } else {
-    edition = await getDefaultEdition(workKey);
-  }
+  // getEditionPageCount throws if the edition is not this work's.
+  const edition = editionKey
+    ? {
+        olKey: editionKey,
+        numberOfPages: await getEditionPageCount(workKey, editionKey),
+      }
+    : await getDefaultEdition(workKey);
 
   const session = await prisma.readingSession.create({
     data: {

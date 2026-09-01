@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
+import { NotFoundError } from "@/lib/http/errors";
 
 /**
  * Reads over the Open Library catalog.
@@ -483,18 +484,23 @@ export async function getWorksByKeys(
  * year. `getDefaultEdition` below has always filtered on `work_key`; only the
  * explicit-editionKey path did not. See FLOW-5.
  *
- * Returns `undefined` for "no such edition of this work", distinct from `null`
- * for "that edition exists and states no page count".
+ * Throws `NotFoundError` when the work has no such edition. It returns `null`
+ * for "that edition states no page count", which is a normal answer — and a
+ * signature carrying both absences as values invites `if (!pages)`, which is
+ * wrong for exactly one of them.
  */
 export async function getEditionPageCount(
   workKey: string,
   editionKey: string
-): Promise<number | null | undefined> {
+): Promise<number | null> {
   const rows = await prisma.$queryRaw<{ pages: number | null }[]>`
     SELECT number_of_pages AS pages FROM catalog.editions
     WHERE ol_key = ${editionKey} AND work_key = ${workKey}
   `;
-  return rows.length === 0 ? undefined : rows[0].pages;
+  if (rows.length === 0) {
+    throw new NotFoundError("That edition is not part of this book");
+  }
+  return rows[0].pages;
 }
 
 /** The edition a reader is most likely to hold, for a default page count. */

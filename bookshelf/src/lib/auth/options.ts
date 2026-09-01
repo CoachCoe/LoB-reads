@@ -3,7 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import prisma from "@/lib/prisma";
 import { normalizeEmail } from "@/lib/auth/email";
-import { checkLimit, clientIpFromHeaders, isLimited, LIMITS } from "@/lib/rate-limit";
+import { checkLimit, clientIpFromHeaders, LIMITS, refundHit } from "@/lib/rate-limit";
 
 /**
  * A real bcrypt hash of a value nothing can match, used only to equalise the
@@ -60,22 +60,27 @@ export const authOptions: NextAuthOptions = {
         const keys = [`login:email:${email}`];
         if (ip) keys.push(`login:ip:${ip}`);
 
-        // Checked without recording, then recorded below only if the attempt
-        // actually failed. Counting every attempt meant the victim's own correct
-        // password spent the same budget the attacker was draining, so a known
-        // address could be locked out permanently — and the reader was told
-        // their password was wrong. See SEC-4 and FLOW-1.
+        // Recorded on arrival, refunded if the password turns out to be right.
+        //
+        // Counting every attempt meant the victim's own correct password spent
+        // the budget the attacker was draining, so a known address could be
+        // locked out permanently — and FLOW-1 meant they were told their
+        // password was wrong (SEC-4).
+        //
+        // The refund, rather than a check-without-recording call: checkLimit is
+        // a single synchronous check-and-record, so it bounds concurrency.
+        // Splitting it into a read, an await on bcrypt, and a later write let a
+        // hundred parallel attempts all see an empty bucket and all proceed —
+        // turning a limit of ten into a hundred guesses per window. Recording
+        // first and giving it back is the only ordering that has both
+        // properties.
         for (const key of keys) {
-          if (!isLimited(key, LIMITS.login).allowed) {
+          if (!checkLimit(key, LIMITS.login).allowed) {
             throw new Error(
               "Too many sign-in attempts. Please wait a few minutes and try again."
             );
           }
         }
-
-        const recordFailedAttempt = () => {
-          for (const key of keys) checkLimit(key, LIMITS.login);
-        };
 
         const user = await prisma.user.findUnique({
           where: { email },
@@ -85,7 +90,6 @@ export const authOptions: NextAuthOptions = {
           // Spend comparable time on a missing user so response timing does
           // not reveal whether the address is registered.
           await bcrypt.compare(credentials.password, DUMMY_PASSWORD_HASH);
-          recordFailedAttempt();
           throw new Error("Invalid email or password");
         }
 
@@ -95,9 +99,12 @@ export const authOptions: NextAuthOptions = {
         );
 
         if (!isValidPassword) {
-          recordFailedAttempt();
           throw new Error("Invalid email or password");
         }
+
+        // Correct credentials: give the attempt back, so a reader signing in
+        // never spends the budget that exists to stop someone guessing at them.
+        for (const key of keys) refundHit(key);
 
         return {
           id: user.id,

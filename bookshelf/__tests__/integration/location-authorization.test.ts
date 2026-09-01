@@ -335,3 +335,61 @@ describe("POST /api/works/[workKey]/locations — rate limit", () => {
     expect(response.status).toBe(201);
   });
 });
+
+/**
+ * The budget bounds rows created, not requests attempted.
+ *
+ * /bastion's point: recording before validation is the SEC-4 shape — a
+ * contributor who mistypes a latitude sixty times would be locked out for an
+ * hour, having grown no table. Recording on arrival keeps the check atomic
+ * (splitting it into a read and a later write is a concurrency bypass), and
+ * refunding on every failure path means only work that happened is charged.
+ */
+describe("the contribution budget is spent on rows, not attempts", () => {
+  beforeEach(async () => {
+    __resetRateLimits();
+    const user = await makeUser();
+    mockGetCurrentUser.mockResolvedValue({ id: user.id, isModerator: false });
+  });
+
+  it("does not charge a rejected submission", async () => {
+    // A real-world location with no coordinates: refused by the route's guard,
+    // nothing written.
+    for (let i = 0; i < 5; i++) {
+      const response = await postWorkLocation(
+        postRequest({ name: "Gont", type: "setting" }),
+        workParams
+      );
+      expect(response.status).toBe(400);
+    }
+
+    // Five rejections later the budget is untouched, so the next good
+    // submission still goes through.
+    const good = await postWorkLocation(
+      postRequest({
+        name: "Gont",
+        type: "setting",
+        coordinates: { lat: 51.5, lng: -0.12 },
+      }),
+      workParams
+    );
+    expect(good.status).toBe(201);
+  });
+
+  it("charges a submission that actually wrote a row", async () => {
+    const body = {
+      name: "Roke",
+      type: "setting",
+      coordinates: { lat: 51.5, lng: -0.12 },
+    };
+
+    expect((await postWorkLocation(postRequest(body), workParams)).status).toBe(201);
+
+    // One row, one hit — the property that makes the limit bound table growth.
+    const remaining = checkLimit(
+      `contribute:work-location:${(await mockGetCurrentUser()).id}`,
+      LIMITS.contribute
+    ).remaining;
+    expect(remaining).toBe(LIMITS.contribute.limit - 2);
+  });
+});

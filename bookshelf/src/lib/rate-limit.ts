@@ -44,31 +44,29 @@ export interface RateLimitResult {
 const MAX_BUCKETS = 10_000;
 
 /**
- * Is this key over its limit, without recording an attempt against it?
+ * Give back one recorded hit.
  *
- * Exists so a caller can refuse an exhausted key and then decide separately
- * whether what just happened deserves to count. The login path needs that: a
- * correct password must not spend the budget an attacker is draining. See
- * SEC-4.
+ * The budget is spent by an attempt when it arrives, atomically, and refunded if
+ * the attempt turns out not to have been abuse — a correct password, or a request
+ * the schema rejected before any work was done.
+ *
+ * This exists instead of a check-without-recording call, which was tried and was
+ * a concurrency bypass: reading the bucket, awaiting bcrypt for ~100ms and
+ * recording afterwards let a hundred parallel sign-in attempts all observe an
+ * empty bucket and all proceed, so a limit of ten became a hundred. `checkLimit`
+ * is a single synchronous check-and-record and bounds concurrency for free;
+ * anything that splits it does not.
+ *
+ * Removes the most recent hit, so a refund cannot resurrect one that has already
+ * aged out of the window.
  */
-export function isLimited(
-  key: string,
-  { limit, windowMs }: RateLimitOptions
-): RateLimitResult {
-  const now = Date.now();
-  const hits = (buckets.get(key) ?? []).filter((t) => t > now - windowMs);
+export function refundHit(key: string): void {
+  const hits = buckets.get(key);
+  if (!hits || hits.length === 0) return;
 
-  if (hits.length >= limit) {
-    return {
-      allowed: false,
-      remaining: 0,
-      retryAfterSeconds: Math.max(
-        1,
-        Math.ceil((hits[0] + windowMs - now) / 1000)
-      ),
-    };
-  }
-  return { allowed: true, remaining: limit - hits.length, retryAfterSeconds: 0 };
+  hits.pop();
+  if (hits.length === 0) buckets.delete(key);
+  else buckets.set(key, hits);
 }
 
 export function checkLimit(
@@ -195,6 +193,25 @@ export function getClientIp(request: Request): string | null {
     request.headers.get("x-forwarded-for"),
     request.headers.get("x-real-ip")
   );
+}
+
+/**
+ * A rate-limit key for the client behind a request, or null if there is no
+ * identifiable client.
+ *
+ * Prefer this to interpolating `getClientIp` yourself. TypeScript accepts
+ * `` `login:ip:${ip}` `` with a `string | null` and produces the literal
+ * "login:ip:null" — one shared bucket for the entire internet, which is the
+ * outage this whole mechanism exists to avoid, reintroduced by writing the
+ * obvious thing. Returning the key already built means there is no null to
+ * interpolate.
+ */
+export function clientRateLimitKey(
+  request: Request,
+  prefix: string
+): string | null {
+  const ip = getClientIp(request);
+  return ip ? `${prefix}:${ip}` : null;
 }
 
 /** Shared limits, kept here so they're visible in one place. */
