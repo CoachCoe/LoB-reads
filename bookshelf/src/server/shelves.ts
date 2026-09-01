@@ -90,6 +90,17 @@ export async function getUserShelfSummaries(userId: string) {
 }
 
 /**
+ * How many items a shelf holds, without loading any of them.
+ *
+ * The shelf page needs the total before it can decide which page to fetch, and
+ * paying for a full getShelfById — which hydrates every item against the
+ * catalog — just to read `itemCount` would be silly.
+ */
+export async function getShelfItemCount(shelfId: string): Promise<number> {
+  return prisma.shelfItem.count({ where: { shelfId } });
+}
+
+/**
  * Shelves are public, so this deliberately has no owner check. It includes the
  * owner's public fields for attribution — never their email.
  */

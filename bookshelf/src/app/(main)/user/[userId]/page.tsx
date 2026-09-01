@@ -4,6 +4,7 @@ import { getUserProfile, isFollowing } from "@/server/users";
 import { getUserReviews } from "@/server/reviews";
 import { coverUrl } from "@/lib/covers";
 import { getCurrentUser } from "@/lib/auth/session";
+import { getReadingStats } from "@/server/progress";
 import Avatar from "@/components/ui/Avatar";
 import Card, { CardContent } from "@/components/ui/Card";
 import ReviewCard from "@/components/reviews/ReviewCard";
@@ -31,8 +32,11 @@ export default async function UserProfilePage({ params }: Props) {
     ? await isFollowing(currentUser.id, userId)
     : false;
 
-  const readShelf = user.shelves.find((s) => s.name === "Read");
-  const booksRead = readShelf?._count?.shelfItems || 0;
+  // Finished reading sessions, which is what /my-books and /wrapped both count.
+  // This page used to count the "Read" shelf instead, so the same account showed
+  // two different figures on two pages — and the shelf can be filled by the
+  // Goodreads importer or by AddToShelfButton without a session ever existing.
+  const { booksRead } = await getReadingStats(userId);
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
