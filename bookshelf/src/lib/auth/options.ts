@@ -40,12 +40,18 @@ export const authOptions: NextAuthOptions = {
         // Goes through clientIpFromHeaders rather than re-deriving the address:
         // this copy had the same leftmost-element bug, and two implementations
         // of "which hop do we trust" is one too many.
-        const header = req?.headers?.["x-forwarded-for"];
+        const headerValue = (name: string) => {
+          const value = req?.headers?.[name];
+          return typeof value === "string" ? value : undefined;
+        };
+        // The platform header is passed here too, so sign-in is identified the
+        // same way every other route is. NextAuth hands us a plain object rather
+        // than a Headers, hence the lookup helper.
+        const platformHeader = process.env.TRUSTED_CLIENT_IP_HEADER?.trim().toLowerCase();
         const ip = clientIpFromHeaders(
-          typeof header === "string" ? header : undefined,
-          typeof req?.headers?.["x-real-ip"] === "string"
-            ? (req.headers["x-real-ip"] as string)
-            : undefined
+          headerValue("x-forwarded-for"),
+          headerValue("x-real-ip"),
+          platformHeader ? headerValue(platformHeader) : undefined
         );
 
         // Per account always; per origin only when the origin is known.
