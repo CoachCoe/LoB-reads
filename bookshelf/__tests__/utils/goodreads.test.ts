@@ -1,4 +1,4 @@
-import { parseGoodreadsCSV, getShelfDisplayName } from "@/lib/goodreads";
+import { parseGoodreadsCSV, getShelfDisplayName } from "@/lib/sources/goodreads";
 
 describe("Goodreads utility functions", () => {
   describe("parseGoodreadsCSV", () => {

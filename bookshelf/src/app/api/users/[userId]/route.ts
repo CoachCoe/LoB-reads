@@ -1,29 +1,10 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { getUserProfile, updateUserProfile } from "@/server/users";
+import { authOptions } from "@/lib/auth/options";
+import { updateUserProfile } from "@/server/users";
+import { errorResponse, parseBody, unauthorized } from "@/lib/http/api";
+import { updateProfileSchema } from "@/lib/http/schemas";
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ userId: string }> }
-) {
-  try {
-    const { userId } = await params;
-    const user = await getUserProfile(userId);
-
-    if (!user) {
-      return NextResponse.json({ error: "User not found" }, { status: 404 });
-    }
-
-    // Don't expose password hash - destructure to omit it from response
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { passwordHash, ...safeUser } = user;
-    return NextResponse.json(safeUser);
-  } catch (error) {
-    console.error("Get user error:", error);
-    return NextResponse.json({ error: "Failed to fetch user" }, { status: 500 });
-  }
-}
 
 export async function PATCH(
   request: Request,
@@ -31,8 +12,8 @@ export async function PATCH(
 ) {
   const session = await getServerSession(authOptions);
 
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user?.id) {
+    return unauthorized();
   }
 
   const { userId } = await params;
@@ -42,16 +23,12 @@ export async function PATCH(
   }
 
   try {
-    const { name, bio, avatarUrl } = await request.json();
+    const { name, bio, avatarUrl } = await parseBody(request, updateProfileSchema);
 
     const user = await updateUserProfile(userId, { name, bio, avatarUrl });
 
-    // Don't expose password hash - destructure to omit it from response
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { passwordHash, ...safeUser } = user;
-    return NextResponse.json(safeUser);
+    return NextResponse.json(user);
   } catch (error) {
-    console.error("Update user error:", error);
-    return NextResponse.json({ error: "Failed to update user" }, { status: 500 });
+    return errorResponse("Update user error", error);
   }
 }

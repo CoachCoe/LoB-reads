@@ -1,13 +1,27 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { MapPin, Plus, X, Globe, Trash2, Home, Briefcase, Heart } from "lucide-react";
-import { AuthorLocationData } from "@/server/authors";
+import { useState } from "react";
+import { MapPin, Home, Briefcase, Heart } from "lucide-react";
+import { useCrowdsourcedLocations } from "@/components/locations/useCrowdsourcedLocations";
+import LocationsPanel, {
+  LocationsPanelSkeleton,
+} from "@/components/locations/LocationsPanel";
+import LocationRow from "@/components/locations/LocationRow";
+import LocationField, {
+  locationInputClass,
+} from "@/components/locations/LocationField";
+import type { AuthorLocationData } from "@/server/authors";
 
 interface AuthorLocationsSectionProps {
   authorName: string;
   currentUserId?: string;
+  /** Moderators may remove any contribution — PRD section 2. */
+  canModerate?: boolean;
 }
+
+/** This endpoint wraps the list; the book endpoint returns a bare array. */
+const extractLocations = (payload: unknown) =>
+  (payload as { locations?: AuthorLocationData[] }).locations ?? [];
 
 const LOCATION_TYPES = [
   { value: "birthplace", label: "Birthplace", icon: Heart, color: "text-pink-500" },
@@ -16,16 +30,33 @@ const LOCATION_TYPES = [
   { value: "death", label: "Place of Death", icon: MapPin, color: "text-gray-500" },
 ];
 
+/**
+ * Where an author lived, worked, was born and died — contributed by readers.
+ *
+ * The card, form shell, empty state, row layout and delete confirmation are
+ * shared with WorkLocationsSection; what is here is what differs, which is the
+ * type list and the year range. See LocationsPanel for why the split is drawn
+ * where it is.
+ */
 export default function AuthorLocationsSection({
   authorName,
   currentUserId,
+  canModerate = false,
 }: AuthorLocationsSectionProps) {
-  const [locations, setLocations] = useState<AuthorLocationData[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
+  const {
+    locations,
+    loading,
+    submitting,
+    pendingDelete,
+    setPendingDelete,
+    addLocation,
+    removeLocation,
+  } = useCrowdsourcedLocations<AuthorLocationData>({
+    basePath: `/api/authors/${encodeURIComponent(authorName)}/locations`,
+    extractList: extractLocations,
+  });
 
-  // Form state
+  const [showAddForm, setShowAddForm] = useState(false);
   const [name, setName] = useState("");
   const [type, setType] = useState("residence");
   const [description, setDescription] = useState("");
@@ -33,76 +64,6 @@ export default function AuthorLocationsSection({
   const [lng, setLng] = useState("");
   const [yearStart, setYearStart] = useState("");
   const [yearEnd, setYearEnd] = useState("");
-
-  const fetchLocations = useCallback(async () => {
-    try {
-      const res = await fetch(`/api/authors/${encodeURIComponent(authorName)}/locations`);
-      if (res.ok) {
-        const data = await res.json();
-        setLocations(data.locations || []);
-      }
-    } catch (error) {
-      console.error("Failed to fetch locations:", error);
-    } finally {
-      setLoading(false);
-    }
-  }, [authorName]);
-
-  useEffect(() => {
-    fetchLocations();
-  }, [fetchLocations]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim() || !lat || !lng || submitting) return;
-
-    setSubmitting(true);
-    try {
-      const body: Record<string, unknown> = {
-        name: name.trim(),
-        type,
-        description: description.trim() || undefined,
-        coordinates: {
-          lat: parseFloat(lat),
-          lng: parseFloat(lng),
-        },
-      };
-
-      if (yearStart) body.yearStart = parseInt(yearStart);
-      if (yearEnd) body.yearEnd = parseInt(yearEnd);
-
-      const res = await fetch(`/api/authors/${encodeURIComponent(authorName)}/locations`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      if (res.ok) {
-        resetForm();
-        fetchLocations();
-      }
-    } catch (error) {
-      console.error("Failed to add location:", error);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleDelete = async (locationId: string) => {
-    if (!confirm("Remove this location?")) return;
-
-    try {
-      const res = await fetch(
-        `/api/authors/${encodeURIComponent(authorName)}/locations?locationId=${locationId}`,
-        { method: "DELETE" }
-      );
-      if (res.ok) {
-        setLocations(locations.filter((l) => l.id !== locationId));
-      }
-    } catch (error) {
-      console.error("Failed to delete location:", error);
-    }
-  };
 
   const resetForm = () => {
     setName("");
@@ -115,230 +76,174 @@ export default function AuthorLocationsSection({
     setShowAddForm(false);
   };
 
-  const getTypeInfo = (typeValue: string) => {
-    return LOCATION_TYPES.find((t) => t.value === typeValue) || LOCATION_TYPES[1];
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !lat || !lng) return;
+
+    const body: Record<string, unknown> = {
+      name: name.trim(),
+      type,
+      description: description.trim() || undefined,
+      coordinates: { lat: parseFloat(lat), lng: parseFloat(lng) },
+    };
+
+    if (yearStart) body.yearStart = parseInt(yearStart);
+    if (yearEnd) body.yearEnd = parseInt(yearEnd);
+
+    if (await addLocation(body)) {
+      resetForm();
+    }
   };
 
-  if (loading) {
-    return <div className="animate-pulse bg-[var(--border-light)] rounded-lg p-4 h-48" />;
-  }
+  const typeInfo = (value: string) =>
+    LOCATION_TYPES.find((t) => t.value === value) ?? LOCATION_TYPES[1];
+
+  if (loading) return <LocationsPanelSkeleton />;
 
   return (
-    <div className="bg-[var(--card-bg)] rounded-lg border border-[var(--card-border)] p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-[var(--foreground)] flex items-center gap-2">
-          <Globe className="h-5 w-5 text-[#D4A017]" />
-          Author Locations
-        </h3>
-        {currentUserId && !showAddForm && (
-          <button
-            onClick={() => setShowAddForm(true)}
-            className="flex items-center gap-1 text-sm text-[#D4A017] hover:text-[#B8860B] font-medium"
-          >
-            <Plus className="h-4 w-4" />
-            Add Location
-          </button>
-        )}
-      </div>
+    <LocationsPanel
+      title="Author Locations"
+      canContribute={Boolean(currentUserId)}
+      formOpen={showAddForm}
+      onOpenForm={() => setShowAddForm(true)}
+      onCloseForm={resetForm}
+      onSubmit={handleSubmit}
+      isEmpty={locations.length === 0}
+      pendingDeleteName={pendingDelete?.name ?? null}
+      onConfirmDelete={() => {
+        if (pendingDelete) removeLocation(pendingDelete.id);
+      }}
+      onCancelDelete={() => setPendingDelete(null)}
+      form={
+        <>
+          <LocationField label="Location Name" htmlFor="author-location-name">
+            <input
+              id="author-location-name"
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g., Oxford, England"
+              className={locationInputClass}
+              required
+            />
+          </LocationField>
 
-      {/* Add Location Form */}
-      {showAddForm && (
-        <form onSubmit={handleSubmit} className="bg-[var(--border-light)] rounded-lg p-4 mb-4">
-          <div className="flex items-center justify-between mb-3">
-            <h4 className="font-medium text-[var(--foreground)]">Add a Location</h4>
-            <button
-              type="button"
-              onClick={resetForm}
-              className="text-[var(--foreground-secondary)] hover:text-[var(--foreground)]"
+          <LocationField label="Type" htmlFor="author-location-type">
+            <select
+              id="author-location-type"
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+              className={locationInputClass}
             >
-              <X className="h-5 w-5" />
-            </button>
-          </div>
+              {LOCATION_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </LocationField>
 
-          <div className="space-y-3">
-            {/* Location Name */}
-            <div>
-              <label className="block text-sm font-medium text-[var(--foreground-secondary)] mb-1">
-                Location Name
-              </label>
+          <div className="grid grid-cols-2 gap-3">
+            <LocationField label="Latitude" htmlFor="author-location-lat">
               <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g., Oxford, England"
-                className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#D4A017] focus:border-transparent text-sm"
+                id="author-location-lat"
+                type="number"
+                step="any"
+                value={lat}
+                onChange={(e) => setLat(e.target.value)}
+                placeholder="e.g., 51.7520"
+                className={locationInputClass}
                 required
               />
-            </div>
-
-            {/* Location Type */}
-            <div>
-              <label className="block text-sm font-medium text-[var(--foreground-secondary)] mb-1">
-                Type
-              </label>
-              <select
-                value={type}
-                onChange={(e) => setType(e.target.value)}
-                className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#D4A017] focus:border-transparent text-sm"
-              >
-                {LOCATION_TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Coordinates */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-[var(--foreground-secondary)] mb-1">
-                  Latitude *
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={lat}
-                  onChange={(e) => setLat(e.target.value)}
-                  placeholder="e.g., 51.7520"
-                  className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#D4A017] focus:border-transparent text-sm"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[var(--foreground-secondary)] mb-1">
-                  Longitude *
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={lng}
-                  onChange={(e) => setLng(e.target.value)}
-                  placeholder="e.g., -1.2577"
-                  className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#D4A017] focus:border-transparent text-sm"
-                  required
-                />
-              </div>
-            </div>
-
-            {/* Years */}
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-[var(--foreground-secondary)] mb-1">
-                  Year Start (optional)
-                </label>
-                <input
-                  type="number"
-                  value={yearStart}
-                  onChange={(e) => setYearStart(e.target.value)}
-                  placeholder="e.g., 1925"
-                  className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#D4A017] focus:border-transparent text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-[var(--foreground-secondary)] mb-1">
-                  Year End (optional)
-                </label>
-                <input
-                  type="number"
-                  value={yearEnd}
-                  onChange={(e) => setYearEnd(e.target.value)}
-                  placeholder="e.g., 1973"
-                  className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#D4A017] focus:border-transparent text-sm"
-                />
-              </div>
-            </div>
-
-            {/* Description */}
-            <div>
-              <label className="block text-sm font-medium text-[var(--foreground-secondary)] mb-1">
-                Notes (optional)
-              </label>
-              <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Add any context about this location..."
-                rows={2}
-                className="w-full px-3 py-2 border border-[var(--input-border)] bg-[var(--input-bg)] text-[var(--foreground)] rounded-lg focus:ring-2 focus:ring-[#D4A017] focus:border-transparent text-sm"
+            </LocationField>
+            <LocationField label="Longitude" htmlFor="author-location-lng">
+              <input
+                id="author-location-lng"
+                type="number"
+                step="any"
+                value={lng}
+                onChange={(e) => setLng(e.target.value)}
+                placeholder="e.g., -1.2577"
+                className={locationInputClass}
+                required
               />
-            </div>
-
-            <button
-              type="submit"
-              disabled={!name.trim() || !lat || !lng || submitting}
-              className="w-full py-2 bg-[#D4A017] text-white rounded-lg hover:bg-[#B8860B] disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
-            >
-              {submitting ? "Adding..." : "Add Location"}
-            </button>
+            </LocationField>
           </div>
-        </form>
-      )}
 
-      {/* Location List */}
-      {locations.length > 0 ? (
-        <div className="space-y-3">
-          {locations.map((location) => {
-            const typeInfo = getTypeInfo(location.type);
-            const TypeIcon = typeInfo.icon;
+          <div className="grid grid-cols-2 gap-3">
+            <LocationField label="From (year)" htmlFor="author-location-from">
+              <input
+                id="author-location-from"
+                type="number"
+                value={yearStart}
+                onChange={(e) => setYearStart(e.target.value)}
+                placeholder="e.g., 1925"
+                className={locationInputClass}
+              />
+            </LocationField>
+            <LocationField label="To (year)" htmlFor="author-location-to">
+              <input
+                id="author-location-to"
+                type="number"
+                value={yearEnd}
+                onChange={(e) => setYearEnd(e.target.value)}
+                placeholder="e.g., 1973"
+                className={locationInputClass}
+              />
+            </LocationField>
+          </div>
 
-            return (
-              <div
-                key={location.id}
-                className="flex items-start gap-3 p-3 rounded-lg bg-[var(--border-light)]"
-              >
-                <div className={`mt-0.5 ${typeInfo.color}`}>
-                  <TypeIcon className="h-4 w-4" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-medium text-[var(--foreground)]">
-                      {location.name}
-                    </span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-[#D4A017]/10 text-[#D4A017]">
-                      {typeInfo.label}
-                    </span>
-                    {(location.yearStart || location.yearEnd) && (
-                      <span className="text-xs text-[var(--foreground-secondary)]">
-                        {location.yearStart || "?"} - {location.yearEnd || "?"}
-                      </span>
-                    )}
-                  </div>
-                  {location.description && (
-                    <p className="text-sm text-[var(--foreground-secondary)] mt-1">
-                      {location.description}
-                    </p>
-                  )}
-                  <p className="text-xs text-[var(--foreground-secondary)] mt-1">
-                    Added by {location.addedBy.name}
-                  </p>
-                </div>
-                {currentUserId === location.addedBy.id && (
-                  <button
-                    onClick={() => handleDelete(location.id)}
-                    className="text-[var(--foreground-secondary)] hover:text-red-500 p-1"
-                    title="Remove location"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="text-center py-6 text-[var(--foreground-secondary)]">
-          <Globe className="h-8 w-8 mx-auto mb-2 text-[var(--foreground-secondary)]" />
-          <p className="text-sm">No locations added yet</p>
-          {currentUserId && !showAddForm && (
-            <button
-              onClick={() => setShowAddForm(true)}
-              className="text-sm text-[#D4A017] hover:text-[#B8860B] font-medium mt-2"
-            >
-              Be the first to add one
-            </button>
-          )}
-        </div>
-      )}
-    </div>
+          <LocationField label="Description" htmlFor="author-location-description">
+            <textarea
+              id="author-location-description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Add any context about this location..."
+              rows={2}
+              className={locationInputClass}
+            />
+          </LocationField>
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full rounded-lg bg-[#D4A017] py-2 text-[var(--color-primary-contrast)] hover:bg-[#B8860B] disabled:opacity-50"
+          >
+            {submitting ? "Adding…" : "Add Location"}
+          </button>
+        </>
+      }
+    >
+      {locations.map((location) => {
+        const info = typeInfo(location.type);
+        const Icon = info.icon;
+        const years = location.yearStart || location.yearEnd;
+
+        return (
+          <LocationRow
+            key={location.id}
+            name={location.name}
+            typeLabel={info.label}
+            icon={<Icon className={`h-4 w-4 ${info.color}`} aria-hidden="true" />}
+            description={location.description}
+            addedByName={location.addedBy?.name}
+            meta={
+              years ? (
+                <span className="text-xs text-[var(--foreground-secondary)]">
+                  {location.yearStart || "?"} - {location.yearEnd || "?"}
+                </span>
+              ) : null
+            }
+            onDelete={
+              canModerate ||
+              (location.addedBy != null &&
+                currentUserId === location.addedBy.id)
+                ? () => setPendingDelete(location)
+                : undefined
+            }
+          />
+        );
+      })}
+    </LocationsPanel>
   );
 }

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { authOptions } from "@/lib/auth/options";
 import { deleteReview } from "@/server/reviews";
+import { errorResponse, unauthorized } from "@/lib/http/api";
 
 export async function DELETE(
   request: Request,
@@ -9,8 +10,8 @@ export async function DELETE(
 ) {
   const session = await getServerSession(authOptions);
 
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user?.id) {
+    return unauthorized();
   }
 
   try {
@@ -18,8 +19,6 @@ export async function DELETE(
     await deleteReview(reviewId, session.user.id);
     return NextResponse.json({ message: "Review deleted" });
   } catch (error) {
-    console.error("Delete review error:", error);
-    const message = error instanceof Error ? error.message : "Failed to delete review";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return errorResponse("Delete review error", error);
   }
 }

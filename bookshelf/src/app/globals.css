@@ -5,7 +5,10 @@
   --background: #fafafa;
   --background-secondary: #ffffff;
   --foreground: #1d1d1f;
-  --foreground-secondary: #86868b;
+  /* Was #86868b, which is 3.47:1 on #fafafa — below the 4.5:1 needed for body
+     and meta text, and this token carries most of the secondary text in the
+     product. #6e6e73 measures 4.86:1. */
+  --foreground-secondary: #6e6e73;
   --border: #e5e5e7;
   --border-light: #f5f5f7;
 
@@ -13,6 +16,15 @@
   --color-primary: #D4A017;
   --color-primary-light: #E6B800;
   --color-primary-dark: #B8860B;
+
+  /* Gold as TEXT, which #D4A017 cannot be: it measures 2.28:1 on #fafafa.
+     #8a6a10 is 4.85:1. Fills, filled stars and focus rings keep #D4A017. */
+  --color-primary-text: #8a6a10;
+  /* Label colour on a gold fill. White on #D4A017 is 2.38:1; #1d1d1f is
+     7.08:1, so gold buttons take dark labels. */
+  --color-primary-contrast: #1d1d1f;
+  /* Focus indicator. Gold at 2.28:1 against a light page is a weak ring. */
+  --focus-ring: #1d1d1f;
   --color-accent: #D4A017;
   --color-accent-light: #E6B800;
   --color-accent-dark: #B8860B;
@@ -37,19 +49,34 @@ html.dark .logo-themed {
 
 .dark {
   --background: #0a0a0a;
-  --background-secondary: #0a0a0a;
+  --background-secondary: #0f0f0f;
   --foreground: #ffffff;
+  /* 7.13:1 on the new #141414 card surface. */
   --foreground-secondary: #a1a1a1;
-  --border: #1a1a1a;
-  --border-light: #141414;
+  --border: #262626;
+  --border-light: #1c1c1c;
 
-  /* Cards blend into background - no white boxes */
-  --card-bg: #0a0a0a;
-  --card-border: #1f1f1f;
+  /* Cards used to be #0a0a0a on a #0a0a0a page — literally 1.00:1 — leaving a
+     #1f1f1f border (1.20:1 against the page) as the only cue that anything was
+     grouped. On OLED or outdoors there was none. The card is now a surface AND
+     a border: two cues instead of one, still no shadow.
+     Honest measurement: #141414 on #0a0a0a is 1.07:1 and the #262626 border is
+     1.31:1 against the page. Both are improvements, neither is dramatic —
+     contrast ratios compress at the dark end, so no near-black pair can do
+     better. Raising the page off #0a0a0a is the only way to gain more, and that
+     is a design decision rather than a defect fix. */
+  --card-bg: #141414;
+  --card-border: #262626;
 
   /* Inputs slightly visible but still dark */
-  --input-bg: #141414;
+  --input-bg: #1a1a1a;
   --input-border: #2a2a2a;
+
+  /* Gold reads well on black, so text does not need darkening here — it needs
+     lifting for 1px strokes and rings. 10.79:1 on the page. */
+  --color-primary-text: #E8B93F;
+  --color-primary-contrast: #1d1d1f;
+  --focus-ring: #E8B93F;
 }
 
 @theme inline {
@@ -83,7 +110,9 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Better focus styles */
 *:focus-visible {
-  outline: 2px solid var(--color-primary);
+  /* Not gold: #D4A017 is 2.28:1 against a light page, so the ring that marks
+     keyboard position was the hardest thing on screen to see. */
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 

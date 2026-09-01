@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import Card, { CardContent, CardHeader } from "@/components/ui/Card";
 import Input from "@/components/ui/Input";
 import Textarea from "@/components/ui/Textarea";
@@ -22,9 +23,13 @@ interface SettingsFormProps {
 }
 
 interface ImportResultState {
-  imported: number;
-  skipped: number;
-  errors: string[];
+  sessionId: string;
+  totalRows: number;
+  matched: number;
+  needsReview: number;
+  matchRate: number;
+  notProcessed: number;
+  maxRows: number;
 }
 
 export default function SettingsForm({ user }: SettingsFormProps) {
@@ -36,6 +41,22 @@ export default function SettingsForm({ user }: SettingsFormProps) {
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
   const [message, setMessage] = useState("");
+  // Tracked rather than inferred from the text. The banner used to decide its
+  // colour with `message.includes("success")`, so "Imported 12 books." — a
+  // success — rendered red.
+  const [messageVariant, setMessageVariant] = useState<"success" | "error">(
+    "error"
+  );
+
+  const reportSuccess = (text: string) => {
+    setMessageVariant("success");
+    setMessage(text);
+  };
+
+  const reportError = (text: string) => {
+    setMessageVariant("error");
+    setMessage(text);
+  };
   const [importResult, setImportResult] = useState<ImportResultState | null>(
     null
   );
@@ -53,14 +74,14 @@ export default function SettingsForm({ user }: SettingsFormProps) {
       });
 
       if (response.ok) {
-        setMessage("Settings saved successfully!");
+        reportSuccess("Settings saved successfully!");
         router.refresh();
       } else {
         const data = await response.json();
-        setMessage(data.error || "Failed to save settings");
+        reportError(data.error || "Failed to save settings");
       }
     } catch {
-      setMessage("An error occurred");
+      reportError("An error occurred");
     } finally {
       setIsLoading(false);
     }
@@ -87,15 +108,15 @@ export default function SettingsForm({ user }: SettingsFormProps) {
       if (response.ok) {
         const data = await response.json();
         setAvatarUrl(data.url);
-        setMessage("Avatar uploaded successfully!");
+        reportSuccess("Avatar uploaded successfully!");
         router.refresh();
       } else {
         const error = await response.json();
-        setMessage(error.error || "Failed to upload avatar");
+        reportError(error.error || "Failed to upload avatar");
       }
     } catch (error) {
       console.error("Upload error:", error);
-      setMessage("Failed to upload avatar");
+      reportError("Failed to upload avatar");
     } finally {
       setIsUploadingAvatar(false);
     }
@@ -119,18 +140,22 @@ export default function SettingsForm({ user }: SettingsFormProps) {
 
       if (response.ok) {
         setImportResult({
-          imported: data.imported,
-          skipped: data.skipped,
-          errors: data.errors,
+          sessionId: data.sessionId,
+          totalRows: data.summary.totalRows,
+          matched: data.summary.matched,
+          needsReview: data.summary.needsReview,
+          matchRate: data.summary.matchRate,
+          notProcessed: data.notProcessed,
+          maxRows: data.maxRows,
         });
-        setMessage(`Successfully imported ${data.imported} books!`);
+        reportSuccess(`Imported ${data.summary.matched} books.`);
         router.refresh();
       } else {
-        setMessage(data.error || "Failed to import Goodreads library");
+        reportError(data.error || "Failed to import Goodreads library");
       }
     } catch (error) {
       console.error("Import error:", error);
-      setMessage("Failed to import Goodreads library");
+      reportError("Failed to import Goodreads library");
     } finally {
       setIsImporting(false);
     }
@@ -146,7 +171,7 @@ export default function SettingsForm({ user }: SettingsFormProps) {
           <CardContent className="space-y-4">
             {/* Avatar */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Avatar
               </label>
               <div className="flex items-center gap-4">
@@ -157,7 +182,7 @@ export default function SettingsForm({ user }: SettingsFormProps) {
                 />
                 <div className="space-y-2">
                   {/* Upload Button */}
-                  <label className="flex items-center gap-2 px-4 py-2 bg-[#D4A017] text-white rounded-full hover:bg-[#B8860B] transition-colors cursor-pointer text-sm font-medium">
+                  <label className="flex items-center gap-2 px-4 py-2 bg-[#D4A017] text-[var(--color-primary-contrast)] rounded-full hover:bg-[#B8860B] transition-colors cursor-pointer text-sm font-medium">
                     <Upload className="h-4 w-4" />
                     {isUploadingAvatar ? "Uploading..." : "Upload Photo"}
                     <input
@@ -185,7 +210,7 @@ export default function SettingsForm({ user }: SettingsFormProps) {
                     Generate Random Avatar
                   </Button>
 
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
                     Or paste a custom URL below
                   </p>
                 </div>
@@ -209,11 +234,11 @@ export default function SettingsForm({ user }: SettingsFormProps) {
             />
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Email
               </label>
-              <p className="text-gray-500">{user.email}</p>
-              <p className="text-xs text-gray-400 mt-1">
+              <p className="text-gray-500 dark:text-gray-400">{user.email}</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
                 Email cannot be changed
               </p>
             </div>
@@ -241,15 +266,15 @@ export default function SettingsForm({ user }: SettingsFormProps) {
           <h2 className="text-lg font-semibold">Import from Goodreads</h2>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
             Export your Goodreads library as a CSV file and import it here. Your
             books, ratings, shelves, and reading dates will be imported.
           </p>
 
           <div className="space-y-2">
-            <label className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-[#D4A017] transition-colors cursor-pointer">
-              <FileUp className="h-5 w-5 text-gray-400" />
-              <span className="text-sm text-gray-600">
+            <label className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:border-[#D4A017] transition-colors cursor-pointer">
+              <FileUp className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+              <span className="text-sm text-gray-600 dark:text-gray-400">
                 {isImporting ? "Importing..." : "Choose CSV file"}
               </span>
               <input
@@ -266,39 +291,50 @@ export default function SettingsForm({ user }: SettingsFormProps) {
               />
             </label>
 
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-gray-400 dark:text-gray-500">
               To export from Goodreads: My Books → Import and Export → Export
               Library
             </p>
           </div>
 
           {importResult && (
-            <div className="p-4 bg-gray-50 rounded-lg space-y-2">
-              <div className="flex items-center gap-4 text-sm">
-                <span className="text-green-600 flex items-center gap-1">
-                  <CheckCircle className="h-4 w-4" />
-                  {importResult.imported} imported
+            <div className="space-y-3 rounded-lg bg-gray-50 dark:bg-gray-800 p-4">
+              <div className="flex flex-wrap items-center gap-4 text-sm">
+                <span className="flex items-center gap-1 text-green-600 dark:text-green-400">
+                  <CheckCircle className="h-4 w-4" aria-hidden="true" />
+                  {importResult.matched} of {importResult.totalRows} matched (
+                  {importResult.matchRate}%)
                 </span>
-                {importResult.skipped > 0 && (
-                  <span className="text-amber-600 flex items-center gap-1">
-                    <AlertCircle className="h-4 w-4" />
-                    {importResult.skipped} skipped
+                {importResult.needsReview > 0 && (
+                  <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                    <AlertCircle className="h-4 w-4" aria-hidden="true" />
+                    {importResult.needsReview} need a look
                   </span>
                 )}
               </div>
 
-              {importResult.errors.length > 0 && (
-                <details className="text-xs text-gray-500">
-                  <summary className="cursor-pointer">View errors</summary>
-                  <ul className="mt-2 space-y-1 max-h-32 overflow-y-auto">
-                    {importResult.errors.slice(0, 10).map((error, i) => (
-                      <li key={i}>{error}</li>
-                    ))}
-                    {importResult.errors.length > 10 && (
-                      <li>...and {importResult.errors.length - 10} more</li>
-                    )}
-                  </ul>
-                </details>
+              {importResult.needsReview > 0 && (
+                <>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    These are kept, not discarded — most are a spelling
+                    difference between your export and our catalog.
+                  </p>
+                  <Link
+                    href={`/import/${importResult.sessionId}`}
+                    className="inline-block rounded-lg bg-[#D4A017] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[#B8860B]"
+                  >
+                    Review {importResult.needsReview}{" "}
+                    {importResult.needsReview === 1 ? "book" : "books"}
+                  </Link>
+                </>
+              )}
+
+              {importResult.notProcessed > 0 && (
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  The first {importResult.maxRows} rows were read.{" "}
+                  {importResult.notProcessed} more are still in the file —
+                  upload it again to continue where this left off.
+                </p>
               )}
             </div>
           )}
@@ -307,8 +343,11 @@ export default function SettingsForm({ user }: SettingsFormProps) {
 
       {message && (
         <div
+          // Was `message.includes("success")`, so "Imported 12 books." — set on
+          // the success path — rendered in the error style. The variant is now
+          // tracked alongside the message instead of being guessed from it.
           className={`p-3 rounded-lg text-sm ${
-            message.includes("success")
+            messageVariant === "success"
               ? "bg-green-50 text-green-600"
               : "bg-red-50 text-red-600"
           }`}

@@ -16,6 +16,9 @@
 # next.js
 /.next/
 /out/
+# SWC plugin cache. Invisible to git today only because its leaf directories
+# happen to be empty.
+/.swc
 
 # production
 /build
@@ -32,6 +35,10 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...except the example, which carries no secrets and is the only record of what
+# a deployment needs configured. `.env*` had been swallowing it, so it was never
+# committed and every required variable lived only on one developer's disk.
+!.env.example
 
 # vercel
 .vercel
@@ -42,3 +49,10 @@ next-env.d.ts
 
 /src/generated/prisma
 .env*.local
+
+# Open Library dumps and ingest byproducts — large, regenerable
+/data/raw
+/data/quarantine
+
+# Rating corpus — CC BY-SA 4.0, kept local. See ARCHITECTURE.md.
+/data/ratings

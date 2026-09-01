@@ -1,101 +1,123 @@
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  // Three schemas, per the data-layer spec:
+  //   catalog — rebuilt monthly from Open Library dumps, disposable
+  //   app     — user-owned data, survives every ingest
+  //   seed    — synthetic / restricted-licence, never served raw; aggregates
+  //             derived from it are served with attribution (PRD section 5)
+  previewFeatures = ["multiSchema"]
+  // The container needs an engine for its own platform, not the developer's.
+  // Both Debian targets are listed because the image is built on arm64 locally
+  // and runs on amd64 in Azure.
+  //
+  // Debian rather than Alpine on purpose: Prisma 5.22 probes current Alpine and
+  // resolves `openssl-1.1.x`, which that release no longer ships. The container
+  // built, started, and served static pages, then threw
+  // PrismaClientInitializationError on every query touching the database.
+  // Declaring the musl targets does not help — it changes which engines are
+  // shipped, not which one the client asks for at runtime.
+  //
+  // (The parser requires this array on one line.)
+  binaryTargets   = ["native", "debian-openssl-3.0.x", "linux-arm64-openssl-3.0.x"]
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  // Runtime queries go through the pooled connection. Serverless functions
+  // open a connection per invocation, which exhausts a direct Postgres
+  // connection limit quickly.
+  url       = env("DATABASE_URL")
+  // Migrations and introspection need a direct connection — they use
+  // session-level features a transaction pooler does not support.
+  // Locally the two are the same value; see .env.example.
+  directUrl = env("DIRECT_URL")
+  schemas   = ["app", "catalog", "seed"]
 }
 
 model User {
   id           String   @id @default(cuid())
-  email        String   @unique
+  email        String   @unique // Always stored lowercased and trimmed
   passwordHash String
   name         String
   avatarUrl    String?
   bio          String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  isModerator  Boolean  @default(false) // May remove any community-contributed map
+  createdAt    DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(6)
 
   // Relations
-  shelves           Shelf[]
-  reviews           Review[]
-  readingProgress   ReadingProgress[]
-  followers         Follow[]          @relation("Following")
-  following         Follow[]          @relation("Follower")
-  bookLocations     BookLocation[]    // Locations this user contributed
-  authorLocations   AuthorLocation[]  // Author locations this user contributed
+  shelves         Shelf[]
+  reviews         Review[]
+  readingSessions ReadingSession[]
+  followers       Follow[]             @relation("Following")
+  following       Follow[]             @relation("Follower")
+  shelfItems      ShelfItem[]
+  workLocations   WorkLocation[] // Locations this user contributed
+  authorLocations AuthorLocation[] // Author locations this user contributed
+  worldLinks      WorkFictionalWorld[]
+  importSessions  ImportSession[]
+  mapsUploaded    FictionalWorldMap[]  @relation("MapUploader")
+  mapsEdited      FictionalWorldMap[]  @relation("MapEditor")
 
   @@map("users")
-}
-
-model Book {
-  id            String   @id @default(cuid())
-  title         String
-  author        String
-  isbn          String?  @unique
-  description   String?
-  coverUrl      String?
-  pageCount     Int?
-  publishedDate String?
-  genres        String[] @default([])
-  openLibraryId String?  @unique
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  // V3 map feature fields (nullable for future use)
-  settingLocation          String?
-  settingCoordinates       String? // JSON string: {"lat": number, "lng": number}
-  authorOrigin             String?
-  authorOriginCoordinates  String? // JSON string: {"lat": number, "lng": number}
-
-  // Fictional location support
-  isFictional        Boolean          @default(false)
-  fictionalWorldId   String?
-  fictionalWorld     FictionalWorld?  @relation(fields: [fictionalWorldId], references: [id])
-
-  // Relations
-  reviews         Review[]
-  shelfItems      ShelfItem[]
-  readingProgress ReadingProgress[]
-  locations       BookLocation[]    // Crowdsourced location data
-
-  @@index([title])
-  @@index([author])
-  @@index([fictionalWorldId])
-  @@map("books")
+  @@schema("app")
 }
 
 model FictionalWorld {
   id          String   @id @default(cuid())
   name        String   @unique // e.g., "Middle-earth", "Arrakis", "Macondo"
   description String?
-  mapImageUrl String?  // DEPRECATED: Use maps relation instead
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(6)
 
   // Relations
-  books         Book[]
-  bookLocations BookLocation[]  // Fictional locations in this world
-  maps          FictionalWorldMap[]
+  works     WorkFictionalWorld[]
+  locations WorkLocation[] // Fictional locations in this world
+  maps      FictionalWorldMap[]
 
   @@map("fictional_worlds")
+  @@schema("app")
 }
 
+// Community-editable: any signed-in user may edit title/description.
+// Deletion is limited to the uploader or a moderator.
 model FictionalWorldMap {
   id               String   @id @default(cuid())
   fictionalWorldId String
   imageUrl         String
   title            String
   description      String?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  addedById        String // Who uploaded it
+  updatedById      String? // Who last edited it, if anyone
+  createdAt        DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @db.Timestamptz(6)
 
   // Relations
   fictionalWorld FictionalWorld @relation(fields: [fictionalWorldId], references: [id], onDelete: Cascade)
+  addedBy        User           @relation("MapUploader", fields: [addedById], references: [id], onDelete: Cascade)
+  updatedBy      User?          @relation("MapEditor", fields: [updatedById], references: [id], onDelete: SetNull)
 
   @@index([fictionalWorldId])
+  @@index([addedById])
   @@map("fictional_world_maps")
+  @@schema("app")
+}
+
+// Replaces Book.fictionalWorldId. This cannot be a column on catalog.works:
+// the catalog is rebuilt from dumps every month and would erase it.
+model WorkFictionalWorld {
+  workKey   String   @map("work_key")
+  worldId   String   @map("world_id")
+  addedById String?  @map("added_by_id")
+  addedAt   DateTime @default(now()) @map("added_at") @db.Timestamptz(6)
+
+  world   FictionalWorld @relation(fields: [worldId], references: [id], onDelete: Cascade)
+  addedBy User?          @relation(fields: [addedById], references: [id], onDelete: SetNull)
+
+  @@id([workKey, worldId])
+  @@index([worldId])
+  @@map("work_fictional_worlds")
+  @@schema("app")
 }
 
 model Shelf {
@@ -103,8 +125,8 @@ model Shelf {
   userId    String
   name      String
   isDefault Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
 
   // Relations
   user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -112,62 +134,83 @@ model Shelf {
 
   @@unique([userId, name])
   @@map("shelves")
+  @@schema("app")
 }
 
 model ShelfItem {
   id      String   @id @default(cuid())
   shelfId String
-  bookId  String
-  addedAt DateTime @default(now())
+  workKey String   @map("work_key") // catalog.works.ol_key — no FK by design
+  addedAt DateTime @default(now()) @db.Timestamptz(6)
+
+  // Denormalized from the parent shelf. A partial unique index cannot contain
+  // a subquery, so enforcing "one exclusive shelf per work per user" in the
+  // database requires both of these on the row itself. Kept in sync by the
+  // shelf_items_sync_exclusive trigger, not by application code.
+  userId      String  @map("user_id")
+  isExclusive Boolean @default(false) @map("is_exclusive")
 
   // Relations
   shelf Shelf @relation(fields: [shelfId], references: [id], onDelete: Cascade)
-  book  Book  @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([shelfId, bookId])
+  @@unique([shelfId, workKey])
+  @@index([workKey])
+  @@index([userId])
   @@map("shelf_items")
+  @@schema("app")
 }
 
+// Ratings and reviews attach to the WORK, not an edition — a rating of Dune
+// is a rating of Dune, whichever printing you happened to read.
 model Review {
   id        String   @id @default(cuid())
   userId    String
-  bookId    String
+  workKey   String   @map("work_key")
   rating    Int      @db.SmallInt // 1-5
   content   String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @db.Timestamptz(6)
 
-  // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, bookId])
+  @@unique([userId, workKey])
+  @@index([workKey])
   @@map("reviews")
+  @@schema("app")
 }
 
-model ReadingProgress {
+// Progress binds to an EDITION where one is known, because page counts differ
+// between printings, while the shelf and rating stay on the work.
+//
+// There is no unique constraint on (user, work): re-reads are a real thing and
+// each is its own session. What IS enforced, by a partial unique index in the
+// migration, is at most one OPEN session per user and work.
+model ReadingSession {
   id          String    @id @default(cuid())
   userId      String
-  bookId      String
+  workKey     String    @map("work_key")
+  editionKey  String?   @map("edition_key") // catalog.editions.ol_key, if known
   currentPage Int       @default(0)
-  startedAt   DateTime  @default(now())
-  finishedAt  DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  pageCount   Int?      @map("page_count") // snapshot, so history survives an ingest
+  startedAt   DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt  DateTime? @map("finished_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  // Relations
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-  book Book @relation(fields: [bookId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, bookId])
-  @@map("reading_progress")
+  @@index([userId, workKey])
+  @@index([userId, finishedAt])
+  @@map("reading_sessions")
+  @@schema("app")
 }
 
 model Follow {
   id          String   @id @default(cuid())
   followerId  String
   followingId String
-  createdAt   DateTime @default(now())
+  createdAt   DateTime @default(now()) @db.Timestamptz(6)
 
   // Relations
   follower  User @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
@@ -175,68 +218,448 @@ model Follow {
 
   @@unique([followerId, followingId])
   @@map("follows")
+  @@schema("app")
 }
 
 // Crowdsourced location data - Wikipedia-style contributions
 
-model BookLocation {
-  id          String   @id @default(cuid())
-  bookId      String
-  addedById   String
-  name        String   // e.g., "Arrakis", "Paris", "Shire"
-  type        String   // "setting", "mentioned", "inspired_by"
-  description String?  // User's note about this location
-  coordinates String?  // JSON: {"lat": number, "lng": number} - null for fictional
-  isFictional Boolean  @default(false)
-  fictionalWorldId String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+model WorkLocation {
+  id               String   @id @default(cuid())
+  workKey          String   @map("work_key")
+  // Nullable: a contribution to the shared map outlives the account that made
+  // it. ON DELETE SET NULL against a NOT NULL column is accepted at CREATE
+  // TABLE and only fails later, when someone actually deletes their account.
+  addedById        String?  @map("added_by_id")
+  name             String // e.g., "Arrakis", "Paris", "Shire"
+  type             String // "setting", "mentioned", "inspired_by"
+  description      String?
+  lat              Float? // Null for fictional locations, pinned to a world
+  lng              Float?
+  isFictional      Boolean  @default(false) @map("is_fictional")
+  fictionalWorldId String?  @map("fictional_world_id")
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  // Relations
-  book           Book            @relation(fields: [bookId], references: [id], onDelete: Cascade)
-  addedBy        User            @relation(fields: [addedById], references: [id], onDelete: Cascade)
-  fictionalWorld FictionalWorld? @relation(fields: [fictionalWorldId], references: [id])
+  addedBy        User?           @relation(fields: [addedById], references: [id], onDelete: SetNull)
+  fictionalWorld FictionalWorld? @relation(fields: [fictionalWorldId], references: [id], onDelete: SetNull)
 
-  @@index([bookId])
+  @@index([workKey])
   @@index([addedById])
-  @@map("book_locations")
-}
-
-model Author {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  bio         String?
-  photoUrl    String?
-  birthYear   Int?
-  deathYear   Int?
-  openLibraryId String? @unique
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  // Relations
-  locations AuthorLocation[]
-
-  @@map("authors")
+  @@map("work_locations")
+  @@schema("app")
 }
 
 model AuthorLocation {
   id          String   @id @default(cuid())
-  authorId    String
-  addedById   String
-  name        String   // e.g., "Oxford, UK", "Cartagena, Colombia"
-  type        String   // "birthplace", "residence", "death", "worked"
-  description String?  // User's note about this location
-  coordinates String   // JSON: {"lat": number, "lng": number}
-  yearStart   Int?     // When they were at this location
-  yearEnd     Int?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  authorKey   String   @map("author_key") // catalog.authors.ol_key
+  addedById   String?  @map("added_by_id")
+  name        String // e.g., "Oxford, UK"
+  type        String // "birthplace", "residence", "death", "worked"
+  description String?
+  lat         Float
+  lng         Float
+  yearStart   Int?     @map("year_start")
+  yearEnd     Int?     @map("year_end")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  // Relations
-  author  Author @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  addedBy User   @relation(fields: [addedById], references: [id], onDelete: Cascade)
+  addedBy User? @relation(fields: [addedById], references: [id], onDelete: SetNull)
 
-  @@index([authorId])
+  @@index([authorKey])
   @@index([addedById])
   @@map("author_locations")
+  @@schema("app")
+}
+
+// ===========================================================================
+// catalog — derived entirely from Open Library monthly dumps.
+//
+// Rebuilt wholesale on each ingest, so nothing irreplaceable may live here and
+// nothing in `app` may hold a foreign key into it. Prisma owns the DDL so the
+// migration history stays in one chain; the ingest itself uses COPY and raw
+// SQL, because row-by-row inserts across tens of millions of rows take days.
+// ===========================================================================
+
+model CatalogAuthor {
+  olKey        String   @id @map("ol_key") // OL34184A
+  name         String
+  personalName String?  @map("personal_name")
+  birthDate    String?  @map("birth_date") // raw, unparsed
+  deathDate    String?  @map("death_date")
+  bio          String?
+  photoId      BigInt?  @map("photo_id")
+  wikidataId   String?  @map("wikidata_id")
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  works CatalogWorkAuthor[]
+
+  @@map("authors")
+  @@schema("catalog")
+}
+
+model CatalogWork {
+  olKey            String   @id @map("ol_key") // OL45804W
+  title            String
+  subtitle         String?
+  description      String?
+  firstPublishYear Int?     @map("first_publish_year")
+  subjects         String[] @default([])
+  coverEditionKey  String?  @map("cover_edition_key")
+  editionCount     Int      @default(0) @map("edition_count")
+
+  // Denormalized author names. Joining through work_authors on every search is
+  // too slow at a million rows, per the spec.
+  authorNames String? @map("author_names")
+
+  // Maintained by a trigger, not by hand — see the migration. Prisma cannot
+  // express tsvector, and it is never read through the client.
+  searchVector Unsupported("tsvector")? @map("search_vector")
+
+  // Also trigger-maintained: `unaccent(lower(...))` of the two columns above.
+  // Search matches on the normalized form, and an index on the raw column
+  // cannot answer a query about a function of it. An expression index is not
+  // an option either — `unaccent()` is STABLE, not IMMUTABLE, so Postgres
+  // rejects it in an index. Normalizing on write is what makes the trigram
+  // indexes below reachable at all.
+  titleNorm       String? @map("title_norm")
+  authorNamesNorm String? @map("author_names_norm")
+
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  authors  CatalogWorkAuthor[]
+  editions CatalogEdition[]
+
+  @@index([firstPublishYear])
+  // Serves the discover page's "most editions first". Without it that query
+  // sorts all 6.9M works — an external merge spilling ~480MB to disk — to
+  // return 24 rows, which took two seconds on the real catalog and nothing
+  // measurable on the fixtures.
+  @@index([editionCount(sort: Desc), olKey])
+  // Declared here, not hand-written in a migration. Hand-written indexes are
+  // invisible to `prisma migrate diff`, which then generates a DROP for them —
+  // exactly how these three were silently lost in the M3 migration, leaving
+  // every search on a sequential scan.
+  @@index([searchVector], type: Gin)
+  // Subject browse. Subjects are deliberately not in search_vector — as a
+  // D-weighted term they made "Fiction" match 735,956 works — so finding
+  // books by subject is an indexed array containment lookup instead.
+  @@index([subjects], type: Gin)
+  @@index([titleNorm(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@index([authorNamesNorm(ops: raw("gin_trgm_ops"))], type: Gin)
+  @@map("works")
+  @@schema("catalog")
+}
+
+/// Precomputed subject counts for the discover page.
+///
+/// Declared here even though it is only ever read through raw SQL, because a
+/// table the schema does not know about is a table `prisma migrate diff`
+/// proposes to DROP — which is exactly how three GIN indexes were silently
+/// lost during M3. It was created by a hand-written migration and left
+/// undeclared; the next diff wanted it gone.
+///
+/// @@ignore because there is no unique identifier: `subject` cannot be a key,
+/// as Open Library subjects are free text and some exceed the btree maximum
+/// index row size. Prisma needs the model for migrations, not for querying.
+model CatalogSubjectCount {
+  subject    String   @map("subject")
+  workCount  Int      @map("work_count")
+  computedAt DateTime @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  @@index([workCount(sort: Desc)])
+  @@map("subject_counts")
+  @@schema("catalog")
+  @@ignore
+}
+
+model CatalogWorkAuthor {
+  workKey   String @map("work_key")
+  authorKey String @map("author_key")
+  position  Int    @default(0)
+
+  work   CatalogWork   @relation(fields: [workKey], references: [olKey], onDelete: Cascade)
+  author CatalogAuthor @relation(fields: [authorKey], references: [olKey], onDelete: Cascade)
+
+  @@id([workKey, authorKey])
+  @@index([authorKey])
+  @@map("work_authors")
+  @@schema("catalog")
+}
+
+model CatalogEdition {
+  olKey          String   @id @map("ol_key") // OL7353617M
+  workKey        String?  @map("work_key")
+  title          String
+  subtitle       String?
+  isbn13         String?
+  isbn10         String?
+  publishers     String[] @default([])
+  publishDateRaw String?  @map("publish_date_raw")
+  publishYear    Int?     @map("publish_year")
+  numberOfPages  Int?     @map("number_of_pages")
+  languages      String[] @default([])
+  physicalFormat String?  @map("physical_format")
+  coverId        BigInt?  @map("cover_id")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  work CatalogWork? @relation(fields: [workKey], references: [olKey], onDelete: Cascade)
+
+  @@index([workKey])
+  @@index([isbn13])
+  @@map("editions")
+  @@schema("catalog")
+}
+
+// Cross-source identity. One row per (entity, source, id).
+model CatalogExternalId {
+  entityType String @map("entity_type") // work | edition | author
+  entityKey  String @map("entity_key")
+  source     String // google_books | hardcover | goodreads | wikidata
+  externalId String @map("external_id")
+
+  @@id([entityType, entityKey, source, externalId])
+  @@index([source, externalId])
+  @@map("external_ids")
+  @@schema("catalog")
+}
+
+// Third-party enrichment, deliberately kept out of the canonical tables so
+// provenance survives and any single source can be purged in one statement.
+model CatalogEnrichment {
+  entityType String    @map("entity_type")
+  entityKey  String    @map("entity_key")
+  source     String
+  field      String // description | cover_url | genres
+  value      Json
+  fetchedAt  DateTime  @default(now()) @map("fetched_at") @db.Timestamptz(6)
+  expiresAt  DateTime? @map("expires_at") @db.Timestamptz(6)
+
+  @@id([entityType, entityKey, source, field])
+  @@index([expiresAt])
+  @@map("enrichment")
+  @@schema("catalog")
+}
+
+// Which dump snapshot the catalog currently reflects, and how each run went.
+model IngestRun {
+  id               String    @id @default(cuid())
+  dumpType         String    @map("dump_type") // works | editions | authors
+  dumpPublished    DateTime? @map("dump_published") @db.Timestamptz(6)
+  startedAt        DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt      DateTime? @map("completed_at") @db.Timestamptz(6)
+  linesRead        BigInt    @default(0) @map("lines_read")
+  rowsStaged       BigInt    @default(0) @map("rows_staged")
+  linesQuarantined BigInt    @default(0) @map("lines_quarantined")
+  status           String    @default("running") // running | completed | failed
+  error            String?
+
+  @@index([dumpType, startedAt])
+  @@map("ingest_runs")
+  @@schema("catalog")
+}
+
+// ---------------------------------------------------------------------------
+// Ingest staging.
+//
+// Modelled here, despite being scratch space, because a table Prisma does not
+// know about reads as drift: every `migrate diff` proposed dropping these.
+// They are UNLOGGED (set in the migration — Prisma cannot express it) and are
+// truncated and reloaded on every ingest.
+// ---------------------------------------------------------------------------
+
+model StageAuthor {
+  olKey        String    @id @map("ol_key")
+  revision     Int?
+  lastModified DateTime? @map("last_modified") @db.Timestamptz(6)
+  data         Json
+
+  @@map("stage_authors")
+  @@schema("catalog")
+}
+
+model StageWork {
+  olKey        String    @id @map("ol_key")
+  revision     Int?
+  lastModified DateTime? @map("last_modified") @db.Timestamptz(6)
+  data         Json
+
+  @@map("stage_works")
+  @@schema("catalog")
+}
+
+model StageEdition {
+  olKey        String    @id @map("ol_key")
+  revision     Int?
+  lastModified DateTime? @map("last_modified") @db.Timestamptz(6)
+  data         Json
+
+  @@map("stage_editions")
+  @@schema("catalog")
+}
+
+/// Work queued for enrichment from a third-party source.
+///
+/// A database-backed queue rather than Redis: there is no Redis in the stack,
+/// the volume is low, and this survives a restart. It also means the queue is
+/// visible in the same place as everything else when something goes wrong.
+model EnrichmentJob {
+  id         String @id @default(cuid())
+  entityType String @map("entity_type") // work | edition
+  entityKey  String @map("entity_key")
+  field      String // description | cover_url
+  source     String // google_books | openlibrary_covers
+
+  status        String    @default("pending") // pending | running | done | failed
+  attempts      Int       @default(0)
+  nextAttemptAt DateTime  @default(now()) @map("next_attempt_at") @db.Timestamptz(6)
+  /// Set when a worker claims the job. reclaimStale measures from here, not
+  /// from createdAt, which is when the job was enqueued.
+  claimedAt     DateTime? @map("claimed_at") @db.Timestamptz(6)
+  lastError     String?   @map("last_error")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt   DateTime? @map("completed_at") @db.Timestamptz(6)
+
+  // One outstanding job per thing-to-enrich. Re-queuing something already
+  // queued is a no-op rather than a duplicate.
+  @@unique([entityType, entityKey, field, source])
+  @@index([status, nextAttemptAt])
+  @@map("enrichment_queue")
+  @@schema("catalog")
+}
+
+// ---------------------------------------------------------------------------
+// seed — synthetic and externally-licensed data. NEVER served.
+//
+// Everything here exists so recommendations have a ratings graph to run on
+// before the app has real users. It is separated at the schema level rather
+// than by a boolean column so that purging it is one TRUNCATE, and so that
+// "is this ours to serve?" is answerable by looking at the table name.
+//
+// Gated behind ENABLE_SEED_DATA, default false. See ARCHITECTURE.md.
+// ---------------------------------------------------------------------------
+
+model SeedUser {
+  id          String  @id @default(cuid())
+  handle      String  @unique
+  /// Where this row came from: goodbooks-10k, synthetic, …
+  source      String
+  isSynthetic Boolean @default(true) @map("is_synthetic")
+
+  ratings SeedRating[]
+
+  @@map("users")
+  @@schema("seed")
+}
+
+model SeedRating {
+  userId      String   @map("user_id")
+  workKey     String   @map("work_key")
+  rating      Int      @db.SmallInt
+  source      String
+  isSynthetic Boolean  @default(true) @map("is_synthetic")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user SeedUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, workKey])
+  @@index([workKey])
+  @@map("ratings")
+  @@schema("seed")
+}
+
+// ---------------------------------------------------------------------------
+// Derived aggregates. Rebuilt by scripts/social/*, never edited by hand.
+// ---------------------------------------------------------------------------
+
+/// Community rating per work, from real reviews and — when enabled — seed data.
+model WorkRatingStats {
+  workKey     String   @id @map("work_key")
+  avgRating   Float    @map("avg_rating")
+  ratingCount Int      @map("rating_count")
+  /// How many of the ratings came from seed data, so the mix is auditable.
+  seedCount   Int      @default(0) @map("seed_count")
+  computedAt  DateTime @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  @@index([ratingCount])
+  @@map("work_rating_stats")
+  @@schema("catalog")
+}
+
+/// Precomputed item-item similarity: "readers also enjoyed".
+///
+/// Computed in batch rather than per request. The co-occurrence query is a
+/// self-join over the whole ratings matrix; at six million ratings that is not
+/// something to run while somebody waits for a page.
+model WorkSimilarity {
+  workKey        String   @map("work_key")
+  similarWorkKey String   @map("similar_work_key")
+  /// Cosine over co-raters, so popular books do not dominate every list.
+  score          Float
+  coRaters       Int      @map("co_raters")
+  computedAt     DateTime @default(now()) @map("computed_at") @db.Timestamptz(6)
+
+  @@id([workKey, similarWorkKey])
+  @@index([workKey, score])
+  @@map("work_similarity")
+  @@schema("catalog")
+}
+
+/// One upload of a Goodreads export.
+///
+/// The import outlives its request. Previously the result was a JSON blob in
+/// the response — a reader saw "matched 78%" once and had no way to find out
+/// which 22% went missing, or to do anything about it.
+model ImportSession {
+  id          String    @id @default(cuid())
+  userId      String    @map("user_id")
+  filename    String
+  status      String    @default("processing") // processing | review | complete
+  totalRows   Int       @default(0) @map("total_rows")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rows ImportRow[]
+
+  @@index([userId, createdAt])
+  @@map("import_sessions")
+  @@schema("app")
+}
+
+/// A single line of the export, with what became of it.
+///
+/// Kept whether or not it matched. An unmatched row is a question for the
+/// reader, not a statistic.
+model ImportRow {
+  id        String @id @default(cuid())
+  sessionId String @map("session_id")
+  rowNumber Int    @map("row_number")
+
+  // As it appeared in the file, so the reader recognises what they are judging.
+  title          String
+  author         String
+  isbn13         String?
+  myRating       Int?      @map("my_rating") @db.SmallInt
+  exclusiveShelf String?   @map("exclusive_shelf")
+  dateRead       DateTime? @map("date_read") @db.Timestamptz(6)
+
+  /// matched | needs_review | confirmed | skipped | failed
+  status    String  @default("needs_review")
+  /// Why a `failed` row did not apply. Null for every other status.
+  error     String?
+  /// How it was resolved: isbn | title_author | confirmed_by_user
+  matchedBy String? @map("matched_by")
+  workKey   String? @map("work_key")
+
+  /// Fuzzy candidates for a row needing review: [{workKey, title, author, score}]
+  candidates Json?
+
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  session ImportSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, rowNumber])
+  @@index([sessionId, status])
+  @@map("import_rows")
+  @@schema("app")
 }

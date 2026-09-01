@@ -1,0 +1,152 @@
+# The deployed topology, locally.
+#
+# Three things here are NOT how local development runs, which is the point —
+# each has been a source of production-only failure:
+#
+#   1. DATABASE_URL goes through a connection pooler and DIRECT_URL does not.
+#      Locally they are the same string, so nothing has ever exercised the
+#      split. Prisma needs `pgbouncer=true` on the pooled URL in transaction
+#      mode; without it, prepared statements break under reuse.
+#   2. Postgres 16, matching CI and Azure Flexible Server. Local development
+#      runs 14.
+#   3. shared_buffers is not the 128MB default. That default is the measured
+#      cause of the 3.5s common-word search.
+#
+# Azure equivalents: postgres -> Database for PostgreSQL Flexible Server
+# (which has PgBouncer built in, so `pgbouncer` here stands in for a setting
+# rather than a component), app -> Container Apps.
+
+name: lob
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: bookshelf
+      POSTGRES_PASSWORD: bookshelf
+      POSTGRES_DB: bookshelf
+    # Flexible Server's own defaults scale with the tier; these match a
+    # ~4GB instance.
+    #
+    # work_mem is the one that matters most, and not for the reason you would
+    # guess. At the 4MB default the common-word search builds a LOSSY bitmap and
+    # rechecks 1,028,773 rows; at 32MB the bitmap is exact and the same query
+    # runs 3.5x faster. See DEPLOYMENT.md.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - effective_cache_size=3GB
+      - -c
+      - work_mem=32MB
+      - -c
+      - maintenance_work_mem=512MB
+      - -c
+      - max_wal_size=4GB
+      - -c
+      - random_page_cost=1.1
+    ports:
+      # Exposed so a dump can be restored from the host. 5433 to avoid
+      # colliding with a local Postgres on 5432.
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bookshelf -d bookshelf"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.23.1-p2
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: bookshelf
+      DB_PASSWORD: bookshelf
+      DB_NAME: bookshelf
+      # Transaction pooling is what Azure and RDS Proxy default to, and it is
+      # the mode that breaks naive Prisma usage. Testing session mode would
+      # prove nothing.
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 200
+      DEFAULT_POOL_SIZE: 20
+      AUTH_TYPE: scram-sha-256
+      ADMIN_USERS: bookshelf
+      # The image defaults to 5432, which is confusing next to Postgres and
+      # not what Azure exposes. Flexible Server's PgBouncer is on 6432.
+      LISTEN_PORT: 6432
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "6433:6432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 6432 -U bookshelf -d bookshelf"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build:
+      context: .
+      args:
+        # Baked into the build: next.config reads it for the next/image
+        # allowlist and the CSP. Must be the URL a BROWSER can reach, which is
+        # not the hostname the app container uses to talk to storage.
+        CDN_URL: ${CDN_URL:-http://127.0.0.1:10000/devstoreaccount1/uploads}
+    environment:
+      # The split under test: reads and writes are pooled, migrations are not.
+      DATABASE_URL: postgresql://bookshelf:bookshelf@pgbouncer:6432/bookshelf?pgbouncer=true&connection_limit=10
+      DIRECT_URL: postgresql://bookshelf:bookshelf@postgres:5432/bookshelf
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-local-compose-secret-not-for-deployment}
+      GOOGLE_BOOKS_API_KEY: ${GOOGLE_BOOKS_API_KEY:-}
+      CDN_URL: ${CDN_URL:-http://127.0.0.1:10000/devstoreaccount1/uploads}
+      # Azure Blob, via Azurite. The well-known emulator credentials — published
+      # by Microsoft, useless against anything real. BlobEndpoint uses the
+      # service name because that is how the app container reaches it; CDN_URL
+      # above is the browser's route to the same bytes.
+      AZURE_STORAGE_CONNECTION_STRING: ${AZURE_STORAGE_CONNECTION_STRING:-DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://azurite:10000/devstoreaccount1;}
+      AZURE_STORAGE_CONTAINER: ${AZURE_STORAGE_CONTAINER:-uploads}
+      # Azurite has no CDN to sit in front of it, so the container is declared
+      # public locally and the adapter serves the blob endpoint directly. In
+      # Azure this stays unset and Front Door does the serving.
+      AZURE_STORAGE_PUBLIC_CONTAINER: ${AZURE_STORAGE_PUBLIC_CONTAINER:-true}
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    # Uses the liveness probe, not readiness: this decides whether to restart
+    # the container, and a database blip must not cause that. Node does the
+    # request because the slim image ships neither curl nor wget.
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # Azure Blob Storage emulator. Stands in for the account that serves
+  # avatars and world maps.
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    # skipApiVersionCheck: the SDK targets a newer REST API version than the
+    # emulator implements, and real Azure supports it. Without this the
+    # emulator rejects every request. Emulator-only — nothing about the
+    # deployed path depends on it.
+    command: azurite-blob --blobHost 0.0.0.0 --loose --skipApiVersionCheck
+    ports:
+      - "10000:10000"
+    volumes:
+      - azuritedata:/data
+
+volumes:
+  pgdata:
+  azuritedata:

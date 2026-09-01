@@ -1,0 +1,13 @@
+-- Drop the primary key on subject_counts.subject.
+--
+-- Open Library subjects are free text and some are long enough to exceed the
+-- btree maximum index row size, so the insert failed outright:
+--
+--   index row size ... exceeds btree version 4 maximum ...
+--   Consider a function index of an MD5 hash of the value
+--
+-- The key bought nothing. Uniqueness comes from the GROUP BY that populates
+-- the table, and every read is `ORDER BY work_count DESC LIMIT n`, served by
+-- the other index. Indexing arbitrary-length user text as a key was the
+-- mistake; not having to is the fix.
+ALTER TABLE "catalog"."subject_counts" DROP CONSTRAINT IF EXISTS "subject_counts_pkey";

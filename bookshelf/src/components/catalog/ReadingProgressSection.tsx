@@ -1,0 +1,230 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { useSession } from "next-auth/react";
+import { BookOpen, Check } from "lucide-react";
+import Button from "@/components/ui/Button";
+import ProgressBar from "@/components/ui/ProgressBar";
+import Input from "@/components/ui/Input";
+import { useToast } from "@/components/providers/ToastProvider";
+
+interface ReadingProgressSectionProps {
+  workKey: string;
+  pageCount: number | null;
+}
+
+/** The subset of SessionWithWork this component needs. */
+interface Progress {
+  workKey: string;
+  currentPage: number;
+  pageCount: number | null;
+  finishedAt: string | null;
+}
+
+export default function ReadingProgressSection({
+  workKey,
+  pageCount,
+}: ReadingProgressSectionProps) {
+  const { data: session } = useSession();
+  const [progress, setProgress] = useState<Progress | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [pageInput, setPageInput] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
+  const { showToast } = useToast();
+
+  const fetchProgress = useCallback(async () => {
+    try {
+      // Asks about THIS work, finished or not. It used to fetch the open
+      // sessions and match here, so a finished book found nothing and rendered
+      // "Start Reading" — which opened a second session, moved the work back to
+      // Currently Reading, and double-counted it in /wrapped.
+      const response = await fetch(
+        `/api/progress?workKey=${encodeURIComponent(workKey)}`
+      );
+      if (!response.ok) {
+        showToast("Could not load your reading progress", "error");
+        return;
+      }
+
+      const bookProgress: Progress | null = await response.json();
+      if (bookProgress) {
+        setProgress(bookProgress);
+        setPageInput(bookProgress.currentPage.toString());
+      }
+    } catch {
+      showToast("Could not reach the server. Try again.", "error");
+    }
+  }, [workKey, showToast]);
+
+  useEffect(() => {
+    if (session?.user) {
+      fetchProgress();
+    }
+  }, [session, fetchProgress]);
+
+  const handleStartReading = async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch("/api/progress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workKey, action: "start" }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        showToast(data.error ?? "Could not start reading that", "error");
+        return;
+      }
+
+      setProgress(await response.json());
+      setPageInput("0");
+    } catch {
+      showToast("Could not reach the server. Try again.", "error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUpdateProgress = async () => {
+    const page = parseInt(pageInput);
+    if (isNaN(page) || page < 0) return;
+
+    setIsLoading(true);
+    try {
+      const response = await fetch("/api/progress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workKey, currentPage: page }),
+      });
+
+      if (!response.ok) {
+        // progress.ts raises well-worded messages here — "You are not currently
+        // reading that book", "That edition has N pages" — that no reader ever
+        // saw: the Update button just stopped spinning and the number reverted.
+        const data = await response.json().catch(() => ({}));
+        showToast(data.error ?? "Could not save your progress", "error");
+        return;
+      }
+
+      setProgress(await response.json());
+      setIsEditing(false);
+    } catch {
+      showToast("Could not reach the server. Try again.", "error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleFinishReading = async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch("/api/progress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ workKey, action: "finish" }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        showToast(data.error ?? "Could not mark that finished", "error");
+        return;
+      }
+
+      setProgress(await response.json());
+    } catch {
+      showToast("Could not reach the server. Try again.", "error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (!session?.user) {
+    return null;
+  }
+
+  if (!progress) {
+    return (
+      <Button
+        onClick={handleStartReading}
+        variant="outline"
+        isLoading={isLoading}
+        className="flex items-center gap-2"
+      >
+        <BookOpen className="h-4 w-4" />
+        Start Reading
+      </Button>
+    );
+  }
+
+  if (progress.finishedAt) {
+    return (
+      <div className="flex items-center gap-2 text-green-600">
+        <Check className="h-5 w-5" />
+        <span className="font-medium">Finished reading</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {pageCount && (
+        <ProgressBar
+          value={progress.currentPage}
+          max={pageCount}
+        />
+      )}
+
+      {isEditing ? (
+        <div className="flex items-center gap-2">
+          <Input
+            type="number"
+            value={pageInput}
+            onChange={(e) => setPageInput(e.target.value)}
+            min={0}
+            max={pageCount || undefined}
+            className="w-24"
+          />
+          <span className="text-gray-500">
+            / {pageCount || "?"} pages
+          </span>
+          <Button
+            onClick={handleUpdateProgress}
+            size="sm"
+            isLoading={isLoading}
+          >
+            Update
+          </Button>
+          <Button
+            onClick={() => {
+              setIsEditing(false);
+              setPageInput(progress.currentPage.toString());
+            }}
+            variant="ghost"
+            size="sm"
+          >
+            Cancel
+          </Button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={() => setIsEditing(true)}
+            variant="outline"
+            size="sm"
+          >
+            Update Progress
+          </Button>
+          <Button
+            onClick={handleFinishReading}
+            variant="secondary"
+            size="sm"
+            isLoading={isLoading}
+          >
+            Mark as Finished
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}

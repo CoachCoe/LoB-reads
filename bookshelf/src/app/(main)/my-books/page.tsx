@@ -1,9 +1,10 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser } from "@/lib/auth/session";
 import { getUserShelves } from "@/server/shelves";
-import { getUserReadingStats } from "@/server/progress";
+import { getReadingStats } from "@/server/progress";
 import ShelfSection from "./ShelfSection";
+import CustomShelves from "./CustomShelves";
 import Card, { CardContent } from "@/components/ui/Card";
 import { BookOpen, BookMarked, Trophy } from "lucide-react";
 
@@ -16,7 +17,7 @@ export default async function MyBooksPage() {
 
   const [shelves, stats] = await Promise.all([
     getUserShelves(user.id),
-    getUserReadingStats(user.id),
+    getReadingStats(user.id),
   ]);
 
   // Separate default and custom shelves
@@ -77,22 +78,13 @@ export default async function MyBooksPage() {
         ))}
       </div>
 
-      {/* Custom shelves */}
-      {customShelves.length > 0 && (
-        <div className="mt-12">
-          <h2 className="text-2xl font-bold text-[var(--foreground)] mb-6">
-            Custom Shelves
-          </h2>
-          <div className="space-y-8">
-            {customShelves.map((shelf) => (
-              <ShelfSection key={shelf.id} shelf={shelf} />
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Custom shelves. Rendered unconditionally now: the section used to be
+          gated on `length > 0`, and nothing could ever create one, so a
+          documented feature had no entry point at all. */}
+      <CustomShelves shelves={customShelves} />
 
       {/* Empty state */}
-      {shelves.every((s) => s._count?.shelfItems === 0) && (
+      {shelves.every((s) => s.itemCount === 0) && (
         <div className="text-center py-12 bg-[var(--card-bg)] border border-[var(--card-border)] rounded-lg">
           <BookOpen className="h-16 w-16 text-[var(--foreground-secondary)] mx-auto mb-4" />
           <h2 className="text-xl font-semibold text-[var(--foreground)] mb-2">
@@ -103,7 +95,7 @@ export default async function MyBooksPage() {
           </p>
           <Link
             href="/search"
-            className="inline-flex items-center px-4 py-2 bg-[#D4A017] text-white rounded-lg hover:bg-[#B8860B]"
+            className="inline-flex items-center px-4 py-2 bg-[#D4A017] text-[var(--color-primary-contrast)] rounded-lg hover:bg-[#B8860B]"
           >
             Discover Books
           </Link>

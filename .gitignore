@@ -1,1 +1,11 @@
+# Claude Code's per-machine local settings. Ignored here rather than relying on
+# a developer's global ~/.config/git/ignore: this file accumulates Bash
+# allow-entries, which in practice have included live connection strings, and on
+# a fresh clone nothing else would stop it being committed.
+.claude/settings.local.json
+
 .vercel
+
+# macOS. Only bookshelf/.gitignore had this, so a `git add -A` from the repo
+# root committed docs/.DS_Store.
+.DS_Store

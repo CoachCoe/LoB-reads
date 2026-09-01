@@ -13,7 +13,7 @@ import {
   ChevronDown,
   Minus
 } from "lucide-react";
-import { WrappedProjections } from "@/server/wrapped";
+import type { WrappedProjections } from "@/server/wrapped";
 import Card, { CardContent, CardHeader } from "@/components/ui/Card";
 
 interface ProjectionsViewProps {
@@ -189,13 +189,7 @@ export default function ProjectionsView({ projections, userName }: ProjectionsVi
                     <span className="font-bold">{projections.previousYearBooks}</span> books total in {projections.year - 1}
                   </p>
                 </div>
-                <div className={`flex items-center gap-1 text-lg font-bold ${
-                  projections.aheadOfLastYear
-                    ? "text-green-500"
-                    : projections.aheadOfLastYear === false
-                    ? "text-red-500"
-                    : "text-[var(--foreground-secondary)]"
-                }`}>
+                <div className={`flex items-center gap-1 text-lg font-bold ${ projections.aheadOfLastYear ? "text-green-500" : projections.aheadOfLastYear === false ? "text-red-500" : "text-[var(--foreground-secondary)]" }`}>
                   {projections.aheadOfLastYear === true && (
                     <>
                       <ChevronUp className="h-5 w-5" />
@@ -239,11 +233,7 @@ export default function ProjectionsView({ projections, userName }: ProjectionsVi
                       {m.count > 0 ? m.count : ""}
                     </span>
                     <div
-                      className={`w-full rounded-t transition-all duration-500 ${
-                        isFutureMonth
-                          ? "bg-[var(--border)]"
-                          : "bg-gradient-to-t from-purple-500 to-pink-500"
-                      }`}
+                      className={`w-full rounded-t transition-all duration-500 ${ isFutureMonth ? "bg-[var(--border)]" : "bg-gradient-to-t from-purple-500 to-pink-500" }`}
                       style={{ height: `${height}%`, minHeight: "4px" }}
                     />
                     <span className="text-xs mt-2 text-[var(--foreground-secondary)]">
@@ -339,13 +329,7 @@ function GoalCard({
   const alreadyAchieved = booksRead >= goal;
 
   return (
-    <div className={`p-4 rounded-xl border ${
-      alreadyAchieved
-        ? "bg-green-500/10 border-green-500/20"
-        : onTrack
-        ? "bg-[var(--background-secondary)] border-[var(--border)]"
-        : "bg-orange-500/10 border-orange-500/20"
-    }`}>
+    <div className={`p-4 rounded-xl border ${ alreadyAchieved ? "bg-green-500/10 border-green-500/20" : onTrack ? "bg-[var(--background-secondary)] border-[var(--border)]" : "bg-orange-500/10 border-orange-500/20" }`}>
       <div className="flex items-center justify-between mb-2">
         <span className="font-semibold text-[var(--foreground)]">{goal} Book Goal</span>
         {alreadyAchieved ? (
@@ -361,9 +345,7 @@ function GoalCard({
       </div>
       <div className="h-2 bg-[var(--border)] rounded-full overflow-hidden mb-2">
         <div
-          className={`h-full rounded-full transition-all duration-500 ${
-            alreadyAchieved ? "bg-green-500" : "bg-purple-500"
-          }`}
+          className={`h-full rounded-full transition-all duration-500 ${ alreadyAchieved ? "bg-green-500" : "bg-purple-500" }`}
           style={{ width: `${progress}%` }}
         />
       </div>

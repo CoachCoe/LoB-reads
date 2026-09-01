@@ -40,7 +40,9 @@ function getServerTheme() {
 
 function subscribe(callback: () => void) {
   listeners.add(callback);
-  return () => listeners.delete(callback);
+  return () => {
+    listeners.delete(callback);
+  };
 }
 
 function setTheme(theme: Theme) {
@@ -57,16 +59,13 @@ function setTheme(theme: Theme) {
   listeners.forEach((listener) => listener());
 }
 
-// Initialize theme from storage (default to light mode)
+// Read the theme the blocking script in <head> already applied, so the store
+// agrees with the DOM. The class is set there rather than here — doing it at
+// module-evaluation time happens after first paint and causes a white flash.
 if (typeof window !== "undefined") {
-  const stored = localStorage.getItem("theme") as Theme | null;
-  if (stored) {
-    currentTheme = stored;
-  }
-  // Apply initial theme class
-  if (currentTheme === "dark") {
-    document.documentElement.classList.add("dark");
-  }
+  currentTheme = document.documentElement.classList.contains("dark")
+    ? "dark"
+    : "light";
 }
 
 export default function ThemeProvider({

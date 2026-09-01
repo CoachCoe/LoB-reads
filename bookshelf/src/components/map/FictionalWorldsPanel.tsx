@@ -1,40 +1,25 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { X, Upload, BookOpen, Map, Sparkles, Trash2, Plus, Edit2, ChevronLeft } from "lucide-react";
+import { X, Upload, Map, Sparkles, Trash2, Plus, Edit2, ChevronLeft } from "lucide-react";
 import Image from "next/image";
-import Link from "next/link";
 
-interface FictionalWorldMap {
-  id: string;
-  imageUrl: string;
-  title: string;
-  description: string | null;
-  createdAt: Date;
-}
-
-interface FictionalWorld {
-  id: string;
-  name: string;
-  description: string | null;
-  mapImageUrl: string | null; // deprecated
-  maps: FictionalWorldMap[];
-  _count: {
-    books: number;
-  };
-  books: {
-    id: string;
-    title: string;
-    author: string;
-    coverUrl: string | null;
-  }[];
-}
+import type {
+  FictionalWorldMap,
+  FictionalWorldWithWorks as FictionalWorld,
+} from "@/server/fictional-worlds";
+import { useToast } from "@/components/providers/ToastProvider";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 interface FictionalWorldsPanelProps {
   worlds: FictionalWorld[];
   isOpen: boolean;
   onClose: () => void;
   onWorldsUpdate: (worlds: FictionalWorld[]) => void;
+  /** Null when signed out. Uploading and editing require a session. */
+  currentUserId: string | null;
+  /** Moderators may remove any map, not only their own uploads. */
+  canModerate: boolean;
 }
 
 export default function FictionalWorldsPanel({
@@ -42,7 +27,17 @@ export default function FictionalWorldsPanel({
   isOpen,
   onClose,
   onWorldsUpdate,
+  currentUserId,
+  canModerate,
 }: FictionalWorldsPanelProps) {
+  // Creating a world. `POST /api/fictional-worlds` and createFictionalWorldSchema
+  // have always existed and nothing called them, so on any database that had not
+  // been dev-seeded there were no worlds — and with no worlds the entire
+  // upload/edit/delete chain below, and WorkLocationsSection's world picker, were
+  // unreachable. Audit BLOCK-4.
+  const [newWorldName, setNewWorldName] = useState("");
+  const [creatingWorld, setCreatingWorld] = useState(false);
+  const [showCreateWorld, setShowCreateWorld] = useState(false);
   const [selectedWorld, setSelectedWorld] = useState<FictionalWorld | null>(null);
   const [viewingMap, setViewingMap] = useState<FictionalWorldMap | null>(null);
   const [showUploadForm, setShowUploadForm] = useState(false);
@@ -50,6 +45,8 @@ export default function FictionalWorldsPanel({
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [mapPendingDelete, setMapPendingDelete] = useState<FictionalWorldMap | null>(null);
+  const { showToast } = useToast();
 
   // Form state
   const [uploadTitle, setUploadTitle] = useState("");
@@ -97,20 +94,20 @@ export default function FictionalWorldsPanel({
         onWorldsUpdate(updatedWorlds);
         setSelectedWorld({ ...selectedWorld, maps: [newMap, ...selectedWorld.maps] });
         resetUploadForm();
+        showToast("Map uploaded");
       } else {
         const error = await response.json();
-        alert(error.error || "Failed to upload image");
+        showToast(error.error || "Failed to upload image", "error");
       }
     } catch (error) {
       console.error("Upload error:", error);
-      alert("Failed to upload image");
+      showToast("Failed to upload image", "error");
     } finally {
       setIsUploading(false);
     }
   };
 
   const handleDeleteMap = async (mapId: string) => {
-    if (!confirm("Are you sure you want to delete this map?")) return;
     if (!selectedWorld) return;
 
     setIsDeleting(mapId);
@@ -120,7 +117,7 @@ export default function FictionalWorldsPanel({
       });
 
       if (response.ok) {
-        const updatedMaps = selectedWorld.maps.filter((m) => m.id !== mapId);
+        const updatedMaps = selectedWorld.maps.filter((m: FictionalWorldMap) => m.id !== mapId);
         const updatedWorlds = worlds.map((w) =>
           w.id === selectedWorld.id ? { ...w, maps: updatedMaps } : w
         );
@@ -129,15 +126,17 @@ export default function FictionalWorldsPanel({
         if (viewingMap?.id === mapId) {
           setViewingMap(null);
         }
+        showToast("Map deleted");
       } else {
         const error = await response.json();
-        alert(error.error || "Failed to delete map");
+        showToast(error.error || "Failed to delete map", "error");
       }
     } catch (error) {
       console.error("Delete error:", error);
-      alert("Failed to delete map");
+      showToast("Failed to delete map", "error");
     } finally {
       setIsDeleting(null);
+      setMapPendingDelete(null);
     }
   };
 
@@ -159,7 +158,7 @@ export default function FictionalWorldsPanel({
         const data = await response.json();
         const updatedMap = data.map;
 
-        const updatedMaps = selectedWorld.maps.map((m) =>
+        const updatedMaps = selectedWorld.maps.map((m: FictionalWorldMap) =>
           m.id === updatedMap.id ? updatedMap : m
         );
         const updatedWorlds = worlds.map((w) =>
@@ -171,25 +170,59 @@ export default function FictionalWorldsPanel({
           setViewingMap(updatedMap);
         }
         setEditingMap(null);
+        showToast("Map updated");
       } else {
         const error = await response.json();
-        alert(error.error || "Failed to update map");
+        showToast(error.error || "Failed to update map", "error");
       }
     } catch (error) {
       console.error("Update error:", error);
-      alert("Failed to update map");
+      showToast("Failed to update map", "error");
     } finally {
       setIsSaving(false);
     }
   };
 
+  async function createWorld(event: React.FormEvent) {
+    event.preventDefault();
+    const name = newWorldName.trim();
+    if (!name) return;
+
+    setCreatingWorld(true);
+    try {
+      const response = await fetch("/api/fictional-worlds", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        showToast(error.error || "Could not create that world", "error");
+        return;
+      }
+
+      // The route returns the world itself, not `{ world }` — unlike the upload
+      // route next to it, which returns `{ map }`.
+      const world: FictionalWorld = await response.json();
+      onWorldsUpdate(
+        [...worlds, world].sort((a, b) => a.name.localeCompare(b.name))
+      );
+      setNewWorldName("");
+      setShowCreateWorld(false);
+      showToast(`Created ${name}`);
+    } catch {
+      showToast("Could not reach the server. Try again.", "error");
+    } finally {
+      setCreatingWorld(false);
+    }
+  }
+
   if (!isOpen) return null;
 
   // Get thumbnail for world list (first map image)
-  const getWorldThumbnail = (world: FictionalWorld) => {
-    if (world.maps.length > 0) return world.maps[0].imageUrl;
-    return world.mapImageUrl; // fallback to deprecated field
-  };
+  const getWorldThumbnail = (world: FictionalWorld) =>
+    world.maps[0]?.imageUrl ?? null;
 
   return (
     <div className="absolute inset-0 z-[1001] flex">
@@ -207,6 +240,7 @@ export default function FictionalWorldsPanel({
                   setSelectedWorld(null);
                   resetUploadForm();
                 }}
+                aria-label="Back to all fictional worlds"
                 className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors mr-1"
               >
                 <ChevronLeft className="h-5 w-5 text-gray-500" />
@@ -219,6 +253,7 @@ export default function FictionalWorldsPanel({
           </div>
           <button
             onClick={onClose}
+            aria-label="Close fictional worlds panel"
             className="p-1 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors"
           >
             <X className="h-5 w-5 text-gray-500" />
@@ -266,7 +301,7 @@ export default function FictionalWorldsPanel({
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-3">
-                    {selectedWorld.maps.map((map) => (
+                    {selectedWorld.maps.map((map: FictionalWorldMap) => (
                       <button
                         key={map.id}
                         onClick={() => setViewingMap(map)}
@@ -288,48 +323,6 @@ export default function FictionalWorldsPanel({
                   </div>
                 )}
               </div>
-
-              {/* Books in this world */}
-              <div>
-                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 flex items-center gap-2">
-                  <BookOpen className="h-4 w-4" />
-                  Books set in {selectedWorld.name} ({selectedWorld._count.books})
-                </h3>
-                <div className="space-y-2">
-                  {selectedWorld.books.map((book) => (
-                    <Link
-                      key={book.id}
-                      href={`/book/${book.id}`}
-                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-                    >
-                      <div className="w-10 h-14 bg-gray-200 dark:bg-gray-700 rounded overflow-hidden flex-shrink-0">
-                        {book.coverUrl ? (
-                          <Image
-                            src={book.coverUrl}
-                            alt={book.title}
-                            width={40}
-                            height={56}
-                            className="w-full h-full object-cover"
-                            unoptimized
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-gray-400">
-                            <BookOpen className="h-4 w-4" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-                          {book.title}
-                        </p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
-                          {book.author}
-                        </p>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              </div>
             </div>
           ) : (
             // Worlds List View
@@ -338,10 +331,65 @@ export default function FictionalWorldsPanel({
                 Explore fictional worlds from the books in our library. Upload custom maps to visualize where these stories take place.
               </p>
 
+              {currentUserId && (
+                <div className="mb-4">
+                  {showCreateWorld ? (
+                    <form onSubmit={createWorld} className="flex items-end gap-2">
+                      <div className="flex-1">
+                        <label
+                          htmlFor="new-world-name"
+                          className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300"
+                        >
+                          World name
+                        </label>
+                        <input
+                          id="new-world-name"
+                          value={newWorldName}
+                          onChange={(e) => setNewWorldName(e.target.value)}
+                          placeholder="Middle-earth"
+                          maxLength={200}
+                          autoFocus
+                          required
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={creatingWorld}
+                        className="rounded-lg bg-[#D4A017] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)] disabled:opacity-60"
+                      >
+                        {creatingWorld ? "Creating…" : "Create"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowCreateWorld(false);
+                          setNewWorldName("");
+                        }}
+                        className="rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                      >
+                        Cancel
+                      </button>
+                    </form>
+                  ) : (
+                    <button
+                      onClick={() => setShowCreateWorld(true)}
+                      className="flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+                    >
+                      <Plus className="h-4 w-4" />
+                      New world
+                    </button>
+                  )}
+                </div>
+              )}
+
               {worlds.length === 0 ? (
                 <div className="text-center py-8 text-gray-400">
                   <Sparkles className="h-12 w-12 mx-auto mb-2" />
                   <p>No fictional worlds yet</p>
+                  {!currentUserId && (
+                    <p className="mt-1 text-xs">Sign in to add one.</p>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -369,7 +417,7 @@ export default function FictionalWorldsPanel({
                       <div className="flex-1 min-w-0">
                         <p className="font-medium text-gray-900 dark:text-gray-100">{world.name}</p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {world._count.books} {world._count.books === 1 ? "book" : "books"}
+                          {world.workCount} {world.workCount === 1 ? "book" : "books"}
                           {world.maps.length > 0 && ` · ${world.maps.length} ${world.maps.length === 1 ? "map" : "maps"}`}
                         </p>
                       </div>
@@ -472,24 +520,35 @@ export default function FictionalWorldsPanel({
                 )}
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setEditingMap(viewingMap)}
-                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
-                  title="Edit"
-                >
-                  <Edit2 className="h-4 w-4 text-gray-500" />
-                </button>
-                <button
-                  onClick={() => handleDeleteMap(viewingMap.id)}
-                  disabled={isDeleting === viewingMap.id}
-                  className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                  title="Delete"
-                >
-                  <Trash2 className="h-4 w-4 text-red-500" />
-                </button>
+                {/* Maps are community-editable, so any signed-in user may
+                    correct the details. */}
+                {currentUserId && (
+                  <button
+                    onClick={() => setEditingMap(viewingMap)}
+                    className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                    title="Edit"
+                    aria-label={`Edit details for ${viewingMap.title}`}
+                  >
+                    <Edit2 className="h-4 w-4 text-gray-500" />
+                  </button>
+                )}
+                {/* Deletion is destructive, so it matches the API rule:
+                    uploader or moderator only. */}
+                {(canModerate || viewingMap.addedById === currentUserId) && (
+                  <button
+                    onClick={() => setMapPendingDelete(viewingMap)}
+                    disabled={isDeleting === viewingMap.id}
+                    className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                    title="Delete"
+                    aria-label={`Delete map ${viewingMap.title}`}
+                  >
+                    <Trash2 className="h-4 w-4 text-red-500" />
+                  </button>
+                )}
                 <button
                   onClick={() => setViewingMap(null)}
                   className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                  aria-label="Close map viewer"
                 >
                   <X className="h-5 w-5 text-gray-500" />
                 </button>
@@ -562,6 +621,23 @@ export default function FictionalWorldsPanel({
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={mapPendingDelete !== null}
+        title="Delete this map?"
+        message={
+          mapPendingDelete
+            ? `"${mapPendingDelete.title}" will be removed for everyone. This cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete map"
+        destructive
+        busy={isDeleting === mapPendingDelete?.id}
+        onConfirm={() => {
+          if (mapPendingDelete) handleDeleteMap(mapPendingDelete.id);
+        }}
+        onCancel={() => setMapPendingDelete(null)}
+      />
     </div>
   );
 }

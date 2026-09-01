@@ -50,11 +50,7 @@ export default function StarRating({
             disabled={!interactive}
           >
             <Star
-              className={`${sizes[size]} ${
-                isFilled
-                  ? "fill-[#D4A017] text-[#D4A017]"
-                  : "fill-gray-200 text-gray-200"
-              } transition-colors`}
+              className={`${sizes[size]} ${ isFilled ? "fill-[#D4A017] text-[#D4A017]" : "fill-gray-200 text-gray-200" } transition-colors`}
             />
           </button>
         );

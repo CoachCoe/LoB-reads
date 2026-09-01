@@ -1,27 +1,13 @@
 import prisma from "@/lib/prisma";
+import { AuthorizationError, NotFoundError } from "@/lib/http/errors";
 
-function safeParseCoordinates(json: string): { lat: number; lng: number } {
-  try {
-    const parsed = JSON.parse(json);
-    if (typeof parsed.lat === "number" && typeof parsed.lng === "number") {
-      return parsed;
-    }
-    return { lat: 0, lng: 0 };
-  } catch {
-    return { lat: 0, lng: 0 };
-  }
-}
-
-export interface AuthorWithLocations {
-  id: string;
-  name: string;
-  bio: string | null;
-  photoUrl: string | null;
-  birthYear: number | null;
-  deathYear: number | null;
-  openLibraryId: string | null;
-  locations: AuthorLocationData[];
-}
+/**
+ * Author pages and their crowdsourced locations.
+ *
+ * Authors themselves come from the catalog; only the locations are ours. The
+ * local Author table is gone — it existed only because there was no author
+ * catalog to point at.
+ */
 
 export interface AuthorLocationData {
   id: string;
@@ -31,107 +17,127 @@ export interface AuthorLocationData {
   coordinates: { lat: number; lng: number };
   yearStart: number | null;
   yearEnd: number | null;
-  addedBy: {
-    id: string;
-    name: string;
-  };
+  /** Null once the contributing account has been deleted. */
+  addedBy: { id: string; name: string } | null;
   createdAt: Date;
 }
 
-export async function getOrCreateAuthor(name: string): Promise<AuthorWithLocations> {
-  let author = await prisma.author.findUnique({
-    where: { name },
-    include: {
-      locations: {
-        include: {
-          addedBy: {
-            select: { id: true, name: true },
-          },
-        },
-        orderBy: { createdAt: "desc" },
-      },
-    },
-  });
+/**
+ * Works listed on an author page.
+ *
+ * The query had an ORDER BY and no LIMIT, so a prolific author — or a
+ * compilation-heavy author key, against 3.2M authors and 6.9M works — meant an
+ * unbounded query and an unbounded DOM.
+ */
+export const AUTHOR_WORKS_LIMIT = 100;
 
-  if (!author) {
-    author = await prisma.author.create({
-      data: { name },
-      include: {
-        locations: {
-          include: {
-            addedBy: {
-              select: { id: true, name: true },
-            },
-          },
-          orderBy: { createdAt: "desc" },
-        },
-      },
-    });
-  }
-
-  return {
-    id: author.id,
-    name: author.name,
-    bio: author.bio,
-    photoUrl: author.photoUrl,
-    birthYear: author.birthYear,
-    deathYear: author.deathYear,
-    openLibraryId: author.openLibraryId,
-    locations: author.locations.map((loc) => ({
-      id: loc.id,
-      name: loc.name,
-      type: loc.type,
-      description: loc.description,
-      coordinates: safeParseCoordinates(loc.coordinates),
-      yearStart: loc.yearStart,
-      yearEnd: loc.yearEnd,
-      addedBy: loc.addedBy,
-      createdAt: loc.createdAt,
-    })),
-  };
+export interface CatalogAuthorDetail {
+  olKey: string;
+  name: string;
+  birthDate: string | null;
+  deathDate: string | null;
+  bio: string | null;
+  works: {
+    olKey: string;
+    title: string;
+    firstPublishYear: number | null;
+    coverId: number | null;
+  }[];
+  /**
+   * How many works this author has in the catalog, which is not
+   * `works.length` — that is capped at AUTHOR_WORKS_LIMIT. Rendering the capped
+   * figure as the total is the same defect as showing a shelf's preview size as
+   * its book count.
+   */
+  workCount: number;
+  locations: AuthorLocationData[];
 }
 
-export async function getAuthorByName(name: string): Promise<AuthorWithLocations | null> {
-  const author = await prisma.author.findUnique({
-    where: { name },
-    include: {
-      locations: {
-        include: {
-          addedBy: {
-            select: { id: true, name: true },
-          },
-        },
-        orderBy: { createdAt: "desc" },
-      },
-    },
-  });
+export async function getAuthorByKey(
+  authorKey: string
+): Promise<CatalogAuthorDetail | null> {
+  const [author] = await prisma.$queryRaw<
+    Array<{
+      olKey: string;
+      name: string;
+      birthDate: string | null;
+      deathDate: string | null;
+      bio: string | null;
+    }>
+  >`
+    SELECT ol_key AS "olKey", name, birth_date AS "birthDate",
+           death_date AS "deathDate", bio
+    FROM catalog.authors WHERE ol_key = ${authorKey}
+  `;
 
   if (!author) return null;
 
+  const [works, countRows, locations] = await Promise.all([
+    prisma.$queryRaw<CatalogAuthorDetail["works"]>`
+      SELECT w.ol_key AS "olKey", w.title,
+             w.first_publish_year AS "firstPublishYear",
+             e.cover_id::int AS "coverId"
+      FROM catalog.work_authors wa
+      JOIN catalog.works w ON w.ol_key = wa.work_key
+      LEFT JOIN catalog.editions e ON e.ol_key = w.cover_edition_key
+      WHERE wa.author_key = ${authorKey}
+      ORDER BY w.first_publish_year NULLS LAST, w.title
+      LIMIT ${AUTHOR_WORKS_LIMIT}
+    `,
+    prisma.$queryRaw<{ count: bigint }[]>`
+      SELECT count(*) AS count
+      FROM catalog.work_authors WHERE author_key = ${authorKey}
+    `,
+    getAuthorLocations(authorKey),
+  ]);
+
   return {
-    id: author.id,
-    name: author.name,
-    bio: author.bio,
-    photoUrl: author.photoUrl,
-    birthYear: author.birthYear,
-    deathYear: author.deathYear,
-    openLibraryId: author.openLibraryId,
-    locations: author.locations.map((loc) => ({
-      id: loc.id,
-      name: loc.name,
-      type: loc.type,
-      description: loc.description,
-      coordinates: safeParseCoordinates(loc.coordinates),
-      yearStart: loc.yearStart,
-      yearEnd: loc.yearEnd,
-      addedBy: loc.addedBy,
-      createdAt: loc.createdAt,
-    })),
+    ...author,
+    works,
+    workCount: Number(countRows[0]?.count ?? works.length),
+    locations,
   };
 }
 
+/** Resolve a display name to a catalog author, for name-based URLs. */
+export async function findAuthorKeyByName(
+  name: string
+): Promise<string | null> {
+  const rows = await prisma.$queryRaw<{ olKey: string }[]>`
+    SELECT a.ol_key AS "olKey"
+    FROM catalog.authors a
+    WHERE lower(a.name) = lower(${name})
+    ORDER BY (SELECT count(*) FROM catalog.work_authors wa
+              WHERE wa.author_key = a.ol_key) DESC
+    LIMIT 1
+  `;
+  return rows[0]?.olKey ?? null;
+}
+
+export async function getAuthorLocations(
+  authorKey: string
+): Promise<AuthorLocationData[]> {
+  const locations = await prisma.authorLocation.findMany({
+    where: { authorKey },
+    include: { addedBy: { select: { id: true, name: true } } },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return locations.map((loc) => ({
+    id: loc.id,
+    name: loc.name,
+    type: loc.type,
+    description: loc.description,
+    coordinates: { lat: loc.lat, lng: loc.lng },
+    yearStart: loc.yearStart,
+    yearEnd: loc.yearEnd,
+    addedBy: loc.addedBy,
+    createdAt: loc.createdAt,
+  }));
+}
+
 export async function addAuthorLocation(
-  authorName: string,
+  authorKey: string,
   userId: string,
   data: {
     name: string;
@@ -142,74 +148,59 @@ export async function addAuthorLocation(
     yearEnd?: number;
   }
 ) {
-  // Get or create the author first
-  const author = await getOrCreateAuthor(authorName);
+  const exists = await prisma.$queryRaw<{ exists: boolean }[]>`
+    SELECT EXISTS(SELECT 1 FROM catalog.authors WHERE ol_key = ${authorKey}) AS exists
+  `;
+  if (!exists[0]?.exists) {
+    throw new NotFoundError("That author is not in the catalog");
+  }
 
   return prisma.authorLocation.create({
     data: {
-      authorId: author.id,
+      authorKey,
       addedById: userId,
       name: data.name,
       type: data.type,
       description: data.description ?? null,
-      coordinates: JSON.stringify(data.coordinates),
+      lat: data.coordinates.lat,
+      lng: data.coordinates.lng,
       yearStart: data.yearStart ?? null,
       yearEnd: data.yearEnd ?? null,
     },
-    include: {
-      addedBy: {
-        select: { id: true, name: true },
-      },
-    },
+    include: { addedBy: { select: { id: true, name: true } } },
   });
 }
 
-export async function deleteAuthorLocation(locationId: string, userId: string) {
+/**
+ * PRD section 2 states the rule for contributed content: "anyone signed in may
+ * edit, uploader-or-moderator may delete." The moderator half was implemented
+ * for fictional-world maps and for neither location type, so there was no way to
+ * remove an abusive pin from the public map at all.
+ *
+ * It was worse than an inconvenience: `addedById` is nullable with
+ * `onDelete: SetNull`, deliberately, so contributions outlive the account that
+ * made them. Once a contributor deleted their account the column was NULL,
+ * `NULL !== userId` held for every caller, and nobody could ever delete that pin.
+ */
+export async function deleteAuthorLocation(
+  locationId: string,
+  userId: string,
+  isModerator = false
+) {
   const location = await prisma.authorLocation.findUnique({
     where: { id: locationId },
     select: { addedById: true },
   });
 
-  if (!location || location.addedById !== userId) {
-    throw new Error("Not authorized to delete this location");
+  if (!location) {
+    throw new NotFoundError("Location not found");
   }
 
-  return prisma.authorLocation.delete({
-    where: { id: locationId },
-  });
-}
+  if (!isModerator && location.addedById !== userId) {
+    throw new AuthorizationError(
+      "You can only remove locations you contributed"
+    );
+  }
 
-export async function getAllAuthorLocationsForMap() {
-  const locations = await prisma.authorLocation.findMany({
-    include: {
-      author: {
-        select: {
-          id: true,
-          name: true,
-          photoUrl: true,
-        },
-      },
-    },
-  });
-
-  return locations.map((loc) => ({
-    id: loc.id,
-    name: loc.name,
-    type: loc.type,
-    coordinates: safeParseCoordinates(loc.coordinates),
-    author: loc.author,
-  }));
-}
-
-export async function getBooksForAuthor(authorName: string) {
-  return prisma.book.findMany({
-    where: { author: authorName },
-    select: {
-      id: true,
-      title: true,
-      coverUrl: true,
-      publishedDate: true,
-    },
-    orderBy: { publishedDate: "asc" },
-  });
+  return prisma.authorLocation.delete({ where: { id: locationId } });
 }

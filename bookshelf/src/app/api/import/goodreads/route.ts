@@ -1,25 +1,64 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser } from "@/lib/auth/session";
+import { parseGoodreadsCSV, GoodreadsBook } from "@/lib/sources/goodreads";
+import { createImportSession, getImportSession } from "@/server/imports";
 import {
-  parseGoodreadsCSV,
-  GoodreadsBook,
-  ImportResult,
-  getShelfDisplayName,
-} from "@/lib/goodreads";
-import { createBook } from "@/server/books";
-import { getUserShelves, addBookToShelf } from "@/server/shelves";
-import { createOrUpdateReview } from "@/server/reviews";
-import { getBookByISBN, normalizeOpenLibraryBook } from "@/lib/openlibrary";
-import prisma from "@/lib/prisma";
+  declaredBodyTooLarge,
+  errorResponse,
+  payloadTooLarge,
+  unauthorized,
+} from "@/lib/http/api";
+import { checkLimit, LIMITS } from "@/lib/rate-limit";
+import { ValidationError } from "@/lib/http/errors";
+
+/**
+ * Goodreads CSV import.
+ *
+ * There is no network call here. The importer used to fetch Open Library over
+ * HTTP once per unmatched book — a 500-book export meant 500 sequential round
+ * trips — and build a local book row from the reply. With the catalog held
+ * locally that becomes one ISBN lookup for the whole file.
+ *
+ * The handler stores the file as a session and returns its id. Rows that match
+ * confidently are applied; the rest are queued for the reader at
+ * /import/[sessionId] rather than counted and discarded.
+ */
+
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+/** Rows per upload, so one file cannot run for an unbounded time. */
+const MAX_ROWS = 2_000;
 
 export async function POST(request: NextRequest) {
   try {
     const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!user?.id) {
+      return unauthorized();
     }
 
-    const userId = user.id;
+    // This route had no rate limit at all, while the two blob-upload routes
+    // did — and it is by far the most expensive: createImportSession runs
+    // matchSession, which per row may do a trigram similarity scan over
+    // catalog.works plus up to three write paths, two of them transactions.
+    // MAX_ROWS bounds the loop, not the cost, so 2,000 deliberately unmatchable
+    // rows times a handful of concurrent requests exhausts the connection pool
+    // and every other page starts timing out.
+    const limit = checkLimit(`import:${user.id}`, LIMITS.upload);
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: "Too many imports. Please try again later." },
+        {
+          status: 429,
+          headers: { "Retry-After": String(limit.retryAfterSeconds) },
+        }
+      );
+    }
+
+    // Before formData(), which buffers the entire body.
+    if (declaredBodyTooLarge(request, MAX_FILE_SIZE)) {
+      return payloadTooLarge("File too large. Maximum size is 10MB.");
+    }
+
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
 
@@ -27,7 +66,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
 
-    // Validate file type
     if (!file.name.toLowerCase().endsWith(".csv")) {
       return NextResponse.json(
         { error: "Invalid file type. Please upload a CSV file." },
@@ -35,162 +73,44 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate file size (10MB max for CSV)
-    const maxSize = 10 * 1024 * 1024;
-    if (file.size > maxSize) {
+    if (file.size > MAX_FILE_SIZE) {
       return NextResponse.json(
         { error: "File too large. Maximum size is 10MB." },
         { status: 400 }
       );
     }
 
-    // Parse CSV content
-    const csvContent = await file.text();
-    let books: GoodreadsBook[];
-
+    let parsed: GoodreadsBook[];
     try {
-      books = parseGoodreadsCSV(csvContent);
+      parsed = parseGoodreadsCSV(await file.text());
     } catch (error) {
-      return NextResponse.json(
-        {
-          error:
-            error instanceof Error ? error.message : "Failed to parse CSV",
-        },
-        { status: 400 }
+      // parseGoodreadsCSV only raises messages we wrote, and they name the
+      // missing column — genuinely useful to the person fixing their export.
+      throw new ValidationError(
+        error instanceof Error ? error.message : "Failed to parse CSV"
       );
     }
 
-    if (books.length === 0) {
+    if (parsed.length === 0) {
       return NextResponse.json(
         { error: "No valid books found in CSV" },
         { status: 400 }
       );
     }
 
-    // Get user's shelves
-    const userShelves = await getUserShelves(userId);
-    const shelfMap = new Map(userShelves.map((s) => [s.name, s.id]));
+    const rows = parsed.slice(0, MAX_ROWS);
+    const sessionId = await createImportSession(user.id, file.name, rows);
+    const summary = await getImportSession(user.id, sessionId);
 
-    // Process each book
-    const result: ImportResult = {
-      imported: 0,
-      skipped: 0,
-      errors: [],
-      books: [],
-    };
-
-    for (const grBook of books) {
-      try {
-        // Step 1: Find or create book
-        let book = null;
-        const isbn = grBook.isbn13 || grBook.isbn;
-
-        // Check local database first by ISBN
-        if (isbn) {
-          book = await prisma.book.findUnique({
-            where: { isbn },
-          });
-        }
-
-        // If not found locally, try Open Library
-        if (!book && isbn) {
-          try {
-            const olBook = await getBookByISBN(isbn);
-            if (olBook) {
-              const normalized = normalizeOpenLibraryBook(olBook);
-              book = await createBook({
-                ...normalized,
-                // Use Goodreads data if OL doesn't have it
-                title: normalized.title || grBook.title,
-                author: normalized.author || grBook.author,
-              });
-            }
-          } catch {
-            // Open Library lookup failed, continue with Goodreads data only
-          }
-        }
-
-        // If still not found, create with minimal Goodreads data
-        if (!book) {
-          book = await createBook({
-            title: grBook.title,
-            author: grBook.author,
-            isbn: isbn,
-          });
-        }
-
-        // Step 2: Add to appropriate shelf
-        if (grBook.exclusiveShelf) {
-          const shelfName = getShelfDisplayName(grBook.exclusiveShelf);
-          const shelfId = shelfMap.get(shelfName);
-
-          if (shelfId) {
-            try {
-              await addBookToShelf(shelfId, book.id, userId);
-            } catch {
-              // Ignore if already on shelf
-            }
-          }
-        }
-
-        // Step 3: Create review if rating exists (1-5)
-        if (grBook.myRating >= 1 && grBook.myRating <= 5) {
-          try {
-            await createOrUpdateReview(userId, book.id, grBook.myRating);
-          } catch {
-            // Ignore review errors
-          }
-        }
-
-        // Step 4: Set reading progress if date read exists
-        if (grBook.dateRead && grBook.exclusiveShelf === "read") {
-          try {
-            await prisma.readingProgress.upsert({
-              where: {
-                userId_bookId: { userId, bookId: book.id },
-              },
-              create: {
-                userId,
-                bookId: book.id,
-                currentPage: book.pageCount || 0,
-                finishedAt: grBook.dateRead,
-              },
-              update: {
-                finishedAt: grBook.dateRead,
-                currentPage: book.pageCount || 0,
-              },
-            });
-          } catch {
-            // Ignore progress errors
-          }
-        }
-
-        result.imported++;
-        result.books.push({
-          title: grBook.title,
-          author: grBook.author,
-          status: "imported",
-        });
-      } catch (error) {
-        result.skipped++;
-        const errorMessage =
-          error instanceof Error ? error.message : "Unknown error";
-        result.errors.push(`${grBook.title}: ${errorMessage}`);
-        result.books.push({
-          title: grBook.title,
-          author: grBook.author,
-          status: "error",
-          reason: errorMessage,
-        });
-      }
-    }
-
-    return NextResponse.json(result);
+    return NextResponse.json({
+      sessionId,
+      summary,
+      // Named so the client can say which rows were left, rather than implying
+      // the file failed. Re-uploading continues from where this stopped.
+      notProcessed: parsed.length - rows.length,
+      maxRows: MAX_ROWS,
+    });
   } catch (error) {
-    console.error("Goodreads import error:", error);
-    return NextResponse.json(
-      { error: "Failed to import Goodreads library" },
-      { status: 500 }
-    );
+    return errorResponse("Goodreads import error", error);
   }
 }

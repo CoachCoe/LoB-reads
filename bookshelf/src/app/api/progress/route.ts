@@ -1,57 +1,70 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { getUserCurrentlyReading, updateReadingProgress, startReading, finishReading } from "@/server/progress";
+import { authOptions } from "@/lib/auth/options";
+import {
+  getCurrentlyReading,
+  getLatestSessionForWork,
+  updateProgress,
+  startReading,
+  finishReading,
+} from "@/server/progress";
+import { errorResponse, parseBody, unauthorized } from "@/lib/http/api";
+import { updateProgressSchema } from "@/lib/http/schemas";
 
-export async function GET() {
+export async function GET(request: Request) {
   const session = await getServerSession(authOptions);
 
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user?.id) {
+    return unauthorized();
   }
 
   try {
-    const progress = await getUserCurrentlyReading(session.user.id);
+    // With ?workKey=, the LATEST session for that work whether or not it is
+    // finished. Without it, the open sessions — the "currently reading" list.
+    // A work page needs the former: filtering to open sessions made a finished
+    // book look unread. Returns null rather than 404 so the caller can treat
+    // "never started" and "finished" the same way.
+    const workKey = new URL(request.url).searchParams.get("workKey");
+    if (workKey) {
+      return NextResponse.json(
+        await getLatestSessionForWork(session.user.id, workKey)
+      );
+    }
+
+    const progress = await getCurrentlyReading(session.user.id);
     return NextResponse.json(progress);
   } catch (error) {
-    console.error("Get progress error:", error);
-    return NextResponse.json({ error: "Failed to fetch progress" }, { status: 500 });
+    return errorResponse("Get progress error", error);
   }
 }
 
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
 
-  if (!session?.user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!session?.user?.id) {
+    return unauthorized();
   }
 
   try {
-    const { bookId, currentPage, action } = await request.json();
-
-    if (!bookId) {
-      return NextResponse.json({ error: "Book ID is required" }, { status: 400 });
-    }
-
-    let progress;
+    const { workKey, editionKey, currentPage, action } = await parseBody(
+      request,
+      updateProgressSchema
+    );
+    const userId = session.user.id;
 
     if (action === "start") {
-      progress = await startReading(session.user.id, bookId);
-    } else if (action === "finish") {
-      progress = await finishReading(session.user.id, bookId);
-    } else if (currentPage !== undefined) {
-      progress = await updateReadingProgress(session.user.id, bookId, currentPage);
-    } else {
-      return NextResponse.json(
-        { error: "Either action or currentPage is required" },
-        { status: 400 }
-      );
+      return NextResponse.json(await startReading(userId, workKey, editionKey));
     }
 
-    return NextResponse.json(progress);
+    if (action === "finish") {
+      return NextResponse.json(await finishReading(userId, workKey));
+    }
+
+    // The schema guarantees one of action/currentPage is present.
+    return NextResponse.json(
+      await updateProgress(userId, workKey, currentPage!)
+    );
   } catch (error) {
-    console.error("Update progress error:", error);
-    const message = error instanceof Error ? error.message : "Failed to update progress";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return errorResponse("Update progress error", error);
   }
 }

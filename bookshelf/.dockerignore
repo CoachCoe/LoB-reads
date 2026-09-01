@@ -1,0 +1,14 @@
+# Everything the image does not need. data/ is the big one: the raw Open
+# Library dumps are 16.5GB and belong nowhere near a container image.
+node_modules
+.next
+.git
+data
+coverage
+*.log
+.env
+.env.local
+.env.*.local
+__tests__
+docker-compose*.yml
+Dockerfile

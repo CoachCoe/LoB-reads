@@ -1,8 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
-import { put } from "@vercel/blob";
-import { getCurrentUser } from "@/lib/session";
+import { getCurrentUser } from "@/lib/auth/session";
 import { getFictionalWorldById, addMapToWorld } from "@/server/fictional-worlds";
-import { validateImageFile, sanitizeFilename } from "@/lib/file-validation";
+import {
+  validateImageFile,
+  sanitizeFilename,
+  MAX_FILE_SIZE,
+} from "@/lib/storage/file-validation";
+import {
+  declaredBodyTooLarge,
+  errorResponse,
+  payloadTooLarge,
+  unauthorized,
+} from "@/lib/http/api";
+import { checkLimit, LIMITS } from "@/lib/rate-limit";
+import { putObject, isStorageConfigured } from "@/lib/storage/objects";
 
 interface RouteParams {
   params: Promise<{ worldId: string }>;
@@ -11,8 +22,17 @@ interface RouteParams {
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    if (!user?.id) {
+      return unauthorized();
+    }
+
+    // Uploads write to paid blob storage, so cap them per account.
+    const limit = checkLimit(`upload:map:${user.id}`, LIMITS.upload);
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: "Too many uploads. Please try again later." },
+        { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+      );
     }
 
     const { worldId } = await params;
@@ -24,6 +44,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         { error: "Fictional world not found" },
         { status: 404 }
       );
+    }
+
+    // Before formData(), which buffers the entire body.
+    if (declaredBodyTooLarge(request, MAX_FILE_SIZE)) {
+      return payloadTooLarge("File too large. Maximum size is 5MB.");
     }
 
     const formData = await request.formData();
@@ -51,27 +76,28 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
-    // Upload to Vercel Blob with sanitized filename
+    if (!isStorageConfigured()) {
+      console.error("Map upload attempted with object storage unconfigured");
+      return NextResponse.json(
+        { error: "Uploads are not available right now." },
+        { status: 503 }
+      );
+    }
+
+    // Store with a sanitized filename under a per-world prefix
     const safeName = sanitizeFilename(file.name);
-    const filename = `fictional-worlds/${worldId}/${Date.now()}-${safeName}`;
-    const blob = await put(filename, file, {
-      access: "public",
-    });
+    const key = `fictional-worlds/${worldId}/${Date.now()}-${safeName}`;
+    const { url } = await putObject(key, file);
 
     // Create the map entry in the database
-    const map = await addMapToWorld(
-      worldId,
-      blob.url,
-      title.trim(),
-      description?.trim() || undefined
-    );
+    const map = await addMapToWorld(worldId, user.id, {
+      imageUrl: url,
+      title: title.trim(),
+      description: description?.trim() || null,
+    });
 
     return NextResponse.json({ map });
   } catch (error) {
-    console.error("Error uploading map image:", error);
-    return NextResponse.json(
-      { error: "Failed to upload map image" },
-      { status: 500 }
-    );
+    return errorResponse("Error uploading map image", error);
   }
 }

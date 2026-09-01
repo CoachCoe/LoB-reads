@@ -8,22 +8,17 @@ interface ReviewCardProps {
     id: string;
     rating: number;
     content: string | null;
-    createdAt: Date | string;
-    user: {
-      id: string;
-      name: string;
-      avatarUrl: string | null;
-    };
-    book?: {
-      id: string;
-      title: string;
-      coverUrl: string | null;
-    };
+    createdAt: Date;
+    workKey: string;
+    work: { title: string; authorNames: string | null; coverId: number | null } | null;
+    user: { id: string; name: string; avatarUrl: string | null };
   };
-  showBook?: boolean;
+  /** Show which book the review is of — off on a work page, on in a feed. */
+  showWork?: boolean;
+  onDelete?: () => void;
 }
 
-export default function ReviewCard({ review, showBook = false }: ReviewCardProps) {
+export default function ReviewCard({ review, showWork = false }: ReviewCardProps) {
   return (
     <div className="bg-[var(--card-bg)] rounded-lg border border-[var(--card-border)] p-4">
       <div className="flex items-start gap-3">
@@ -38,19 +33,27 @@ export default function ReviewCard({ review, showBook = false }: ReviewCardProps
           <div className="flex items-center gap-2 flex-wrap">
             <Link
               href={`/user/${review.user.id}`}
-              className="font-medium text-[var(--foreground)] hover:text-[#D4A017]"
+              className="font-medium text-[var(--foreground)] hover:text-[var(--color-primary-text)]"
             >
               {review.user.name}
             </Link>
-            {showBook && review.book && (
+            {showWork && (
               <>
                 <span className="text-[var(--foreground-secondary)]">reviewed</span>
-                <Link
-                  href={`/book/${review.book.id}`}
-                  className="font-medium text-[var(--foreground)] hover:text-[#D4A017]"
-                >
-                  {review.book.title}
-                </Link>
+                {review.work ? (
+                  <Link
+                    href={`/work/${review.workKey}`}
+                    className="font-medium text-[var(--foreground)] hover:text-[var(--color-primary-text)]"
+                  >
+                    {review.work.title}
+                  </Link>
+                ) : (
+                  // Not a link: the work page 404s on a key the current ingest
+                  // dropped, and this is the normal case, not an error.
+                  <span className="text-[var(--foreground-secondary)] italic">
+                    a book no longer in the catalog
+                  </span>
+                )}
               </>
             )}
           </div>

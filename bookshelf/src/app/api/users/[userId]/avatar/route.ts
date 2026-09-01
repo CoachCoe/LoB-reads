@@ -1,8 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { put } from "@vercel/blob";
-import { getCurrentUser } from "@/lib/session";
-import { updateUserProfile } from "@/server/users";
-import { validateImageFile, sanitizeFilename } from "@/lib/file-validation";
+
+import { getCurrentUser } from "@/lib/auth/session";
+import { getUserAvatarUrl, updateUserProfile } from "@/server/users";
+import {
+  validateImageFile,
+  sanitizeFilename,
+  MAX_FILE_SIZE,
+} from "@/lib/storage/file-validation";
+import {
+  putObject,
+  deleteObjectByUrl,
+  isStorageConfigured,
+  keyFromUrl,
+} from "@/lib/storage/objects";
+import { checkLimit, LIMITS } from "@/lib/rate-limit";
+import { declaredBodyTooLarge, payloadTooLarge } from "@/lib/http/api";
 
 interface RouteParams {
   params: Promise<{ userId: string }>;
@@ -11,7 +23,7 @@ interface RouteParams {
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const user = await getCurrentUser();
-    if (!user) {
+    if (!user?.id) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -22,11 +34,34 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
+    // Uploads write to paid blob storage, so cap them per account.
+    const limit = checkLimit(`upload:avatar:${user.id}`, LIMITS.upload);
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: "Too many uploads. Please try again later." },
+        { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+      );
+    }
+
+    // Before formData(), which buffers the entire body. validateImageFile's
+    // 5MB check can only run once the bytes are already in memory.
+    if (declaredBodyTooLarge(request, MAX_FILE_SIZE)) {
+      return payloadTooLarge("File too large. Maximum size is 5MB.");
+    }
+
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
 
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    }
+
+    if (!isStorageConfigured()) {
+      console.error("Avatar upload attempted with object storage unconfigured");
+      return NextResponse.json(
+        { error: "Uploads are not available right now." },
+        { status: 503 }
+      );
     }
 
     // Validate file with magic byte checking
@@ -35,17 +70,37 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return NextResponse.json({ error: validation.error }, { status: 400 });
     }
 
-    // Upload to Vercel Blob with sanitized filename
+    const previousAvatarUrl = await getUserAvatarUrl(userId);
+
+    // Store with a sanitized filename under a per-user prefix
     const safeName = sanitizeFilename(file.name);
-    const filename = `avatars/${userId}/${Date.now()}-${safeName}`;
-    const blob = await put(filename, file, {
-      access: "public",
-    });
+    const key = `avatars/${userId}/${Date.now()}-${safeName}`;
+    const { url } = await putObject(key, file);
 
-    // Update user profile with new avatar URL
-    await updateUserProfile(userId, { avatarUrl: blob.url });
+    await updateUserProfile(userId, { avatarUrl: url });
 
-    return NextResponse.json({ url: blob.url });
+    // Replacing an avatar used to orphan the old object, which accumulated
+    // storage cost forever. Best-effort: a failure here must not fail the
+    // upload the user already completed. deleteObjectByUrl ignores URLs that
+    // aren't ours, so an external DiceBear avatar is left alone.
+    //
+    // Scoped to this user's own prefix. Origin alone was not enough: PATCH
+    // /api/users/[userId] accepted any URL for `avatarUrl`, so a reader could
+    // point their own profile at another user's stored blob — same origin, same
+    // container, a key `keyFromUrl` happily resolves — and have this line
+    // delete it on their next upload.
+    if (previousAvatarUrl) {
+      const previousKey = keyFromUrl(previousAvatarUrl);
+      if (previousKey?.startsWith(`avatars/${userId}/`)) {
+        try {
+          await deleteObjectByUrl(previousAvatarUrl);
+        } catch (storageError) {
+          console.error("Failed to delete previous avatar:", storageError);
+        }
+      }
+    }
+
+    return NextResponse.json({ url });
   } catch (error) {
     console.error("Error uploading avatar:", error);
     return NextResponse.json(

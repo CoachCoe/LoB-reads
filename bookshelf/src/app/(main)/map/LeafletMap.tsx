@@ -1,13 +1,9 @@
 "use client";
 
-/* eslint-disable @next/next/no-img-element */
-// Note: We use <img> instead of <Image> inside Leaflet popups because
-// Next.js Image component doesn't work correctly within Leaflet's DOM manipulation
-
 import { useEffect } from "react";
 import L from "leaflet";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
-import { BookLocation, CrowdsourcedLocation, AuthorMapLocation } from "@/server/map";
+import type { MappedWorkLocation, MappedAuthorLocation } from "@/server/map";
 import "leaflet/dist/leaflet.css";
 
 // Fix for default marker icons in Leaflet with webpack
@@ -49,28 +45,21 @@ const createCustomIcon = (color: string, isFictional: boolean = false) => {
   });
 };
 
-const settingIcon = createCustomIcon("#3B82F6");
-const fictionalSettingIcon = createCustomIcon("#9333EA", true);
+const workIcon = createCustomIcon("#3B82F6");
 const authorIcon = createCustomIcon("#22C55E");
-const crowdsourcedBookIcon = createCustomIcon("#f59e0b"); // amber
-const crowdsourcedAuthorIcon = createCustomIcon("#d97706"); // darker amber
 
 interface LeafletMapProps {
-  books: BookLocation[];
-  crowdsourcedBookLocations: CrowdsourcedLocation[];
-  crowdsourcedAuthorLocations: AuthorMapLocation[];
-  showSettings: boolean;
+  workLocations: MappedWorkLocation[];
+  authorLocations: MappedAuthorLocation[];
+  showWorks: boolean;
   showAuthors: boolean;
-  showCrowdsourced: boolean;
 }
 
 export default function LeafletMap({
-  books,
-  crowdsourcedBookLocations,
-  crowdsourcedAuthorLocations,
-  showSettings,
+  workLocations,
+  authorLocations,
+  showWorks,
   showAuthors,
-  showCrowdsourced,
 }: LeafletMapProps) {
   useEffect(() => {
     // Fix Leaflet's default icon issue
@@ -89,190 +78,71 @@ export default function LeafletMap({
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
 
-      {/* Book Setting Markers */}
-      {showSettings &&
-        books
-          .filter((book) => book.settingCoordinates)
-          .map((book) => (
-            <Marker
-              key={`setting-${book.id}`}
-              position={[
-                book.settingCoordinates!.lat,
-                book.settingCoordinates!.lng,
-              ]}
-              icon={book.isFictional ? fictionalSettingIcon : settingIcon}
-            >
-              <Popup>
-                <div className="min-w-[200px]">
-                  <div className="flex gap-3">
-                    {book.coverUrl && (
-                      <img
-                        src={book.coverUrl}
-                        alt={book.title}
-                        className="w-12 h-16 object-cover rounded"
-                      />
-                    )}
-                    <div className="flex-1">
-                      <p className="font-semibold text-gray-900 text-sm">
-                        {book.title}
-                      </p>
-                      <p className="text-xs text-gray-500">{book.author}</p>
-                      {book.isFictional && book.fictionalWorldName && (
-                        <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 bg-purple-100 text-purple-700 text-xs rounded-full">
-                          <span>✨</span>
-                          {book.fictionalWorldName}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="mt-2 pt-2 border-t border-gray-100">
-                    <p className={`text-xs font-medium ${book.isFictional ? "text-purple-600" : "text-[#D4A017]"}`}>
-                      {book.isFictional ? "Fictional setting:" : "Story set in:"}
-                    </p>
-                    <p className="text-xs text-gray-600">
-                      {book.settingLocation}
-                    </p>
-                  </div>
-                  <a
-                    href={`/book/${book.id}`}
-                    className={`mt-2 block text-center text-xs text-white py-1.5 rounded-full transition-colors ${
-                      book.isFictional
-                        ? "bg-purple-600 hover:bg-purple-700"
-                        : "bg-[#D4A017] hover:bg-[#B8860B]"
-                    }`}
-                  >
-                    View Book
-                  </a>
-                </div>
-              </Popup>
-            </Marker>
-          ))}
-
-      {/* Author Origin Markers */}
-      {showAuthors &&
-        books
-          .filter((book) => book.authorOriginCoordinates)
-          .map((book) => (
-            <Marker
-              key={`author-${book.id}`}
-              position={[
-                book.authorOriginCoordinates!.lat,
-                book.authorOriginCoordinates!.lng,
-              ]}
-              icon={authorIcon}
-            >
-              <Popup>
-                <div className="min-w-[200px]">
-                  <div className="flex gap-3">
-                    {book.coverUrl && (
-                      <img
-                        src={book.coverUrl}
-                        alt={book.title}
-                        className="w-12 h-16 object-cover rounded"
-                      />
-                    )}
-                    <div className="flex-1">
-                      <p className="font-semibold text-gray-900 text-sm">
-                        {book.author}
-                      </p>
-                      <p className="text-xs text-gray-500">{book.title}</p>
-                    </div>
-                  </div>
-                  <div className="mt-2 pt-2 border-t border-gray-100">
-                    <p className="text-xs text-[#D4A017] font-medium">
-                      Author&apos;s origin:
-                    </p>
-                    <p className="text-xs text-gray-600">{book.authorOrigin}</p>
-                  </div>
-                  <a
-                    href={`/book/${book.id}`}
-                    className="mt-2 block text-center text-xs bg-[#D4A017] text-white py-1.5 rounded-full hover:bg-[#B8860B] transition-colors"
-                  >
-                    View Book
-                  </a>
-                </div>
-              </Popup>
-            </Marker>
-          ))}
-
-      {/* Crowdsourced Book Location Markers */}
-      {showCrowdsourced &&
-        crowdsourcedBookLocations.map((location) => (
+      {/* Where books are set */}
+      {showWorks &&
+        workLocations.map((location) => (
           <Marker
-            key={`crowdsourced-book-${location.id}`}
+            key={`work-${location.id}`}
             position={[location.coordinates.lat, location.coordinates.lng]}
-            icon={crowdsourcedBookIcon}
+            icon={workIcon}
           >
             <Popup>
-              <div className="min-w-[200px]">
-                <div className="flex gap-3">
-                  {location.book.coverUrl && (
-                    <img
-                      src={location.book.coverUrl}
-                      alt={location.book.title}
-                      className="w-12 h-16 object-cover rounded"
-                    />
-                  )}
-                  <div className="flex-1">
-                    <p className="font-semibold text-gray-900 text-sm">
-                      {location.book.title}
-                    </p>
-                    <p className="text-xs text-gray-500">{location.book.author}</p>
-                  </div>
-                </div>
-                <div className="mt-2 pt-2 border-t border-gray-100">
-                  <p className="text-xs text-amber-600 font-medium">
-                    {location.type === "setting" ? "Story set in:" : location.type === "mentioned" ? "Mentioned:" : "Inspired by:"}
-                  </p>
-                  <p className="text-xs text-gray-600">{location.name}</p>
-                  <p className="text-xs text-gray-400 mt-1">Added by {location.addedBy}</p>
-                </div>
+              <div className="min-w-[180px]">
+                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  {location.name}
+                </p>
+                <p className="mt-0.5 text-xs capitalize text-gray-500 dark:text-gray-400">
+                  {location.type.replace("_", " ")}
+                </p>
                 <a
-                  href={`/book/${location.book.id}`}
-                  className="mt-2 block text-center text-xs bg-amber-500 text-white py-1.5 rounded-full hover:bg-amber-600 transition-colors"
+                  href={`/work/${location.workKey}`}
+                  className="mt-2 block text-sm text-blue-600 hover:underline"
                 >
-                  View Book
+                  {location.workTitle}
                 </a>
+                {location.workAuthor && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400">{location.workAuthor}</p>
+                )}
+                {location.addedBy && (
+                  <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+                    Added by {location.addedBy}
+                  </p>
+                )}
               </div>
             </Popup>
           </Marker>
         ))}
 
-      {/* Crowdsourced Author Location Markers */}
-      {showCrowdsourced &&
-        crowdsourcedAuthorLocations.map((location) => (
+      {/* Places associated with authors */}
+      {showAuthors &&
+        authorLocations.map((location) => (
           <Marker
-            key={`crowdsourced-author-${location.id}`}
+            key={`author-${location.id}`}
             position={[location.coordinates.lat, location.coordinates.lng]}
-            icon={crowdsourcedAuthorIcon}
+            icon={authorIcon}
           >
             <Popup>
-              <div className="min-w-[200px]">
-                <div className="flex gap-3">
-                  <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center text-2xl">
-                    👤
-                  </div>
-                  <div className="flex-1">
-                    <p className="font-semibold text-gray-900 text-sm">
-                      {location.author.name}
-                    </p>
-                    <p className="text-xs text-amber-600">
-                      {location.type === "birthplace" ? "Birthplace" :
-                       location.type === "residence" ? "Residence" :
-                       location.type === "worked" ? "Worked" : "Passed away"}
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-2 pt-2 border-t border-gray-100">
-                  <p className="text-xs text-gray-600">{location.name}</p>
-                  <p className="text-xs text-gray-400 mt-1">Added by {location.addedBy}</p>
-                </div>
+              <div className="min-w-[180px]">
+                <p className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                  {location.name}
+                </p>
+                <p className="mt-0.5 text-xs capitalize text-gray-500 dark:text-gray-400">
+                  {location.type}
+                  {location.yearStart
+                    ? ` · ${location.yearStart}${location.yearEnd ? `–${location.yearEnd}` : ""}`
+                    : ""}
+                </p>
                 <a
-                  href={`/author/${encodeURIComponent(location.author.name)}`}
-                  className="mt-2 block text-center text-xs bg-amber-600 text-white py-1.5 rounded-full hover:bg-amber-700 transition-colors"
+                  href={`/author/${encodeURIComponent(location.authorName)}`}
+                  className="mt-2 block text-sm text-green-700 hover:underline"
                 >
-                  View Author
+                  {location.authorName}
                 </a>
+                {location.addedBy && (
+                  <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+                    Added by {location.addedBy}
+                  </p>
+                )}
               </div>
             </Popup>
           </Marker>
