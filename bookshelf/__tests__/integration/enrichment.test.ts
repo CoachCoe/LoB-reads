@@ -7,6 +7,7 @@ import {
   recordResult,
   recordFailure,
   releaseRunning,
+  reclaimStale,
   queueStats,
   MAX_ATTEMPTS,
 } from "@/server/enrichment";
@@ -171,6 +172,71 @@ describe("the queue", () => {
     expect((row?.nextAttemptAt as Date).getTime() - before).toBeLessThanOrEqual(
       3_600_000 + 1_000
     );
+  });
+
+  /**
+   * reclaimStale exists to return jobs abandoned by a killed worker. It used to
+   * compare `created_at`, which is when the job was ENQUEUED — so on a real
+   * queue, where a job is usually older than the cutoff by the time anyone
+   * claims it, it handed a worker's live batch to a second worker: the same
+   * rate-limited third party called twice for one row, and two racing
+   * recordResult calls writing the same catalog.enrichment key.
+   */
+  it("leaves a freshly claimed job alone even when it was enqueued long ago", async () => {
+    const work = await makeWork();
+    await enqueue({
+      entityType: "work",
+      entityKey: work.olKey,
+      field: "description",
+      source: "google_books",
+    });
+
+    // Enqueued 20 minutes ago — entirely normal for a queue with a backlog.
+    await prisma.$executeRaw`
+      UPDATE catalog.enrichment_queue
+         SET created_at = now() - interval '20 minutes'
+       WHERE entity_key = ${work.olKey}
+    `;
+
+    const [job] = await claimJobs(1);
+    expect(job).toBeDefined();
+
+    // Claimed a moment ago, so it is not stale however old the row is.
+    expect(await reclaimStale(15)).toBe(0);
+
+    const after = await prisma.enrichmentJob.findUnique({
+      where: { id: job.id },
+      select: { status: true },
+    });
+    expect(after?.status).toBe("running");
+  });
+
+  it("reclaims a job whose worker died", async () => {
+    const work = await makeWork();
+    await enqueue({
+      entityType: "work",
+      entityKey: work.olKey,
+      field: "description",
+      source: "google_books",
+    });
+
+    const [job] = await claimJobs(1);
+
+    // The worker took it 20 minutes ago and never came back.
+    await prisma.$executeRaw`
+      UPDATE catalog.enrichment_queue
+         SET claimed_at = now() - interval '20 minutes'
+       WHERE id = ${job.id}
+    `;
+
+    expect(await reclaimStale(15)).toBe(1);
+
+    const after = await prisma.enrichmentJob.findUnique({
+      where: { id: job.id },
+      select: { status: true, claimedAt: true },
+    });
+    expect(after?.status).toBe("pending");
+    expect(after?.claimedAt).toBeNull();
   });
 
   it("gives up after MAX_ATTEMPTS instead of cycling forever", async () => {

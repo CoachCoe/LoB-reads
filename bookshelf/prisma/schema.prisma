@@ -511,6 +511,9 @@ model EnrichmentJob {
   status        String    @default("pending") // pending | running | done | failed
   attempts      Int       @default(0)
   nextAttemptAt DateTime  @default(now()) @map("next_attempt_at") @db.Timestamptz(6)
+  /// Set when a worker claims the job. reclaimStale measures from here, not
+  /// from createdAt, which is when the job was enqueued.
+  claimedAt     DateTime? @map("claimed_at") @db.Timestamptz(6)
   lastError     String?   @map("last_error")
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   completedAt   DateTime? @map("completed_at") @db.Timestamptz(6)

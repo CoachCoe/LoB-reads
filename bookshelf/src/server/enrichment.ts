@@ -73,7 +73,7 @@ export async function claimJobs(limit: number) {
     }>
   >`
     UPDATE catalog.enrichment_queue q
-       SET status = 'running'
+       SET status = 'running', claimed_at = now()
      WHERE q.id IN (
        SELECT id FROM catalog.enrichment_queue
         WHERE status = 'pending' AND next_attempt_at <= now()
@@ -184,7 +184,7 @@ export async function releaseRunning(jobIds: string[]): Promise<void> {
   if (jobIds.length === 0) return;
   await prisma.enrichmentJob.updateMany({
     where: { id: { in: jobIds }, status: "running" },
-    data: { status: "pending" },
+    data: { status: "pending", claimedAt: null },
   });
 }
 
@@ -198,8 +198,11 @@ export async function releaseRunning(jobIds: string[]): Promise<void> {
 export async function reclaimStale(olderThanMinutes = 15): Promise<number> {
   const cutoff = new Date(Date.now() - olderThanMinutes * 60_000);
   const result = await prisma.enrichmentJob.updateMany({
-    where: { status: "running", createdAt: { lt: cutoff } },
-    data: { status: "pending" },
+    // claimedAt, not createdAt. createdAt is when the job was ENQUEUED, so on a
+    // real queue almost every job is older than the cutoff the moment it is
+    // claimed — this used to hand a worker's live batch to a second worker.
+    where: { status: "running", claimedAt: { lt: cutoff } },
+    data: { status: "pending", claimedAt: null },
   });
   return result.count;
 }
