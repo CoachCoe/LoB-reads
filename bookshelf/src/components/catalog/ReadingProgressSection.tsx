@@ -34,16 +34,19 @@ export default function ReadingProgressSection({
 
   const fetchProgress = useCallback(async () => {
     try {
-      // GET returns the reader's open sessions; there is no per-work endpoint,
-      // so the match happens here.
-      const response = await fetch("/api/progress");
+      // Asks about THIS work, finished or not. It used to fetch the open
+      // sessions and match here, so a finished book found nothing and rendered
+      // "Start Reading" — which opened a second session, moved the work back to
+      // Currently Reading, and double-counted it in /wrapped.
+      const response = await fetch(
+        `/api/progress?workKey=${encodeURIComponent(workKey)}`
+      );
       if (!response.ok) {
         showToast("Could not load your reading progress", "error");
         return;
       }
 
-      const data = await response.json();
-      const bookProgress = data.find((p: Progress) => p.workKey === workKey);
+      const bookProgress: Progress | null = await response.json();
       if (bookProgress) {
         setProgress(bookProgress);
         setPageInput(bookProgress.currentPage.toString());
