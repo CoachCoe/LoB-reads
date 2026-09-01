@@ -160,9 +160,24 @@ which local development still does not run.
 - **Filtering the catalog to the rating corpus.** Implemented and left off: it
   would cut 6.9M works to 8,659. Its original purpose was fitting the AWS free
   tier, and the full catalog is 11 GB against a 20 GB limit.
-- **Serving anything derived from seed data.** `seed` is CC-BY-SA and
-  ShareAlike is viral. It stays behind `ENABLE_SEED_DATA` and nothing derived
-  from it is served.
+- **Redistributing the seed corpus.** `seed` is CC-BY-SA and ShareAlike is
+  viral, so the corpus itself is never served or exported.
+
+  This bullet used to say "nothing derived from it is served", and that was
+  false: `ENABLE_SEED_DATA` gates whether `compute-stats` folds `seed.ratings`
+  into its input, but the aggregates it writes land in `catalog.work_rating_stats`
+  and `catalog.work_similarity`, which the work page reads with no flag check —
+  so every star rating and "readers also enjoyed" list was corpus-derived. The
+  flag is a build-time switch on a batch job, not a serve-time switch on a read
+  path, and turning it off changes nothing already computed.
+
+  Decided (audit OQ-1/OQ-2): serving an aggregate is not redistributing the
+  corpus, so the reads are not gated. Both surfaces now carry CC-BY-SA
+  attribution, driven by the `seed_count` column that had been recorded "so the
+  mix is auditable" and read by nothing. Revisit if the licence position
+  changes — the gate would go in `getWorkRating`, `getWorkRatings` and
+  `getSimilarWorks`, and would empty both surfaces until R3 lands a corpus of
+  real ratings.
 
 ## 6. How we will know it is working
 

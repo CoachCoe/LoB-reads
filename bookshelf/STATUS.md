@@ -27,7 +27,8 @@ control rather than tidiness:
 ```
 catalog   rebuilt wholesale from Open Library dumps — nothing irreplaceable
 app       user-owned, survives every ingest
-seed      synthetic / restricted-licence, never served
+seed      synthetic / restricted-licence, never served RAW (see PRD §5:
+          aggregates computed from it are served, with attribution)
 ```
 
 **No foreign keys point from `app` into `catalog`.** A bad ingest must not

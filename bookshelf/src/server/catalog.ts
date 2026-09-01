@@ -527,6 +527,16 @@ export async function findWorkKeyByTitleAuthor(
 export interface RatingStats {
   average: number;
   count: number;
+  /**
+   * How many of `count` came from the CC-BY-SA corpus in `seed` rather than
+   * from readers here.
+   *
+   * The column has always existed — its schema comment says it is there "so the
+   * mix is auditable" — and nothing read it, so there was no way to tell how
+   * much of a rating was borrowed. Attribution needs that answer, and so does
+   * anyone deciding whether the corpus is still carrying the feature.
+   */
+  seedCount: number;
 }
 
 /**
@@ -537,7 +547,7 @@ export async function getWorkRating(
   workKey: string
 ): Promise<RatingStats | null> {
   const rows = await prisma.$queryRaw<RatingStats[]>`
-    SELECT avg_rating AS average, rating_count AS count
+    SELECT avg_rating AS average, rating_count AS count, seed_count AS "seedCount"
     FROM catalog.work_rating_stats WHERE work_key = ${workKey}
   `;
   return rows[0] ?? null;
@@ -551,10 +561,16 @@ export async function getWorkRatings(
   if (unique.length === 0) return new Map();
 
   const rows = await prisma.$queryRaw<(RatingStats & { workKey: string })[]>`
-    SELECT work_key AS "workKey", avg_rating AS average, rating_count AS count
+    SELECT work_key AS "workKey", avg_rating AS average, rating_count AS count,
+           seed_count AS "seedCount"
     FROM catalog.work_rating_stats WHERE work_key = ANY(${unique})
   `;
-  return new Map(rows.map((r) => [r.workKey, { average: r.average, count: r.count }]));
+  return new Map(
+    rows.map((r) => [
+      r.workKey,
+      { average: r.average, count: r.count, seedCount: r.seedCount },
+    ])
+  );
 }
 
 /**

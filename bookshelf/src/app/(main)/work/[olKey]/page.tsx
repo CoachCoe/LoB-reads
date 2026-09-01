@@ -158,15 +158,18 @@ export default async function WorkPage({ params }: Props) {
           )}
 
           {rating && rating.count > 0 && (
-            <div className="mt-3 flex items-center gap-2">
-              <StarRating rating={Math.round(rating.average)} size="sm" />
-              <span className="text-sm tabular-nums text-gray-600 dark:text-gray-400">
-                {rating.average.toFixed(1)}
-              </span>
-              <span className="text-sm text-gray-500 dark:text-gray-400">
-                ({rating.count.toLocaleString()}{" "}
-                {rating.count === 1 ? "rating" : "ratings"})
-              </span>
+            <div className="mt-3">
+              <div className="flex items-center gap-2">
+                <StarRating rating={Math.round(rating.average)} size="sm" />
+                <span className="text-sm tabular-nums text-gray-600 dark:text-gray-400">
+                  {rating.average.toFixed(1)}
+                </span>
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  ({rating.count.toLocaleString()}{" "}
+                  {rating.count === 1 ? "rating" : "ratings"})
+                </span>
+              </div>
+              {rating.seedCount > 0 && <CorpusAttribution />}
             </div>
           )}
 
@@ -300,6 +303,11 @@ export default async function WorkPage({ params }: Props) {
               <WorkCard key={other.olKey} {...other} />
             ))}
           </div>
+          {/* Same corpus as the rating, so the same credit is owed. Neighbours
+              come from catalog.work_similarity, which has no per-row provenance
+              column — the graph is wholly corpus-derived today, so this is
+              unconditional rather than driven by a count. */}
+          <CorpusAttribution />
         </section>
       )}
 
@@ -316,5 +324,42 @@ export default async function WorkPage({ params }: Props) {
         </section>
       )}
     </div>
+  );
+}
+
+/**
+ * Where the numbers came from.
+ *
+ * Ratings and "readers also enjoyed" are computed from goodbooks-10k, which is
+ * CC BY-SA. PRD.md section 5 claimed "nothing derived from it is served"; it was,
+ * on every work page. The honest fix is to say so and credit it rather than
+ * pretend otherwise (audit SPEC-1, decisions OQ-1 and OQ-2).
+ *
+ * Under the rating it is conditional on `seed_count`, so a work rated entirely
+ * by readers here carries no borrowed credit.
+ */
+function CorpusAttribution() {
+  return (
+    <p className="mt-2 text-xs text-gray-500 dark:text-gray-500">
+      Includes ratings from{" "}
+      <a
+        href="https://github.com/zygmuntz/goodbooks-10k"
+        className="underline hover:text-gray-700 dark:hover:text-gray-300"
+        rel="noopener noreferrer"
+        target="_blank"
+      >
+        goodbooks-10k
+      </a>
+      , used under{" "}
+      <a
+        href="https://creativecommons.org/licenses/by-sa/4.0/"
+        className="underline hover:text-gray-700 dark:hover:text-gray-300"
+        rel="noopener noreferrer"
+        target="_blank"
+      >
+        CC BY-SA 4.0
+      </a>
+      .
+    </p>
   );
 }

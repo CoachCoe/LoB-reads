@@ -31,7 +31,8 @@ aesthetic one.
 ```
 catalog   rebuilt wholesale from dumps every month — nothing irreplaceable
 app       user-owned, survives every ingest
-seed      synthetic / restricted-licence, never served (added at M5)
+seed      synthetic / restricted-licence, never served RAW (added at M5;
+          aggregates derived from it are served, with attribution — PRD §5)
 ```
 
 Two rules follow from that first line:

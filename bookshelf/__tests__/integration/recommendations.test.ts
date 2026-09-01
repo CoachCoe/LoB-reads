@@ -217,6 +217,27 @@ describe("community ratings", () => {
   });
 });
 
+describe("provenance is visible", () => {
+  /**
+   * `seed_count` has always been in the schema — "so the mix is auditable" —
+   * and nothing read it, so there was no way to tell how much of a rating came
+   * from the CC-BY-SA corpus rather than from readers here. The work page's
+   * attribution is driven by this number, so it has to reach the caller.
+   */
+  it("reports how much of a rating came from the seed corpus", async () => {
+    const stats = await getWorkRating(fixture.popular);
+
+    expect(stats).not.toBeNull();
+    expect(stats!.count).toBeGreaterThan(0);
+    expect(stats!.seedCount).toBe(stats!.count);
+  });
+
+  it("reports it for a bulk fetch too", async () => {
+    const map = await getWorkRatings([fixture.popular]);
+    expect(map.get(fixture.popular)?.seedCount).toBeGreaterThan(0);
+  });
+});
+
 describe("seed data isolation", () => {
   it("keeps synthetic ratings out of app.reviews entirely", async () => {
     // The separation is a schema boundary, not a boolean column: "is this ours

@@ -3,7 +3,8 @@ generator client {
   // Three schemas, per the data-layer spec:
   //   catalog — rebuilt monthly from Open Library dumps, disposable
   //   app     — user-owned data, survives every ingest
-  //   seed    — synthetic / restricted-licence, never served
+  //   seed    — synthetic / restricted-licence, never served raw; aggregates
+  //             derived from it are served with attribution (PRD section 5)
   previewFeatures = ["multiSchema"]
   // The container needs an engine for its own platform, not the developer's.
   // Both Debian targets are listed because the image is built on arm64 locally
