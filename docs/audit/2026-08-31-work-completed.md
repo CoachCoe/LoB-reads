@@ -25,13 +25,13 @@ From a clean state — `rm -rf .next node_modules`, then `npm ci`:
 |---|---|---|
 | typecheck | `npx tsc --noEmit` | exit 0 |
 | lint | `npx eslint .` | exit 0 |
-| unit | `npx jest --selectProjects unit --ci` | 200/200 |
-| integration | `npx jest --selectProjects integration --ci --runInBand` | 286/286 |
+| unit | `npx jest --selectProjects unit --ci` | 202/202 |
+| integration | `npx jest --selectProjects integration --ci --runInBand` | 296/296 |
 | build | `npx next build` | exit 0 |
 | migrations | `db:deploy:test`, `db:status:test` | 19/19, up to date |
 | release gate | `deploy:verify` | 21/24 — see note |
 
-486 tests, up from 371. **No suppression was introduced anywhere in the diff**:
+498 tests, up from 371. **No suppression was introduced anywhere in the diff**:
 zero `@ts-ignore`, `@ts-expect-error`, `@ts-nocheck`, `eslint-disable`,
 `.skip`, `.only`, `xit`, `xdescribe`, `.todo`, or `istanbul ignore` in any added
 line, no `any` widening, and no change to `tsconfig.json`, `eslint.config.mjs`,
@@ -274,6 +274,46 @@ Two stale things fell out of the mechanical checks: `ImportReviewList` composed
 its URL from an interpolated action (unresolvable, now written out), and
 `useCrowdsourcedLocations` documented its endpoint as `/api/books/...` — the
 path M3 retired.
+
+---
+
+## Third round — the open questions, answered
+
+All eight open questions were answered by the maintainer. What follows is what
+each decision produced.
+
+| question | answer | what changed |
+|---|---|---|
+| **OQ-7** public HTTP API? | No | Six unreachable read handlers deleted (25 routes → 23), README's list corrected and given the rule. Settles DEAD-4. |
+| **OQ-1 / OQ-2** seed licensing | Serving aggregates is acceptable; attribute | No runtime gate. CC-BY-SA attribution on both surfaces, driven by `seed_count` — a column recorded "so the mix is auditable" that nothing had ever read. PRD §5 and three other documents corrected: they claimed "nothing derived from it is served" while every work page served it. |
+| **OQ-4** is `/map` public? | Yes | Redirect removed; the navbar now renders Home, Discover, Map and About for signed-out visitors, who previously got no navigation at all and, on a phone, not even a search box. A conventions test pins the public-page list. |
+| **OQ-6** registration enumeration | Recommendation accepted | Message kept. Without email verification, a generic response means a reader who forgot they have an account gets a success message and no account — a frequent harm against a modest disclosure — and SEC-2 made the 5/hour cap real. Reasoning recorded next to the code with the condition that would reopen it. |
+| **OQ-8** which table owns work↔world | Recommendation accepted | Counted from `app.work_locations`, the table readers actually write, DISTINCT by work. Every world previously read "0 books" outside a dev-seeded database. |
+| **OQ-3** approximate search results? | Yes | R1's candidate set is now bounded — see below. |
+
+**BLOCK-3 and BLOCK-4 followed from OQ-7.** Both had working, tested routes and
+no UI, which is why the audit refused to delete them. Custom shelves now have a
+create form and a delete control on `/my-books`; fictional worlds have a create
+form in the map panel, without which the entire upload/edit/delete chain and
+`WorkLocationsSection`'s world picker were unreachable on any database that had
+not been dev-seeded.
+
+### R1, and what is honestly still open
+
+`searchWorks` ranked every match before `LIMIT` discarded all but 24. The
+candidate set is now capped **per strategy** rather than by one
+popularity-ordered cap: exact and prefix titles get their own reservations, and
+full-text and trigram are capped in `edition_count` order. A single cap would
+have dropped an exact title match with few editions — a reader searching a book
+they own and not finding it.
+
+**The latency is unmeasured.** It is verified for shape, and for the property
+that matters (an exact title with the fixture's lowest `edition_count` still
+ranks first among 3,000 competitors; removing the reservations fails that test).
+But this repository's history is a list of performance conclusions drawn from
+fixtures that did not survive 6.9M works, so PRD R1's "done when" is now tied
+explicitly to a measurement on the real catalog. Do not mark R1 done on the
+strength of this change alone.
 
 ---
 

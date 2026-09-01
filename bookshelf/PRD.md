@@ -38,7 +38,7 @@ is table stakes that has to be good enough not to get in the way.
 Six milestones are built: ingest, search, shelves on `work_key`, an enrichment
 worker, the social layer, and Goodreads import with a review queue. A 6.9
 million-work catalog is loaded, 11 GB, with 5.5M ratings behind
-recommendations. 486 tests pass.
+recommendations. 498 tests pass.
 
 The gaps are not features that were forgotten; they are the consequences of
 running at real scale for the first time. See `STATUS.md`.

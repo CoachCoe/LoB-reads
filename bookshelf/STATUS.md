@@ -91,10 +91,10 @@ cause turned out to be a lossy bitmap. 1.23 s is that query after raising
 
 ## Quality posture
 
-486 tests: 200 unit, 286 integration. Integration runs against real Postgres
+498 tests: 202 unit, 296 integration. Integration runs against real Postgres
 and must run serially — they share a database and truncate between tests.
 
-The 2026-08-31 audit added 115 of those, and the reason is worth stating plainly:
+The 2026-08-31 audit added 127 of those, and the reason is worth stating plainly:
 all five checks were green — typecheck, lint, 128 unit, 243 integration, build —
 while four blockers sat in the tree, including a page that threw on load. A green
 suite here has repeatedly meant "the tests that exist pass", not "the app works".
