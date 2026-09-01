@@ -14,13 +14,23 @@ import { makeUser } from "./factories";
  * the reverse. It broke the enrichment queue — freshly queued jobs were never
  * "due" — and expiry checks on cached third-party content.
  */
+/*
+ * Derived from the schemas that exist rather than a hardcoded pair.
+ *
+ * This filtered `IN ('app', 'catalog')`, so `seed` — named as one of the three
+ * schemas by ARCHITECTURE.md, which also claims this invariant is "guarded by a
+ * test asserting no naive timestamp columns exist" — was never checked. No live
+ * violation today, so the gap was latent: a new DateTime on a seed model would
+ * ship naive with the guard green. Excluding the system schemas instead means a
+ * fourth schema is covered the day it is created. SPEC-9.
+ */
 describe("timestamp columns", () => {
   it("uses timestamptz everywhere, so now() comparisons are meaningful", async () => {
     const naive = await prisma.$queryRaw<{ column: string }[]>`
       SELECT table_schema || '.' || table_name || '.' || column_name AS column
       FROM information_schema.columns
       WHERE data_type = 'timestamp without time zone'
-        AND table_schema IN ('app', 'catalog')
+        AND table_schema NOT IN ('pg_catalog', 'information_schema')
       ORDER BY 1
     `;
 
