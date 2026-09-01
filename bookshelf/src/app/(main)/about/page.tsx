@@ -164,7 +164,7 @@ export default function AboutPage() {
             "Tailwind CSS",
             "Open Library API",
             "Leaflet Maps",
-            "Vercel Blob",
+            "Azure Blob Storage",
           ].map((tech) => (
             <span
               key={tech}
@@ -185,7 +185,8 @@ export default function AboutPage() {
           <div className="p-4 bg-[var(--card-bg)] rounded-xl border border-[var(--card-border)] text-center">
             <h3 className="font-semibold text-[var(--foreground)] mb-2">Open Library</h3>
             <p className="text-sm text-[var(--foreground-secondary)]">
-              Book metadata, covers, and search powered by Open Library&apos;s open API
+              Book metadata and covers from Open Library&apos;s open data, ingested
+              and searched locally
             </p>
           </div>
           <div className="p-4 bg-[var(--card-bg)] rounded-xl border border-[var(--card-border)] text-center">
@@ -195,7 +196,7 @@ export default function AboutPage() {
             </p>
           </div>
           <div className="p-4 bg-[var(--card-bg)] rounded-xl border border-[var(--card-border)] text-center">
-            <h3 className="font-semibold text-[var(--foreground)] mb-2">Vercel Blob</h3>
+            <h3 className="font-semibold text-[var(--foreground)] mb-2">Azure Blob Storage</h3>
             <p className="text-sm text-[var(--foreground-secondary)]">
               Cloud storage for avatar uploads and fictional world maps
             </p>
@@ -211,7 +212,7 @@ export default function AboutPage() {
         <div className="flex flex-wrap justify-center gap-4">
           <Link
             href="/"
-            className="inline-flex items-center gap-2 px-6 py-3 bg-[#D4A017] text-white rounded-full font-medium hover:bg-[#B8860B] transition-colors"
+            className="inline-flex items-center gap-2 px-6 py-3 bg-[#D4A017] text-[var(--color-primary-contrast)] rounded-full font-medium hover:bg-[#B8860B] transition-colors"
           >
             Explore the App
           </Link>

@@ -63,7 +63,7 @@ export default async function ImportReviewPage({ params }: Props) {
           </p>
           <Link
             href="/my-books"
-            className="mt-4 inline-block rounded-lg bg-[#D4A017] px-5 py-2 text-sm font-medium text-white hover:bg-[#B8860B]"
+            className="mt-4 inline-block rounded-lg bg-[#D4A017] px-5 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[#B8860B]"
           >
             Go to my books
           </Link>

@@ -67,7 +67,7 @@ export default function ShelfSection({ shelf }: ShelfSectionProps) {
         {bookCount > displayBooks.length && (
           <Link
             href={`/shelf/${shelf.id}`}
-            className="text-sm text-[#D4A017] hover:text-[#B8860B] flex items-center gap-1"
+            className="text-sm text-[var(--color-primary-text)] hover:underline flex items-center gap-1"
           >
             View all
             <ChevronRight className="h-4 w-4" />

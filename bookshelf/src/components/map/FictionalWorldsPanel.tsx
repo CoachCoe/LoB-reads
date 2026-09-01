@@ -356,7 +356,7 @@ export default function FictionalWorldsPanel({
                       <button
                         type="submit"
                         disabled={creatingWorld}
-                        className="rounded-lg bg-[#D4A017] px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+                        className="rounded-lg bg-[#D4A017] px-3 py-2 text-sm font-medium text-[var(--color-primary-contrast)] disabled:opacity-60"
                       >
                         {creatingWorld ? "Creating…" : "Create"}
                       </button>

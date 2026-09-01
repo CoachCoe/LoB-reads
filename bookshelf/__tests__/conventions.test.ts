@@ -414,6 +414,56 @@ describe("public pages stay public", () => {
   });
 });
 
+/**
+ * Gold is a fill, not a text colour.
+ *
+ * `#D4A017` measures 2.28:1 on the light page background — it fails AA for text
+ * by a wide margin, and it was being used for links, button labels, chip text
+ * and the Wrapped nav item. `--color-primary-text` exists for that job
+ * (4.85:1 light, 10.79:1 dark); `--color-primary` stays for fills, filled stars
+ * and focus rings.
+ *
+ * The allowlist below is decorative icons plus StarRating's fill. Each is a
+ * glyph beside its own text label, not something anyone has to read, so AA text
+ * contrast does not apply — but they are listed rather than pattern-matched, so
+ * adding a tenth gold text colour is a deliberate edit to this file.
+ */
+describe("gold is never a text colour", () => {
+  const ALLOWED = [
+    // Decorative icons, each adjacent to a text label that carries the meaning.
+    "src/app/(main)/my-books/page.tsx",
+    "src/app/(main)/about/page.tsx",
+    "src/components/catalog/WorkLocationsSection.tsx",
+    "src/components/locations/LocationsPanel.tsx",
+    "src/components/import/ImportReviewList.tsx",
+    // The filled star itself. `text-` sets the SVG stroke beside `fill-`.
+    "src/components/ui/StarRating.tsx",
+  ];
+
+  it("finds the stylesheet tokens it depends on", () => {
+    const css = read("src/app/globals.css");
+    expect(css).toContain("--color-primary-text");
+    expect(css).toContain("--color-primary-contrast");
+  });
+
+  it("uses --color-primary-text for text, outside the decorative allowlist", () => {
+    const offenders = walk("src", (f) => /\.tsx?$/.test(f))
+      .filter((file) => !ALLOWED.includes(file))
+      .filter((file) => /text-\[#D4A017\]/.test(withoutComments(read(file))));
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("never puts a white label on a gold fill", () => {
+    // 2.38:1. A gold button whose own label could not be read.
+    const offenders = walk("src", (f) => /\.tsx?$/.test(f)).filter((file) =>
+      /bg-\[#D4A017\][^"'`]*text-white/.test(withoutComments(read(file)))
+    );
+
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe("schema conventions", () => {
   it("uses every schema it defines", () => {
     // updateProfileSchema was written and left unwired for several commits,

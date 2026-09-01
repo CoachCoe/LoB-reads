@@ -196,6 +196,23 @@ which local development still does not run.
   `getSimilarWorks`, and would empty both surfaces until R3 lands a corpus of
   real ratings.
 
+## 5b. Recorded but not scoped
+
+**A book-club surface.** The 2026-08-31 design review was briefed with a product
+decision — that an active TikTok/YouTube/podcast book club is a strong secondary
+audience — and its artboards give it a permanent nav slot, a module on the home
+page and a carousel on the search browse screen.
+
+Nothing of it exists: no model, no route, no data source, no requirement here.
+It is the largest single item in that handoff and it is net-new product work
+rather than a redesign, so the UI was **built without it** and it is recorded
+here instead.
+
+Before any of it is built this needs: what a "club" is (one global club, or many?),
+where the pick, episode and note counts come from, whether membership is a
+relation or just a follow, and whether any of it is user-generated or curated.
+Until those are answered, an implementation would be inventing the product.
+
 ## 6. How we will know it is working
 
 Not vanity metrics — these are the ones that would change a decision:

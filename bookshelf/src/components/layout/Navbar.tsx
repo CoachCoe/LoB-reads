@@ -84,7 +84,7 @@ export default function Navbar() {
                       href={link.href}
                       className={
                         "accent" in link && link.accent
-                          ? "flex items-center gap-1.5 px-4 py-2 text-[#D4A017] hover:bg-[#D4A017]/10 rounded-full transition-all text-sm font-medium"
+                          ? "flex items-center gap-1.5 px-4 py-2 text-[var(--color-primary-text)] hover:bg-[#D4A017]/10 rounded-full transition-all text-sm font-medium"
                           : "flex items-center gap-1.5 px-4 py-2 text-[var(--foreground-secondary)] hover:text-[var(--foreground)] rounded-full hover:bg-[var(--border-light)] transition-all text-sm font-medium"
                       }
                     >
@@ -178,7 +178,7 @@ export default function Navbar() {
                           </Link>
                           <Link
                             href="/wrapped"
-                            className="flex items-center gap-3 px-4 py-2.5 text-[#D4A017] hover:bg-[#D4A017]/5 transition-colors"
+                            className="flex items-center gap-3 px-4 py-2.5 text-[var(--color-primary-text)] hover:bg-[#D4A017]/5 transition-colors"
                             onClick={() => setIsProfileOpen(false)}
                           >
                             <Sparkles className="h-4 w-4" />
@@ -258,7 +258,7 @@ export default function Navbar() {
                       href={link.href}
                       className={
                         "accent" in link && link.accent
-                          ? "flex items-center gap-3 px-4 py-3 text-[#D4A017] hover:bg-[#D4A017]/5 rounded-xl transition-all"
+                          ? "flex items-center gap-3 px-4 py-3 text-[var(--color-primary-text)] hover:bg-[#D4A017]/5 rounded-xl transition-all"
                           : "flex items-center gap-3 px-4 py-3 text-[var(--foreground)] hover:bg-[var(--border-light)] rounded-xl transition-all"
                       }
                       onClick={() => setIsMenuOpen(false)}

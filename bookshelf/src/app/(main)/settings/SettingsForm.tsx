@@ -182,7 +182,7 @@ export default function SettingsForm({ user }: SettingsFormProps) {
                 />
                 <div className="space-y-2">
                   {/* Upload Button */}
-                  <label className="flex items-center gap-2 px-4 py-2 bg-[#D4A017] text-white rounded-full hover:bg-[#B8860B] transition-colors cursor-pointer text-sm font-medium">
+                  <label className="flex items-center gap-2 px-4 py-2 bg-[#D4A017] text-[var(--color-primary-contrast)] rounded-full hover:bg-[#B8860B] transition-colors cursor-pointer text-sm font-medium">
                     <Upload className="h-4 w-4" />
                     {isUploadingAvatar ? "Uploading..." : "Upload Photo"}
                     <input
@@ -321,7 +321,7 @@ export default function SettingsForm({ user }: SettingsFormProps) {
                   </p>
                   <Link
                     href={`/import/${importResult.sessionId}`}
-                    className="inline-block rounded-lg bg-[#D4A017] px-4 py-2 text-sm font-medium text-white hover:bg-[#B8860B]"
+                    className="inline-block rounded-lg bg-[#D4A017] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[#B8860B]"
                   >
                     Review {importResult.needsReview}{" "}
                     {importResult.needsReview === 1 ? "book" : "books"}
