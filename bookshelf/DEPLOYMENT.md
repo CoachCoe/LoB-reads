@@ -262,7 +262,25 @@ The image is built by CI and run unchanged; the app host never builds.
 Until now that was only half true: `ci.yml` built the image, started it, probed
 it and threw it away — there was no registry, no tag and no push, so deploying
 meant building by hand on somebody's laptop. `.github/workflows/deploy.yml` now
-closes that. It runs on `workflow_run` after CI completes on `main` and refuses
+closes that.
+
+It is **inert until Azure is configured**. The first step reads three secrets
+through `env` and, if any is missing, records a notice and skips the rest — so the
+workflow is green and does nothing rather than failing on every push. A
+permanently red run that means nothing is how people learn to ignore red runs.
+The secrets it needs:
+
+| secret | what for |
+| --- | --- |
+| `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` | federated sign-in, so no service principal password is stored |
+| `AZURE_REGISTRY` | e.g. `myregistry.azurecr.io` |
+| `AZURE_RESOURCE_GROUP`, `CONTAINER_APP_NAME` | what to roll |
+| `CDN_URL` | baked into the image at build time |
+| `DIRECT_URL`, `DATABASE_URL` | migrations, and the release check |
+| `NEXTAUTH_URL`, `NEXTAUTH_SECRET` | checked by `deploy:verify` before the rollout is accepted |
+
+Plus a `production` environment, which is what makes the deployment reviewable
+and gives the job somewhere to hang approvals. It runs on `workflow_run` after CI completes on `main` and refuses
 to proceed unless CI concluded success, checks out the SHA CI actually tested
 rather than the branch tip, pushes to ACR, and then hands off to
 `scripts/deploy/azure.sh release`, which applies migrations **before** rolling
