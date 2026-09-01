@@ -3,7 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import prisma from "@/lib/prisma";
 import { normalizeEmail } from "@/lib/auth/email";
-import { checkLimit, clientIpFromHeaders, LIMITS } from "@/lib/rate-limit";
+import { checkLimit, clientIpFromHeaders, isLimited, LIMITS } from "@/lib/rate-limit";
 
 /**
  * A real bcrypt hash of a value nothing can match, used only to equalise the
@@ -48,13 +48,34 @@ export const authOptions: NextAuthOptions = {
             : undefined
         );
 
-        for (const key of [`login:email:${email}`, `login:ip:${ip}`]) {
-          if (!checkLimit(key, LIMITS.login).allowed) {
+        // Per account always; per origin only when the origin is known.
+        //
+        // `ip` is null when nothing in front appended X-Forwarded-For and no
+        // x-real-ip arrived. It used to be the string "unknown", which put every
+        // request on ONE bucket: ten attempts from a single attacker then
+        // refused sign-in to every user of the site for fifteen minutes, and
+        // forty requests an hour sustained that indefinitely. A per-account
+        // limit with no origin limit is weaker against spraying; a global bucket
+        // is a self-service outage. See SEC-3 and FLOW-2.
+        const keys = [`login:email:${email}`];
+        if (ip) keys.push(`login:ip:${ip}`);
+
+        // Checked without recording, then recorded below only if the attempt
+        // actually failed. Counting every attempt meant the victim's own correct
+        // password spent the same budget the attacker was draining, so a known
+        // address could be locked out permanently — and the reader was told
+        // their password was wrong. See SEC-4 and FLOW-1.
+        for (const key of keys) {
+          if (!isLimited(key, LIMITS.login).allowed) {
             throw new Error(
               "Too many sign-in attempts. Please wait a few minutes and try again."
             );
           }
         }
+
+        const recordFailedAttempt = () => {
+          for (const key of keys) checkLimit(key, LIMITS.login);
+        };
 
         const user = await prisma.user.findUnique({
           where: { email },
@@ -64,6 +85,7 @@ export const authOptions: NextAuthOptions = {
           // Spend comparable time on a missing user so response timing does
           // not reveal whether the address is registered.
           await bcrypt.compare(credentials.password, DUMMY_PASSWORD_HASH);
+          recordFailedAttempt();
           throw new Error("Invalid email or password");
         }
 
@@ -73,6 +95,7 @@ export const authOptions: NextAuthOptions = {
         );
 
         if (!isValidPassword) {
+          recordFailedAttempt();
           throw new Error("Invalid email or password");
         }
 

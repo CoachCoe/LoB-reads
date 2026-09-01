@@ -43,6 +43,34 @@ export interface RateLimitResult {
  */
 const MAX_BUCKETS = 10_000;
 
+/**
+ * Is this key over its limit, without recording an attempt against it?
+ *
+ * Exists so a caller can refuse an exhausted key and then decide separately
+ * whether what just happened deserves to count. The login path needs that: a
+ * correct password must not spend the budget an attacker is draining. See
+ * SEC-4.
+ */
+export function isLimited(
+  key: string,
+  { limit, windowMs }: RateLimitOptions
+): RateLimitResult {
+  const now = Date.now();
+  const hits = (buckets.get(key) ?? []).filter((t) => t > now - windowMs);
+
+  if (hits.length >= limit) {
+    return {
+      allowed: false,
+      remaining: 0,
+      retryAfterSeconds: Math.max(
+        1,
+        Math.ceil((hits[0] + windowMs - now) / 1000)
+      ),
+    };
+  }
+  return { allowed: true, remaining: limit - hits.length, retryAfterSeconds: 0 };
+}
+
 export function checkLimit(
   key: string,
   { limit, windowMs }: RateLimitOptions
@@ -131,7 +159,7 @@ function trustedProxyHops(): number {
 export function clientIpFromHeaders(
   forwardedFor: string | null | undefined,
   realIp?: string | null
-): string {
+): string | null {
   const hops = trustedProxyHops();
 
   if (hops > 0) {
@@ -143,11 +171,26 @@ export function clientIpFromHeaders(
     if (chain.length >= hops) return chain[chain.length - hops];
   }
 
-  return realIp?.trim() || "unknown";
+  const direct = realIp?.trim();
+  if (direct) return direct;
+
+  // Null, not the string "unknown".
+  //
+  // Sharing one bucket looked like the safe direction and is the opposite. If
+  // nothing in front appends X-Forwarded-For — a misconfigured
+  // TRUSTED_PROXY_HOPS, or a platform whose ingress does not set x-real-ip —
+  // then EVERY request is unidentified, so they all key on the same bucket, and
+  // `login:ip:unknown` at 10 per 15 minutes means ten attempts from one
+  // attacker refuse sign-in to every user of the site. Forty requests an hour
+  // for an indefinite authentication outage. Five closes registration.
+  //
+  // A caller that cannot identify the client must fall back to a per-account
+  // limit rather than a global one. See SEC-3 and FLOW-2.
+  return null;
 }
 
-/** `clientIpFromHeaders` for a standard `Request`. */
-export function getClientIp(request: Request): string {
+/** `clientIpFromHeaders` for a standard `Request`. Null when unidentifiable. */
+export function getClientIp(request: Request): string | null {
   return clientIpFromHeaders(
     request.headers.get("x-forwarded-for"),
     request.headers.get("x-real-ip")

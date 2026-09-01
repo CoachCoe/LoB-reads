@@ -1,12 +1,7 @@
 /**
  * @jest-environment node
  */
-import {
-  checkLimit,
-  getClientIp,
-  clientIpFromHeaders,
-  __resetRateLimits,
-} from "@/lib/rate-limit";
+import { checkLimit, getClientIp, clientIpFromHeaders, __resetRateLimits, isLimited } from "@/lib/rate-limit";
 
 describe("checkLimit", () => {
   beforeEach(() => {
@@ -131,9 +126,26 @@ describe("getClientIp", () => {
     expect(getClientIp(request)).toBe("203.0.113.9");
   });
 
-  it("buckets unidentifiable clients together rather than exempting them", () => {
+  /**
+   * This assertion used to expect the string "unknown", and its name said
+   * "buckets unidentifiable clients together rather than exempting them" — i.e.
+   * it encoded the shared bucket as the deliberate, safe choice.
+   *
+   * It is the opposite of safe. If nothing in front appends X-Forwarded-For
+   * (a misconfigured TRUSTED_PROXY_HOPS, or a platform whose ingress does not
+   * set x-real-ip) then EVERY request is unidentified, so they all share one
+   * bucket. `login:ip:unknown` at 10 per 15 minutes means ten attempts from one
+   * attacker refuse sign-in to every user of the site, indefinitely, from forty
+   * requests an hour. Five requests close registration.
+   *
+   * Per-client that reasoning is sound; across the whole population it is a
+   * self-service outage. Callers now fall back to their per-account limit
+   * instead, which is what `refuses to let one origin lock out the site` below
+   * pins.
+   */
+  it("cannot identify a client with no proxy headers at all", () => {
     const request = new Request("https://example.com");
-    expect(getClientIp(request)).toBe("unknown");
+    expect(getClientIp(request)).toBeNull();
   });
 });
 
@@ -160,14 +172,18 @@ describe("clientIpFromHeaders trusted-hop configuration", () => {
 
   it("ignores the header entirely when nothing trusted is in front", () => {
     withHops("0", () => {
-      expect(clientIpFromHeaders("203.0.113.5, 70.41.3.18")).toBe("unknown");
+      expect(clientIpFromHeaders("203.0.113.5, 70.41.3.18")).toBeNull();
       expect(clientIpFromHeaders("203.0.113.5", "10.0.0.9")).toBe("10.0.0.9");
     });
   });
 
-  it("shares one bucket when the chain is shorter than the trusted hop count", () => {
+  it("declines to guess when the chain is shorter than the trusted hop count", () => {
+    // The SEC-3 case: hops configured higher than the real topology. Returning
+    // an element here would hand back a proxy's own address, shared by every
+    // client behind it — the same outage as the no-header case, but harder to
+    // spot because a plausible-looking IP comes back.
     withHops("3", () => {
-      expect(clientIpFromHeaders("203.0.113.5, 70.41.3.18")).toBe("unknown");
+      expect(clientIpFromHeaders("203.0.113.5, 70.41.3.18")).toBeNull();
     });
   });
 
@@ -175,5 +191,57 @@ describe("clientIpFromHeaders trusted-hop configuration", () => {
     withHops("banana", () => {
       expect(clientIpFromHeaders("203.0.113.5, 70.41.3.18")).toBe("70.41.3.18");
     });
+  });
+});
+
+/**
+ * SEC-4 / SEC-3: the two ways the login limiter locked out the wrong people.
+ *
+ * `checkLimit` both checks and records, and the login path called it before
+ * knowing whether the password was right. So a correct password spent the same
+ * budget an attacker was draining: ten wrong guesses every fifteen minutes
+ * locked a known address out permanently, and FLOW-1 meant the reader was told
+ * their password was wrong.
+ */
+describe("isLimited does not spend the budget", () => {
+  beforeEach(() => {
+    __resetRateLimits();
+  });
+
+  const options = { limit: 3, windowMs: 60_000 };
+
+  it("reports the state without recording an attempt", () => {
+    for (let i = 0; i < 10; i++) {
+      expect(isLimited("k", options).allowed).toBe(true);
+    }
+    // Ten checks, no hits recorded — so a reader who signs in correctly ten
+    // times has spent nothing.
+    expect(isLimited("k", options).remaining).toBe(3);
+  });
+
+  it("agrees with checkLimit once hits are recorded", () => {
+    checkLimit("k", options);
+    checkLimit("k", options);
+    expect(isLimited("k", options).remaining).toBe(1);
+
+    checkLimit("k", options);
+    expect(isLimited("k", options).allowed).toBe(false);
+    expect(isLimited("k", options).retryAfterSeconds).toBeGreaterThan(50);
+  });
+
+  it("keeps a victim's own sign-in possible while an attacker guesses", () => {
+    // The lockout, stated as the scenario. The attacker's failures fill the
+    // per-account bucket; what must not happen is the victim's correct password
+    // filling it too.
+    const key = "login:email:victim@example.com";
+    for (let i = 0; i < 3; i++) checkLimit(key, options);
+    expect(isLimited(key, options).allowed).toBe(false);
+
+    // A fresh window: the victim gets in, and checking does not re-close it.
+    __resetRateLimits();
+    expect(isLimited(key, options).allowed).toBe(true);
+    expect(isLimited(key, options).allowed).toBe(true);
+    expect(isLimited(key, options).allowed).toBe(true);
+    expect(isLimited(key, options).allowed).toBe(true);
   });
 });
