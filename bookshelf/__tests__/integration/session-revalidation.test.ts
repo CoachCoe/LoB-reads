@@ -18,7 +18,13 @@ import type { JWT } from "next-auth/jwt";
  * there is no browser here to hold a cookie.
  */
 
-const jwtCallback = authOptions.callbacks!.jwt!;
+const jwtCallback = authOptions.callbacks?.jwt;
+
+if (!jwtCallback) {
+  // Asserted rather than assumed: without the callback there is no
+  // revalidation at all, and every test below would pass vacuously.
+  throw new Error("authOptions has no jwt callback — nothing to revalidate");
+}
 
 /** The shape NextAuth hands the callback on a request that is not a sign-in. */
 const callWithToken = (token: JWT) =>
