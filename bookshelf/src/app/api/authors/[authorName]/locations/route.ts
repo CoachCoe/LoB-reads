@@ -9,6 +9,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { errorResponse, parseBody, unauthorized } from "@/lib/http/api";
 import { createAuthorLocationSchema } from "@/lib/http/schemas";
 import { NotFoundError, ValidationError } from "@/lib/http/errors";
+import { checkLimit, LIMITS } from "@/lib/rate-limit";
 
 export async function GET(
   request: NextRequest,
@@ -35,6 +36,16 @@ export async function POST(
     const user = await getCurrentUser();
     if (!user?.id) {
       return unauthorized();
+    }
+
+    // These three routes write the tables the public /map reads on every
+    // request, and none of them was rate limited. See SEC-2.
+    const limit = checkLimit(`contribute:author-location:${user.id}`, LIMITS.contribute);
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: "You are adding these very quickly. Try again shortly." },
+        { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+      );
     }
 
     const { authorName } = await params;

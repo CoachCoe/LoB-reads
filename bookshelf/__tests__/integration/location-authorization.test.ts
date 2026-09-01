@@ -1,5 +1,6 @@
 import { prisma } from "./setup";
 import { makeUser, makeWorkLocation, makeAuthorLocation } from "./factories";
+import { checkLimit, LIMITS, __resetRateLimits } from "@/lib/rate-limit";
 
 /**
  * The location rules, exercised through the route handlers.
@@ -269,6 +270,65 @@ describe("POST /api/works/[workKey]/locations — coordinates", () => {
     // A fictional place is pinned to its world, so the rule must not fire here.
     const response = await postWorkLocation(
       postRequest({ name: "Roke", type: "setting", isFictional: true }),
+      workParams
+    );
+
+    expect(response.status).toBe(201);
+  });
+});
+
+/**
+ * SEC-2. These routes write the tables the public, anonymous /map reads on every
+ * request, and none of the three was rate limited — while every read behind the
+ * map was unbounded. One account inserting in a loop made the page unservable
+ * for everyone. The prior audit's FLOW-22 fixed this exact shape on the author
+ * page via AUTHOR_WORKS_LIMIT; the map was not covered.
+ *
+ * The bucket is exhausted directly rather than by sending 60 real requests: the
+ * subject here is whether the route consults the limiter at all, and 60 inserts
+ * would test the limiter's arithmetic a second time instead.
+ */
+describe("POST /api/works/[workKey]/locations — rate limit", () => {
+  beforeEach(() => {
+    __resetRateLimits();
+  });
+
+  it("refuses a contributor who is inserting in a loop", async () => {
+    const user = await makeUser();
+    mockGetCurrentUser.mockResolvedValue({ id: user.id, isModerator: false });
+
+    for (let i = 0; i < LIMITS.contribute.limit; i++) {
+      checkLimit(`contribute:work-location:${user.id}`, LIMITS.contribute);
+    }
+
+    const response = await postWorkLocation(
+      postRequest({
+        name: "Gont",
+        type: "setting",
+        coordinates: { lat: 51.5, lng: -0.12 },
+      }),
+      workParams
+    );
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBeTruthy();
+  });
+
+  it("keys the limit per account, so one contributor cannot block another", async () => {
+    const noisy = await makeUser();
+    const quiet = await makeUser();
+
+    for (let i = 0; i < LIMITS.contribute.limit; i++) {
+      checkLimit(`contribute:work-location:${noisy.id}`, LIMITS.contribute);
+    }
+
+    mockGetCurrentUser.mockResolvedValue({ id: quiet.id, isModerator: false });
+    const response = await postWorkLocation(
+      postRequest({
+        name: "Roke",
+        type: "setting",
+        coordinates: { lat: 51.5, lng: -0.12 },
+      }),
       workParams
     );
 

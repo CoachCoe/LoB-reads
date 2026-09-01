@@ -1,5 +1,6 @@
 import prisma from "@/lib/prisma";
 import { AuthorizationError, NotFoundError } from "@/lib/http/errors";
+import { LOCATIONS_PER_ENTITY } from "@/server/work-locations";
 
 /**
  * Author pages and their crowdsourced locations.
@@ -121,6 +122,7 @@ export async function getAuthorLocations(
     where: { authorKey },
     include: { addedBy: { select: { id: true, name: true } } },
     orderBy: { createdAt: "desc" },
+    take: LOCATIONS_PER_ENTITY,
   });
 
   return locations.map((loc) => ({

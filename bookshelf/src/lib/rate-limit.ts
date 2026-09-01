@@ -159,6 +159,10 @@ export const LIMITS = {
   register: { limit: 5, windowMs: 60 * 60 * 1000 },
   login: { limit: 10, windowMs: 15 * 60 * 1000 },
   upload: { limit: 20, windowMs: 60 * 60 * 1000 },
+  // Contributing a location or a world. Generous for a person adding pins to
+  // the books they have read; a bound on an account inserting rows in a loop
+  // into the tables the public /map reads on every request.
+  contribute: { limit: 60, windowMs: 60 * 60 * 1000 },
 } as const satisfies Record<string, RateLimitOptions>;
 
 /** Test-only escape hatch; not exported through any route. */
