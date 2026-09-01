@@ -5,3 +5,7 @@
 .claude/settings.local.json
 
 .vercel
+
+# macOS. Only bookshelf/.gitignore had this, so a `git add -A` from the repo
+# root committed docs/.DS_Store.
+.DS_Store
