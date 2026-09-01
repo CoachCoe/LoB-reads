@@ -32,6 +32,7 @@ import {
   GET as progressGet,
   POST as progressPost,
 } from "@/app/api/progress/route";
+import { startReading } from "@/server/progress";
 
 const json = (body: unknown, method = "POST") =>
   new Request("http://localhost/api", {
@@ -225,5 +226,63 @@ describe("tracking progress", () => {
     const body = await (await progressGet(new Request("http://test/api/progress"))).json();
     expect(Array.isArray(body)).toBe(true);
     expect(body).toHaveLength(1);
+  });
+});
+
+/**
+ * FLOW-5: the session snapshot has to belong to the book.
+ *
+ * `getEditionPageCount` was `WHERE ol_key = $1` with no `work_key` predicate,
+ * and the schema constrained `editionKey` only by length — unlike `workKey`,
+ * which has always carried a shape. `getDefaultEdition` filters on `work_key`;
+ * only the explicit-`editionKey` path did not.
+ *
+ * That matters more since FLOW-28: the progress UI now treats the session's
+ * `pageCount` as the single source of truth, and `updateProgress` validates page
+ * numbers against it. So naming another book's 900-page edition made a 480-page
+ * book read "310 / 900 pages", let the reader record page 900 of it, and made
+ * /wrapped report it as their longest book of the year — permanently, because the
+ * row is frozen by design.
+ *
+ * No test passed `editionKey` at all before this, which is why length was the
+ * only constraint anyone noticed.
+ */
+describe("FLOW-5: starting a session with an explicit edition", () => {
+  it("refuses an edition belonging to a different work", async () => {
+    const other = await makeWork({ pages: 900 });
+    const user = await makeUserWithShelves();
+
+    await expect(
+      startReading(user.id, workKey, `${other.olKey}E`)
+    ).rejects.toThrow(/not part of this book/i);
+
+    expect(
+      await prisma.readingSession.count({ where: { userId: user.id } })
+    ).toBe(0);
+  });
+
+  it("accepts an edition of the work, and snapshots its page count", async () => {
+    const user = await makeUserWithShelves();
+
+    const session = await startReading(user.id, workKey, `${workKey}E`);
+
+    expect(session.editionKey).toBe(`${workKey}E`);
+    expect(session.pageCount).toBe(412);
+  });
+
+  it("refuses an edition key that does not exist at all", async () => {
+    const user = await makeUserWithShelves();
+
+    await expect(
+      startReading(user.id, workKey, "OL999999999M")
+    ).rejects.toThrow(/not part of this book/i);
+  });
+
+  it("still falls back to the default edition when none is named", async () => {
+    const user = await makeUserWithShelves();
+
+    const session = await startReading(user.id, workKey);
+
+    expect(session.pageCount).toBe(412);
   });
 });
