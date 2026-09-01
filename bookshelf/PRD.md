@@ -61,48 +61,42 @@ A common word took 4.2 s. Raising `work_mem` from the 4 MB default to 32 MB
 brought that to **1.23 s** — the default made the bitmap scan go lossy and
 recheck a million rows. Do that first; it is one setting.
 
-It did not finish the job. With the whole working set cached and zero disk reads
-the query was still 1.2 s, so the rest is CPU: rechecking 93,941 rows and
-ranking 10,061.
+It does not finish the job. With the whole working set cached and zero disk reads
+the query is still 1.2 s, so the rest is CPU: rechecking 93,941 rows and ranking
+10,061.
 
-The candidate set is now bounded (audit OQ-3 answered the open question below:
-approximate results are acceptable). `searchWorks` caps what reaches the ranking
-expression per match strategy — exact and prefix titles get their own
-reservations, the full-text and trigram strategies are capped and ordered by
-`edition_count` — so a query matching more works than the caps ranks the
-most-published ones plus every exact and prefix hit, rather than the whole match
-set.
+**Bounding the candidate set was attempted and reverted.** OQ-3 answered the
+question below — approximate results are acceptable — and the implementation
+capped what reached the ranking expression with four per-strategy subqueries,
+each `ORDER BY w.edition_count DESC LIMIT n`. Measured on the real catalog
+afterwards, `?q=dune` went from a 222 ms query to **71 seconds**, and the page
+from under a second to 116. It shipped before anyone measured it.
 
-**Not yet measured against the real catalog**, which is what "done" needs. The
-change is verified for shape and for the property that matters — an exact title
-match with the lowest possible `edition_count` still ranks first among 3,000
-competitors, and removing the exact/prefix reservations fails that test — but
-this repo's own history is full of performance conclusions drawn from fixtures
-that did not survive contact with 6.9M works. The 1-second claim is unproven
-until someone runs it against the live database.
+The cause, because the next attempt will meet it too:
+`ORDER BY edition_count DESC LIMIT 200` invites the planner to walk
+`works_edition_count_ol_key_idx` in popularity order and filter as it goes,
+betting it will fill the LIMIT early. `title_norm LIKE 'dune%'` matches 113 rows
+in 6.9M, so it walked all 6,943,467 — 10.9 s in one subquery, and the same shape
+in a second. Every subquery was fast in isolation (7–335 ms); only the
+combination was slow.
+
+**And it was not catchable by any test in this repo.** At 3,000 fixture rows the
+planner correctly chooses bitmap scans; it only flips to the ordered walk when
+the table is big enough for that to look cheap. The reverted query was restored
+and every plan assertion still passed. The plan is scale-dependent, so an
+EXPLAIN over a fixture cannot see this class of regression. What is now asserted
+is the statement's SHAPE — exactly one `LIMIT`, meaning one pass over the match
+set — which is a text check and labelled as one.
+
+So R1 is open again, and the next attempt needs a way to bound ranking that does
+not hand the planner an ordered walk. Candidates worth exploring: a materialised
+popularity-ranked subset, `LIMIT` inside a lateral join with a forced bitmap
+scan, or accepting the 1.2 s and spending the effort on caching instead.
 
 *Done when:* no query in a representative set exceeds 1 s warm **measured on the
-real catalog**, and the plan assertion holds the bound.
+real catalog**, and the bound is held by something that fails when it breaks.
 *~~Open question for you:~~ answered: approximate results for very common words
-are acceptable.*
-
-**R2. ~~A catalog rebuild must not take the site down.~~ Done.**
-Normalize builds into parallel tables and swaps them in, so the exclusive lock
-lasts milliseconds rather than hours. Proven by A/B against a `TRUNCATE`-shaped
-transaction. The stated bonus is only half delivered — see R2b.
-
-**R2b. A rebuild should not leave 34 GB of dead space.**
-Moving the work-level filter into normalize was tried and does not achieve
-this: deleting from `works_new` leaves the dead tuples in `works_new`, and the
-rename does not compact them. It was kept because it cuts runtime — the two
-most expensive passes no longer run over 34M rows they discard — but the space
-is unchanged.
-
-The fix is to never insert those works: decide the surviving set from staging
-before works are built. That means materialising the edition filters first,
-turning `min_editions` into a count over them, and checking `require_author`
-against the staged authors array.
-*Done when:* a full rebuild needs no `VACUUM FULL` to return to size.
+are acceptable — but no implementation has yet earned its place.*
 
 ### P1 — the product works but under-delivers
 
