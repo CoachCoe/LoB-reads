@@ -431,3 +431,71 @@ describe("FLOW-10: imported books keep the date they were actually read", () => 
     expect(finished).toBe(1);
   });
 });
+
+/**
+ * DEAD-1: the ISBN stored has to be in the dialect the join uses.
+ *
+ * `app.import_rows.isbn13` is compared against `catalog.editions.isbn13`, which
+ * the ingest guarantees is a validated 13-digit string. The importer stored
+ * `row.isbn13 ?? row.isbn` exactly as it arrived, so an ISBN-10 was stored as a
+ * second dialect and matched nothing — while `canonicalIsbn13`, whose docstring
+ * states the rule, had no caller anywhere in src/. Separately the parser
+ * discarded a hyphenated ISBN-13 outright, because it required bare digits after
+ * stripping only Excel's `="…"` wrapper.
+ *
+ * Both fall through to fuzzy title/author or the review queue, which the
+ * importer's own header calls out: "asking someone to confirm certain matches is
+ * not review, it is data entry."
+ */
+describe("DEAD-1: ISBNs are stored in one dialect", () => {
+  it("converts an ISBN-10 so it matches the catalog", async () => {
+    // Dune's ISBN-10, with the ISBN13 column blank as older exports leave it.
+    const csv = [
+      HEADER,
+      `1,Dune,Frank Herbert,"=""0441172717""","",5,Ace,412,1965,2024/03/15,2024/01/02,sci-fi,read,"",1`,
+    ].join("\n");
+
+    const { sessionId } = await importCsv(csv);
+    const rows = await prisma.importRow.findMany({
+      where: { sessionId },
+      select: { isbn13: true },
+    });
+
+    // 0441172717 -> 9780441172719, which is the key WORKS.dune carries.
+    expect(rows[0].isbn13).toBe("9780441172719");
+  });
+
+  it("keeps a hyphenated ISBN-13 instead of discarding it", async () => {
+    const csv = [
+      HEADER,
+      `1,Dune,Frank Herbert,"","978-0-441-17271-9",5,Ace,412,1965,2024/03/15,2024/01/02,sci-fi,read,"",1`,
+    ].join("\n");
+
+    const { sessionId } = await importCsv(csv);
+    const rows = await prisma.importRow.findMany({
+      where: { sessionId },
+      select: { isbn13: true, status: true },
+    });
+
+    expect(rows[0].isbn13).toBe("9780441172719");
+    // And it matched on the ISBN rather than falling through.
+    expect(rows[0].status).toBe("matched");
+  });
+
+  it("stores nothing rather than a value that can never join", async () => {
+    // An ISBN-13 with a broken check digit is not an ISBN. Storing it would put
+    // a row in the queue for a person to resolve by hand, for no reason.
+    const csv = [
+      HEADER,
+      `1,Some Book,Some Author,"","9780441172718",0,Pub,100,2000,,2024/01/02,x,to-read,"",0`,
+    ].join("\n");
+
+    const { sessionId } = await importCsv(csv);
+    const rows = await prisma.importRow.findMany({
+      where: { sessionId },
+      select: { isbn13: true },
+    });
+
+    expect(rows[0].isbn13).toBeNull();
+  });
+});
