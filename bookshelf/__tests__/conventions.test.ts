@@ -27,6 +27,28 @@ function routeFiles(): string[] {
   return walk(API_DIR, (f) => f.endsWith("route.ts")).sort();
 }
 
+/**
+ * Split a route module into its exported handlers.
+ *
+ * Everything after the last handler's `export async function` — module-level
+ * helpers, usually — lands in that handler's block. That makes the check
+ * slightly permissive at the tail and never falsely strict, which is the right
+ * direction for a mechanical convention.
+ */
+function handlersOf(source: string): { method: string; body: string }[] {
+  const marker = /export async function ([A-Z]+)\s*\(/g;
+  const starts: { method: string; index: number }[] = [];
+
+  for (const match of source.matchAll(marker)) {
+    starts.push({ method: match[1], index: match.index ?? 0 });
+  }
+
+  return starts.map((start, i) => ({
+    method: start.method,
+    body: source.slice(start.index, starts[i + 1]?.index ?? source.length),
+  }));
+}
+
 function read(file: string): string {
   return readFileSync(file, "utf8");
 }
@@ -54,16 +76,39 @@ describe("API route conventions", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("requires authentication on every mutating route", () => {
-    const offenders = routeFiles().filter((file) => {
-      if (PUBLIC_MUTATION_ROUTES.includes(file)) return false;
-      const source = read(file);
-      const mutates = /export async function (POST|PATCH|PUT|DELETE)/.test(source);
-      if (!mutates) return false;
-      return !/getCurrentUser|getServerSession/.test(source);
+  /**
+   * Per HANDLER, not per file.
+   *
+   * This used to test the whole source for `getCurrentUser|getServerSession`,
+   * which answers "does this file mention a session helper anywhere" — so a
+   * route file with two mutating handlers passed if either one of them checked,
+   * and a new unauthenticated handler added beside an authenticated one was
+   * invisible. Six of the route files export more than one mutating handler.
+   */
+  it("requires authentication in every mutating handler, not just somewhere in the file", () => {
+    const offenders = routeFiles().flatMap((file) => {
+      if (PUBLIC_MUTATION_ROUTES.includes(file)) return [];
+
+      return handlersOf(read(file))
+        .filter(({ method }) => /^(POST|PATCH|PUT|DELETE)$/.test(method))
+        .filter(({ body }) => !/getCurrentUser|getServerSession/.test(body))
+        .map(({ method }) => `${file}: ${method}`);
     });
 
     expect(offenders).toEqual([]);
+  });
+
+  it("finds more than one handler in the files that have more than one", () => {
+    // Guards the splitter itself: if handlersOf ever returned one block per
+    // file, the check above would silently weaken back to what it replaced.
+    const follow = handlersOf(
+      read(path.join(API_DIR, "users/[userId]/follow/route.ts"))
+    );
+    expect(follow.map((h) => h.method).sort()).toEqual([
+      "DELETE",
+      "GET",
+      "POST",
+    ]);
   });
 
   it("never puts a raw error message into an error response", () => {
