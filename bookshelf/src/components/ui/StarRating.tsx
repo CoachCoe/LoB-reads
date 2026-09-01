@@ -50,7 +50,18 @@ export default function StarRating({
             disabled={!interactive}
           >
             <Star
-              className={`${sizes[size]} ${ isFilled ? "fill-[#D4A017] text-[#D4A017]" : "fill-gray-200 text-gray-200" } transition-colors`}
+              className={`${sizes[size]} ${
+                isFilled
+                  ? "fill-[#D4A017] text-[#D4A017]"
+                  : // An empty star is a placeholder, so it should be quiet:
+                    // gray-200 is 1.24:1 on white, which is the design intent.
+                    // Unpaired, though, the same class is 14.88:1 on the dark
+                    // card — brighter than the gold fill, so a 2-star rating
+                    // read as five. gray-700 is 1.79:1, matching the light
+                    // weight with a little more presence, since in the
+                    // interactive form these are the click targets.
+                    "fill-gray-200 text-gray-200 dark:fill-gray-700 dark:text-gray-700"
+              } transition-colors`}
             />
           </button>
         );

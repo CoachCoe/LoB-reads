@@ -70,7 +70,7 @@ function FeedRow({ item }: { item: FeedItem }) {
             {item.user.name}
           </Link>{" "}
           <Icon
-            className="inline h-3.5 w-3.5 align-[-2px] text-gray-400"
+            className="inline h-3.5 w-3.5 align-[-2px] text-gray-400 dark:text-gray-500"
             aria-hidden="true"
           />{" "}
           {item.type === "shelf_add" && (

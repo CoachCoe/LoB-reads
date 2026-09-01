@@ -456,8 +456,67 @@ describe("gold is never a text colour", () => {
 
   it("never puts a white label on a gold fill", () => {
     // 2.38:1. A gold button whose own label could not be read.
+    //
+    // `from-` as well as `bg-`: Avatar painted its initials on
+    // `bg-gradient-to-br from-[#D4A017] to-[#D4A017]` — a gradient between one
+    // colour and itself — which is a gold fill by any other name, and the
+    // earlier version of this check looked only for `bg-` and waved it through.
     const offenders = walk("src", (f) => /\.tsx?$/.test(f)).filter((file) =>
-      /bg-\[#D4A017\][^"'`]*text-white/.test(withoutComments(read(file)))
+      /(?:bg|from)-\[#D4A017\][^"'`]*text-white/.test(withoutComments(read(file)))
+    );
+
+    expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * Every grey text colour is paired with a dark-mode variant.
+ *
+ * The app themes by `.dark` on `<html>`, and the dominant pattern in these
+ * components is an explicit pair — `text-gray-500 dark:text-gray-400` — used on
+ * 167 lines. An unpaired grey therefore is not a style choice, it is a line
+ * somebody forgot: the light value survives into dark mode, where it is being
+ * read against #141414 instead of #ffffff.
+ *
+ * Fourteen of them had accumulated, and the worst was not subtle. StarRating's
+ * empty stars were `fill-gray-200`, which is 1.24:1 on white — properly quiet —
+ * and 14.88:1 on the dark card, i.e. brighter than the gold `#D4A017` of a
+ * filled star. Every rating in dark mode showed five lit stars. That is wrong
+ * data on the screen, not a cosmetic complaint, and it survived a dark-mode
+ * sweep, a design review and a token contrast suite, because all three looked
+ * at the stylesheet and this lives in a className.
+ *
+ * Checked per string literal rather than per line, so a className broken across
+ * several lines is judged whole. A `dark:` anywhere in one literal satisfies the
+ * check for every grey in it — permissive at the edges and never falsely strict,
+ * which is the right direction for a mechanical rule.
+ */
+describe("grey text is never unpaired", () => {
+  const GREY = /\b(?:text|fill|stroke)-(?:gray|slate|zinc|neutral)-\d{2,3}\b/;
+  /** Double-quoted, single-quoted and template literals. */
+  const LITERAL = /"[^"\n]*"|'[^'\n]*'|`[^`]*`/g;
+
+  /** Literals naming a grey text colour with no dark-mode variant. */
+  function unpaired(source: string): string[] {
+    return (withoutComments(source).match(LITERAL) ?? []).filter(
+      (literal) => GREY.test(literal) && !literal.includes("dark:")
+    );
+  }
+
+  it("catches an unpaired grey, and passes a paired one", () => {
+    // Without this, a typo in the regexes above makes the check below vacuous
+    // and the suite goes green on exactly the bug it exists to stop.
+    expect(unpaired('<p className="text-sm text-gray-500" />')).toHaveLength(1);
+    expect(
+      unpaired('<p className="text-gray-500 dark:text-gray-400" />')
+    ).toHaveLength(0);
+    // A grey inside a comment is prose, not code.
+    expect(unpaired('// was text-gray-200 once\n')).toHaveLength(0);
+  });
+
+  it("pairs every grey text colour in src", () => {
+    const offenders = walk("src", (f) => /\.tsx?$/.test(f)).flatMap((file) =>
+      unpaired(read(file)).map((literal) => `${file}: ${literal.trim()}`)
     );
 
     expect(offenders).toEqual([]);

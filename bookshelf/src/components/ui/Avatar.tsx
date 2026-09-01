@@ -32,7 +32,7 @@ export default function Avatar({
   if (src) {
     return (
       <div
-        className={`${sizes[size]} relative rounded-full overflow-hidden ring-2 ring-white shadow-sm ${className}`}
+        className={`${sizes[size]} relative rounded-full overflow-hidden ring-2 ring-[var(--card-bg)] shadow-sm ${className}`}
       >
         <Image
           src={src}
@@ -47,7 +47,7 @@ export default function Avatar({
 
   return (
     <div
-      className={`${sizes[size]} rounded-full bg-gradient-to-br from-[#D4A017] to-[#D4A017] text-white flex items-center justify-center font-semibold shadow-sm ${className}`}
+      className={`${sizes[size]} rounded-full bg-[#D4A017] text-[var(--color-primary-contrast)] flex items-center justify-center font-semibold shadow-sm ${className}`}
     >
       {getInitials(name)}
     </div>
