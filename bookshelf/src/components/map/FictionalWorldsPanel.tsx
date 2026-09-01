@@ -30,6 +30,14 @@ export default function FictionalWorldsPanel({
   currentUserId,
   canModerate,
 }: FictionalWorldsPanelProps) {
+  // Creating a world. `POST /api/fictional-worlds` and createFictionalWorldSchema
+  // have always existed and nothing called them, so on any database that had not
+  // been dev-seeded there were no worlds — and with no worlds the entire
+  // upload/edit/delete chain below, and WorkLocationsSection's world picker, were
+  // unreachable. Audit BLOCK-4.
+  const [newWorldName, setNewWorldName] = useState("");
+  const [creatingWorld, setCreatingWorld] = useState(false);
+  const [showCreateWorld, setShowCreateWorld] = useState(false);
   const [selectedWorld, setSelectedWorld] = useState<FictionalWorld | null>(null);
   const [viewingMap, setViewingMap] = useState<FictionalWorldMap | null>(null);
   const [showUploadForm, setShowUploadForm] = useState(false);
@@ -175,6 +183,41 @@ export default function FictionalWorldsPanel({
     }
   };
 
+  async function createWorld(event: React.FormEvent) {
+    event.preventDefault();
+    const name = newWorldName.trim();
+    if (!name) return;
+
+    setCreatingWorld(true);
+    try {
+      const response = await fetch("/api/fictional-worlds", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        showToast(error.error || "Could not create that world", "error");
+        return;
+      }
+
+      // The route returns the world itself, not `{ world }` — unlike the upload
+      // route next to it, which returns `{ map }`.
+      const world: FictionalWorld = await response.json();
+      onWorldsUpdate(
+        [...worlds, world].sort((a, b) => a.name.localeCompare(b.name))
+      );
+      setNewWorldName("");
+      setShowCreateWorld(false);
+      showToast(`Created ${name}`);
+    } catch {
+      showToast("Could not reach the server. Try again.", "error");
+    } finally {
+      setCreatingWorld(false);
+    }
+  }
+
   if (!isOpen) return null;
 
   // Get thumbnail for world list (first map image)
@@ -288,10 +331,65 @@ export default function FictionalWorldsPanel({
                 Explore fictional worlds from the books in our library. Upload custom maps to visualize where these stories take place.
               </p>
 
+              {currentUserId && (
+                <div className="mb-4">
+                  {showCreateWorld ? (
+                    <form onSubmit={createWorld} className="flex items-end gap-2">
+                      <div className="flex-1">
+                        <label
+                          htmlFor="new-world-name"
+                          className="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300"
+                        >
+                          World name
+                        </label>
+                        <input
+                          id="new-world-name"
+                          value={newWorldName}
+                          onChange={(e) => setNewWorldName(e.target.value)}
+                          placeholder="Middle-earth"
+                          maxLength={200}
+                          autoFocus
+                          required
+                          className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={creatingWorld}
+                        className="rounded-lg bg-[#D4A017] px-3 py-2 text-sm font-medium text-white disabled:opacity-60"
+                      >
+                        {creatingWorld ? "Creating…" : "Create"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowCreateWorld(false);
+                          setNewWorldName("");
+                        }}
+                        className="rounded-lg px-3 py-2 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800"
+                      >
+                        Cancel
+                      </button>
+                    </form>
+                  ) : (
+                    <button
+                      onClick={() => setShowCreateWorld(true)}
+                      className="flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+                    >
+                      <Plus className="h-4 w-4" />
+                      New world
+                    </button>
+                  )}
+                </div>
+              )}
+
               {worlds.length === 0 ? (
                 <div className="text-center py-8 text-gray-400">
                   <Sparkles className="h-12 w-12 mx-auto mb-2" />
                   <p>No fictional worlds yet</p>
+                  {!currentUserId && (
+                    <p className="mt-1 text-xs">Sign in to add one.</p>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-2">

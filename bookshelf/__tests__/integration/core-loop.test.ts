@@ -28,7 +28,10 @@ jest.mock("next-auth", () => ({
 import { POST as shelfPost, DELETE as shelfDelete } from "@/app/api/shelves/[shelfId]/works/route";
 import { GET as shelfStatusGet } from "@/app/api/works/[workKey]/shelves/route";
 import { POST as reviewPost } from "@/app/api/reviews/route";
-import { POST as progressPost } from "@/app/api/progress/route";
+import {
+  GET as progressGet,
+  POST as progressPost,
+} from "@/app/api/progress/route";
 
 const json = (body: unknown, method = "POST") =>
   new Request("http://localhost/api", {
@@ -192,5 +195,35 @@ describe("tracking progress", () => {
     await progressPost(json({ workKey, action: "start" }));
     const response = await progressPost(json({ workKey, currentPage: -1 }));
     expect(response.status).toBe(400);
+  });
+
+  /**
+   * The panel used to fetch the reader's OPEN sessions and match on workKey, so
+   * a finished book found nothing and rendered "Start Reading" — which opened a
+   * second session, moved the work back to Currently Reading, and
+   * double-counted it in getReadingStats and /wrapped.
+   */
+  it("still reports a finished book instead of forgetting it", async () => {
+    await progressPost(json({ workKey, action: "start" }));
+    await progressPost(json({ workKey, action: "finish" }));
+
+    const url = `http://test/api/progress?workKey=${encodeURIComponent(workKey)}`;
+    const body = await (await progressGet(new Request(url))).json();
+
+    expect(body).not.toBeNull();
+    expect(body.workKey).toBe(workKey);
+    expect(body.finishedAt).not.toBeNull();
+  });
+
+  it("returns null for a work never started, so the caller can tell them apart", async () => {
+    const url = `http://test/api/progress?workKey=${encodeURIComponent(workKey)}`;
+    expect(await (await progressGet(new Request(url))).json()).toBeNull();
+  });
+
+  it("still returns the open-session list when no workKey is given", async () => {
+    await progressPost(json({ workKey, action: "start" }));
+    const body = await (await progressGet(new Request("http://test/api/progress"))).json();
+    expect(Array.isArray(body)).toBe(true);
+    expect(body).toHaveLength(1);
   });
 });

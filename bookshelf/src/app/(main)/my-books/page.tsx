@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { getUserShelves } from "@/server/shelves";
 import { getReadingStats } from "@/server/progress";
 import ShelfSection from "./ShelfSection";
+import CustomShelves from "./CustomShelves";
 import Card, { CardContent } from "@/components/ui/Card";
 import { BookOpen, BookMarked, Trophy } from "lucide-react";
 
@@ -77,19 +78,10 @@ export default async function MyBooksPage() {
         ))}
       </div>
 
-      {/* Custom shelves */}
-      {customShelves.length > 0 && (
-        <div className="mt-12">
-          <h2 className="text-2xl font-bold text-[var(--foreground)] mb-6">
-            Custom Shelves
-          </h2>
-          <div className="space-y-8">
-            {customShelves.map((shelf) => (
-              <ShelfSection key={shelf.id} shelf={shelf} />
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Custom shelves. Rendered unconditionally now: the section used to be
+          gated on `length > 0`, and nothing could ever create one, so a
+          documented feature had no entry point at all. */}
+      <CustomShelves shelves={customShelves} />
 
       {/* Empty state */}
       {shelves.every((s) => s.itemCount === 0) && (

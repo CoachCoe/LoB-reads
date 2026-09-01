@@ -2,9 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { getCurrentUser } from "@/lib/auth/session";
 import { getUserAvatarUrl, updateUserProfile } from "@/server/users";
-import { validateImageFile, sanitizeFilename } from "@/lib/storage/file-validation";
-import { putObject, deleteObjectByUrl, isStorageConfigured } from "@/lib/storage/objects";
+import {
+  validateImageFile,
+  sanitizeFilename,
+  MAX_FILE_SIZE,
+} from "@/lib/storage/file-validation";
+import {
+  putObject,
+  deleteObjectByUrl,
+  isStorageConfigured,
+  keyFromUrl,
+} from "@/lib/storage/objects";
 import { checkLimit, LIMITS } from "@/lib/rate-limit";
+import { declaredBodyTooLarge, payloadTooLarge } from "@/lib/http/api";
 
 interface RouteParams {
   params: Promise<{ userId: string }>;
@@ -31,6 +41,12 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         { error: "Too many uploads. Please try again later." },
         { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
       );
+    }
+
+    // Before formData(), which buffers the entire body. validateImageFile's
+    // 5MB check can only run once the bytes are already in memory.
+    if (declaredBodyTooLarge(request, MAX_FILE_SIZE)) {
+      return payloadTooLarge("File too large. Maximum size is 5MB.");
     }
 
     const formData = await request.formData();
@@ -67,11 +83,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // storage cost forever. Best-effort: a failure here must not fail the
     // upload the user already completed. deleteObjectByUrl ignores URLs that
     // aren't ours, so an external DiceBear avatar is left alone.
+    //
+    // Scoped to this user's own prefix. Origin alone was not enough: PATCH
+    // /api/users/[userId] accepted any URL for `avatarUrl`, so a reader could
+    // point their own profile at another user's stored blob — same origin, same
+    // container, a key `keyFromUrl` happily resolves — and have this line
+    // delete it on their next upload.
     if (previousAvatarUrl) {
-      try {
-        await deleteObjectByUrl(previousAvatarUrl);
-      } catch (storageError) {
-        console.error("Failed to delete previous avatar:", storageError);
+      const previousKey = keyFromUrl(previousAvatarUrl);
+      if (previousKey?.startsWith(`avatars/${userId}/`)) {
+        try {
+          await deleteObjectByUrl(previousAvatarUrl);
+        } catch (storageError) {
+          console.error("Failed to delete previous avatar:", storageError);
+        }
       }
     }
 

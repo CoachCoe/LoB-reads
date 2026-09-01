@@ -3,7 +3,7 @@
 # The full dump is ~20M editions and needs roughly 150GB with indexes. The
 # defaults below yield a catalog large enough to stress search and pagination
 # but small enough to reindex on a laptop, and small enough to fit the 20GB
-# AWS RDS free tier.
+# free tier of the managed Postgres this was first sized for.
 #
 # Nothing here is hardcoded in SQL — relax these and re-run 04-slice.sql to
 # widen or narrow the catalog. Set them all permissive for a full ingest.

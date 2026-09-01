@@ -5,12 +5,12 @@
  *   npm run ingest -- --fixture    # build and use the test fixture instead
  *   npm run ingest -- --limit 5000 # cap rows per dump, for a quick pass
  *
- * Acquire is deliberately separate: it downloads ~12GB and should be run
+ * Acquire is deliberately separate: it downloads ~16.5GB and should be run
  * once, on its own, not as part of every re-run.
  *
- * The whole chain is idempotent. Staging truncates, normalize truncates the
- * catalog and rebuilds it, slice deletes. Re-running from scratch converges on
- * the same result.
+ * The whole chain is idempotent. Staging truncates, normalize builds parallel
+ * `_new` tables and swaps them in, slice deletes. Re-running from scratch
+ * converges on the same result.
  */
 
 import { readFileSync } from "node:fs";

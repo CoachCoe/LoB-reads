@@ -10,12 +10,15 @@ import LocationRow from "@/components/locations/LocationRow";
 import LocationField, {
   locationInputClass,
 } from "@/components/locations/LocationField";
-import { WorkLocationData } from "@/server/work-locations";
-import { FictionalWorldWithWorks } from "@/server/fictional-worlds";
+import { useToast } from "@/components/providers/ToastProvider";
+import type { WorkLocationData } from "@/server/work-locations";
+import type { FictionalWorldWithWorks } from "@/server/fictional-worlds";
 
 interface WorkLocationsSectionProps {
   workKey: string;
   currentUserId?: string;
+  /** Moderators may remove any contribution — PRD section 2. */
+  canModerate?: boolean;
 }
 
 /** The endpoint returns a bare array; the author endpoint wraps it. */
@@ -50,6 +53,7 @@ const LOCATION_TYPES = [
 export default function WorkLocationsSection({
   workKey,
   currentUserId,
+  canModerate = false,
 }: WorkLocationsSectionProps) {
   const {
     locations,
@@ -63,6 +67,7 @@ export default function WorkLocationsSection({
     basePath: `/api/works/${workKey}/locations`,
     extractList: extractLocations,
   });
+  const { showToast } = useToast();
 
   const [fictionalWorlds, setFictionalWorlds] = useState<
     FictionalWorldWithWorks[]
@@ -111,6 +116,21 @@ export default function WorkLocationsSection({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
+
+    // The route rejects a real-world location without coordinates, so blocking
+    // here means the reader sees the requirement on the field rather than a red
+    // toast after submitting a form that presented them as optional.
+    if (!isFictional && (!lat.trim() || !lng.trim())) {
+      showToast("A real-world location needs both coordinates", "error");
+      return;
+    }
+
+    if (isFictional && !fictionalWorldId) {
+      // Accepted by the route, then filtered out of the map by
+      // getMappedWorkLocations — stored and visible nowhere.
+      showToast("Choose which fictional world this place belongs to", "error");
+      return;
+    }
 
     const body: Record<string, unknown> = {
       name: name.trim(),
@@ -216,7 +236,7 @@ export default function WorkLocationsSection({
           ) : (
             <div className="grid grid-cols-2 gap-3">
               <LocationField
-                label="Latitude (optional)"
+                label="Latitude"
                 htmlFor="work-location-lat"
               >
                 <input
@@ -230,7 +250,7 @@ export default function WorkLocationsSection({
                 />
               </LocationField>
               <LocationField
-                label="Longitude (optional)"
+                label="Longitude"
                 htmlFor="work-location-lng"
               >
                 <input
@@ -290,7 +310,8 @@ export default function WorkLocationsSection({
             ) : null
           }
           onDelete={
-            location.addedBy != null && currentUserId === location.addedBy.id
+            canModerate ||
+            (location.addedBy != null && currentUserId === location.addedBy.id)
               ? () => setPendingDelete(location)
               : undefined
           }

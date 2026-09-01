@@ -8,9 +8,9 @@ import {
   getOtherWorksByAuthor,
   getSimilarWorks,
   getWorkRating,
-  coverUrl,
   EDITIONS_PAGE_SIZE,
 } from "@/server/catalog";
+import { coverUrl } from "@/lib/covers";
 import StarRating from "@/components/ui/StarRating";
 import WorkCard from "@/components/catalog/WorkCard";
 import EditionList from "./EditionList";
@@ -53,19 +53,6 @@ export default async function WorkPage({ params }: Props) {
     notFound();
   }
 
-  // A missing description queues a backfill. This is a single INSERT with an
-  // ON CONFLICT — no outbound request happens here, and none ever should: a
-  // page render that calls a third party inherits that third party's latency
-  // and downtime.
-  if (!work.description) {
-    await enqueue({
-      entityType: "work",
-      entityKey: work.olKey,
-      field: "description",
-      source: "google_books",
-    });
-  }
-
   const primaryAuthor = work.authors[0];
   const [alsoBy, alsoEnjoyed, rating, user] = await Promise.all([
     primaryAuthor
@@ -75,6 +62,29 @@ export default async function WorkPage({ params }: Props) {
     getWorkRating(work.olKey),
     getCurrentUser(),
   ]);
+
+  // A missing description queues a backfill. This is a single INSERT with an
+  // ON CONFLICT — no outbound request happens here, and none ever should: a
+  // page render that calls a third party inherits that third party's latency
+  // and downtime.
+  //
+  // Only for a signed-in reader, and never awaited. The page is public and
+  // dynamically rendered per request, so as an awaited write on an anonymous
+  // path it let anyone fill catalog.enrichment_queue by walking sequential
+  // public Open Library keys. claimJobs orders by created_at, so a junk queue
+  // drains AHEAD of genuinely popular works and defeats the prioritisation
+  // backfill.ts and PRD R4 exist for — at a worker rate of five per second.
+  if (!work.description && user?.id) {
+    void enqueue({
+      entityType: "work",
+      entityKey: work.olKey,
+      field: "description",
+      source: "google_books",
+    }).catch((error) => {
+      // Best effort: a queue insert must not fail the page it decorates.
+      console.error("Failed to queue description enrichment:", error);
+    });
+  }
 
   // Fetched on the server so opening a work page costs no round trip to
   // discover the reader has not reviewed it, which is the common case.
@@ -148,15 +158,18 @@ export default async function WorkPage({ params }: Props) {
           )}
 
           {rating && rating.count > 0 && (
-            <div className="mt-3 flex items-center gap-2">
-              <StarRating rating={Math.round(rating.average)} size="sm" />
-              <span className="text-sm tabular-nums text-gray-600 dark:text-gray-400">
-                {rating.average.toFixed(1)}
-              </span>
-              <span className="text-sm text-gray-500 dark:text-gray-400">
-                ({rating.count.toLocaleString()}{" "}
-                {rating.count === 1 ? "rating" : "ratings"})
-              </span>
+            <div className="mt-3">
+              <div className="flex items-center gap-2">
+                <StarRating rating={Math.round(rating.average)} size="sm" />
+                <span className="text-sm tabular-nums text-gray-600 dark:text-gray-400">
+                  {rating.average.toFixed(1)}
+                </span>
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  ({rating.count.toLocaleString()}{" "}
+                  {rating.count === 1 ? "rating" : "ratings"})
+                </span>
+              </div>
+              {rating.seedCount > 0 && <CorpusAttribution />}
             </div>
           )}
 
@@ -203,7 +216,7 @@ export default async function WorkPage({ params }: Props) {
               {work.subjects.slice(0, 8).map((subject) => (
                 <Link
                   key={subject}
-                  href={`/search?q=${encodeURIComponent(subject)}`}
+                  href={`/search?subject=${encodeURIComponent(subject)}`}
                   className="rounded-full bg-gray-100 px-3 py-1 text-xs text-gray-700 transition-colors hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
                 >
                   {subject}
@@ -273,7 +286,11 @@ export default async function WorkPage({ params }: Props) {
         was simply unreachable.
       */}
       <section className="mt-10">
-        <WorkLocationsSection workKey={work.olKey} currentUserId={user?.id} />
+        <WorkLocationsSection
+          workKey={work.olKey}
+          currentUserId={user?.id}
+          canModerate={Boolean(user?.isModerator)}
+        />
       </section>
 
       {alsoEnjoyed.length > 0 && (
@@ -286,6 +303,11 @@ export default async function WorkPage({ params }: Props) {
               <WorkCard key={other.olKey} {...other} />
             ))}
           </div>
+          {/* Same corpus as the rating, so the same credit is owed. Neighbours
+              come from catalog.work_similarity, which has no per-row provenance
+              column — the graph is wholly corpus-derived today, so this is
+              unconditional rather than driven by a count. */}
+          <CorpusAttribution />
         </section>
       )}
 
@@ -302,5 +324,42 @@ export default async function WorkPage({ params }: Props) {
         </section>
       )}
     </div>
+  );
+}
+
+/**
+ * Where the numbers came from.
+ *
+ * Ratings and "readers also enjoyed" are computed from goodbooks-10k, which is
+ * CC BY-SA. PRD.md section 5 claimed "nothing derived from it is served"; it was,
+ * on every work page. The honest fix is to say so and credit it rather than
+ * pretend otherwise (audit SPEC-1, decisions OQ-1 and OQ-2).
+ *
+ * Under the rating it is conditional on `seed_count`, so a work rated entirely
+ * by readers here carries no borrowed credit.
+ */
+function CorpusAttribution() {
+  return (
+    <p className="mt-2 text-xs text-gray-500 dark:text-gray-500">
+      Includes ratings from{" "}
+      <a
+        href="https://github.com/zygmuntz/goodbooks-10k"
+        className="underline hover:text-gray-700 dark:hover:text-gray-300"
+        rel="noopener noreferrer"
+        target="_blank"
+      >
+        goodbooks-10k
+      </a>
+      , used under{" "}
+      <a
+        href="https://creativecommons.org/licenses/by-sa/4.0/"
+        className="underline hover:text-gray-700 dark:hover:text-gray-300"
+        rel="noopener noreferrer"
+        target="_blank"
+      >
+        CC BY-SA 4.0
+      </a>
+      .
+    </p>
   );
 }

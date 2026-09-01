@@ -1,11 +1,11 @@
 # Status — Life on Books
 
-Where the project actually is, as of 2026-08-20. Written to be read by someone
+Where the project actually is, as of 2026-08-31. Written to be read by someone
 deciding what to do next, so it leans on measurements rather than intentions.
 Every number here was taken from the running system, not estimated.
 
 Companion documents: `ARCHITECTURE.md` for how it works and why,
-`DEPLOYMENT.md` for running it on AWS, `PRD.md` for what to build next.
+`DEPLOYMENT.md` for running it on Azure, `PRD.md` for what to build next.
 
 ---
 
@@ -27,7 +27,8 @@ control rather than tidiness:
 ```
 catalog   rebuilt wholesale from Open Library dumps — nothing irreplaceable
 app       user-owned, survives every ingest
-seed      synthetic / restricted-licence, never served
+seed      synthetic / restricted-licence, never served RAW (see PRD §5:
+          aggregates computed from it are served, with attribution)
 ```
 
 **No foreign keys point from `app` into `catalog`.** A bad ingest must not
@@ -67,7 +68,7 @@ The catalog is the English-language, ISBN-bearing, cover-bearing slice from
 `/shelf/[shelfId]` `/user/[userId]` `/feed` `/map` `/settings` `/wrapped`
 `/wrapped/projections` `/import/[sessionId]` `/about` `/login` `/register`
 
-25 API routes (including liveness and readiness probes). 19 migrations.
+23 API routes (including liveness and readiness probes). 21 migrations.
 
 ### Measured latency, against the real 6.9M-work catalog
 
@@ -90,8 +91,14 @@ cause turned out to be a lossy bitmap. 1.23 s is that query after raising
 
 ## Quality posture
 
-371 tests: 128 unit, 243 integration. Integration runs against real Postgres
+498 tests: 202 unit, 296 integration. Integration runs against real Postgres
 and must run serially — they share a database and truncate between tests.
+
+The 2026-08-31 audit added 127 of those, and the reason is worth stating plainly:
+all five checks were green — typecheck, lint, 128 unit, 243 integration, build —
+while four blockers sat in the tree, including a page that threw on load. A green
+suite here has repeatedly meant "the tests that exist pass", not "the app works".
+See `docs/audit/2026-08-31-findings.md`.
 
 Two things about that database were wrong until recently. `test:all` ran the
 integration project in parallel, so it could never have passed — the two suites
@@ -123,9 +130,17 @@ four-second search page, and a component wired to nothing.
 
 ### What the tests still do not catch
 
-- **Reachability** — now partly covered. `core-loop.test.ts` asserts the work
-  page mounts each component and that the routes accept exactly what those
-  components send. Nothing generalises that check to other pages yet.
+- **Reachability** — largely covered now, mechanically and for every component
+  rather than one page. `conventions.test.ts` asserts that every `/api/...`
+  literal in the source resolves to a route directory and that every method a
+  fetch names is exported by it — so the M3 defect (components left calling
+  routes that had moved) fails the suite rather than 404ing silently for three
+  milestones. It also forbids a client component value-importing `src/server/*`
+  or `@/lib/prisma`, which is the shape that produced the /my-books blocker.
+  `core-loop.test.ts` still hand-types its request BODIES, so field-name drift
+  in a body is not covered; and nothing yet asserts that a given page mounts a
+  given component beyond the work page. The audit found five "built, wired to
+  nothing" cases that remain — see the work-completed doc.
 - **Anything visual.** No screenshot or DOM-level assertions. The dark-mode
   sweep was verified by grep and a build, not by looking.
 - **Behaviour at catalog scale.** Deliberately: plan assertions replace it.
@@ -278,21 +293,32 @@ is the only fix.
 
 ### Smaller, real
 
-- **Rate limiting is per-process.** Correct for one long-lived instance; on
-  serverless the effective limit becomes `limit × instances`.
+- **Rate limiting is per-process**, so it does not hold across replicas.
+  Correct for one long-lived instance; on serverless, or on Container Apps with
+  more than one replica, the effective limit becomes `limit × instances`.
 - **Postgres 14 locally, 16 in CI and in the container topology.** Nothing
   depends on 15+ yet, and the full migration set now applies cleanly to 16.
 - **`shared_buffers` 128 MB** on a machine with 64 GB. Worth raising, but it is
   not the search bottleneck it was assumed to be — see above.
-- **ISBN logic exists twice**, SQL and TypeScript, guarded by a parity test.
-- **Rate limiting is per-process**, so it does not hold across replicas.
-- **`enrichment.test.ts` has a narrow timing dependency.** "only claims jobs
-  that are due" calls `recordFailure` and immediately asserts nothing is
-  claimable. The first backoff is `30 × (0.5 + random())` seconds, so the
-  margin is 15 s at worst — ample normally, and it failed twice in about ten
-  runs while a container build, a 10 GB restore and the Compose stack were
-  running concurrently. Not reproduced in six clean runs since, so the
-  mechanism is inferred from the arithmetic rather than observed.
+- **ISBN logic exists twice**, SQL and TypeScript. The parity test now compares
+  the two implementations of the same thing — `is_valid_isbn13(clean_isbn(x))`,
+  the form the pipeline actually uses — and pins the deliberate contract
+  difference. It previously compared unlike things and its case list contained no
+  separator-bearing ISBN-13, so the boundary agreed by accident.
+- ~~**`enrichment.test.ts` has a narrow timing dependency.**~~ Fixed. The
+  mechanism was confirmed from source, not just arithmetic: the first backoff is
+  `30 × (0.5 + random())`, and `0.5 + random()` spans [0.5, 1.5), so the range is
+  **15–45 s** — not 15–30, which is what a first attempt at pinning it assumed
+  before the suite disproved it. Computed from the **Node** clock, while
+  `claimJobs` compares against Postgres `now()`, so the margin was 15 s at worst
+  plus any app↔DB clock skew. The test now passes an explicit 3600-second
+  backoff, and the jitter it used to depend on is asserted separately without
+  racing it.
+- ~~**`reclaimStale` has a wrong predicate, and no test.**~~ Fixed. It measured
+  from `created_at` — when the job was *enqueued* — so on a real queue a freshly
+  claimed batch was handed to a second worker. A migration added `claimed_at`,
+  set in the same UPDATE that claims the row, and two tests now fail against the
+  old predicate.
 
 ---
 
@@ -321,7 +347,7 @@ those differs from `npm run dev` in a way that has hidden a real failure.
 | catalog dump | **103 s**, 1.7 GB compressed from 10 GB |
 | storage | 11/11 checks against a real blob endpoint, both private and public postures |
 | probes | liveness stays 200 with the database stopped; readiness returns 503 in 2.0 s |
-| release check | `npm run deploy:verify` — 21 assertions over config and schema, 31 with a running app |
+| release check | `npm run deploy:verify` — 21 assertions over config and schema (23 with distinct pooled/direct URLs), 29 with a running app |
 
 The pooled-versus-direct connection split had never been exercised — local
 development points both variables at the same string. Under PgBouncer in

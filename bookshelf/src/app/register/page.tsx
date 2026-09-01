@@ -28,8 +28,16 @@ export default function RegisterPage() {
       return;
     }
 
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters");
+    // registerSchema requires 8 characters plus a letter and a digit. This
+    // checked 6, so a 7-character or all-letter password passed the form and
+    // came back as a 400 — and the placeholder actively said "At least 6".
+    if (password.length < 8) {
+      setError("Password must be at least 8 characters");
+      return;
+    }
+
+    if (!/[a-zA-Z]/.test(password) || !/[0-9]/.test(password)) {
+      setError("Password must contain at least one letter and one number");
       return;
     }
 
@@ -129,7 +137,7 @@ export default function RegisterPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="At least 6 characters"
+                placeholder="At least 8 characters, with a letter and a number"
                 required
               />
 

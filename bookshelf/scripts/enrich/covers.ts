@@ -23,6 +23,7 @@
 import "./env";
 import prisma from "@/lib/prisma";
 import { putObject, isStorageConfigured } from "@/lib/storage/objects";
+import { VALID_IMAGE_TYPES } from "@/lib/storage/file-validation";
 
 const COVER_SOURCE = "openlibrary_covers";
 const MISS_TTL_DAYS = 30;
@@ -106,8 +107,26 @@ async function fetchAndStore(
   // a real cover rather than storing a placeholder under a book's name.
   if (bytes.length < MIN_IMAGE_BYTES) return null;
 
+  // Never persist a remote-supplied Content-Type. This wrote whatever the
+  // upstream sent, straight onto the blob, under `immutable` caching for a year
+  // — on the origin that also serves every user avatar and that receives none of
+  // next.config.ts's headers (no nosniff, no CSP), while sitting in this app's
+  // own img-src allowlist. With `redirect: "follow"` the upstream is not even
+  // fixed. A `text/html` response over MIN_IMAGE_BYTES became a permanently
+  // cached, script-bearing document on our own CDN.
+  //
+  // The two upload routes already validate type and magic bytes; the cover
+  // fetcher checked only length.
+  const declared = response.headers
+    .get("content-type")
+    ?.split(";")[0]
+    .trim()
+    .toLowerCase();
+
+  if (!declared || !VALID_IMAGE_TYPES.includes(declared)) return null;
+
   const file = new File([new Uint8Array(bytes)], `${cover.coverId}-${size}.jpg`, {
-    type: response.headers.get("content-type") ?? "image/jpeg",
+    type: declared,
   });
 
   const { url: storedUrl } = await putObject(

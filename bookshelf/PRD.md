@@ -4,7 +4,7 @@ What to build next, and why. Deliberately short. `STATUS.md` has the evidence
 for every claim of fact here.
 
 > **Open input needed.** Bhavia's requirements are not recorded anywhere in this
-> repository — not in a document, not in 71 commits of history. The priorities
+> repository — not in a document, not anywhere in its history. The priorities
 > below are derived from measured defects and known gaps, which is a different
 > and weaker basis than knowing what a stakeholder actually asked for. **They
 > should be re-ordered once Bhavia's requirements are supplied**, and P0 in
@@ -38,7 +38,7 @@ is table stakes that has to be good enough not to get in the way.
 Six milestones are built: ingest, search, shelves on `work_key`, an enrichment
 worker, the social layer, and Goodreads import with a review queue. A 6.9
 million-work catalog is loaded, 11 GB, with 5.5M ratings behind
-recommendations. 362 tests pass.
+recommendations. 498 tests pass.
 
 The gaps are not features that were forgotten; they are the consequences of
 running at real scale for the first time. See `STATUS.md`.
@@ -61,13 +61,30 @@ A common word took 4.2 s. Raising `work_mem` from the 4 MB default to 32 MB
 brought that to **1.23 s** — the default made the bitmap scan go lossy and
 recheck a million rows. Do that first; it is one setting.
 
-It does not finish the job. With the whole working set cached and zero disk
-reads the query is still 1.2 s, so the rest is CPU and the candidate set has to
-be bounded so ranking never touches more than a fixed number of rows.
-*Done when:* no query in a representative set exceeds 1 s warm, and a plan
-assertion holds the bound.
-*Open question for you:* approximate results for very common words — is that
-acceptable? It is the only way to bound the work.
+It did not finish the job. With the whole working set cached and zero disk reads
+the query was still 1.2 s, so the rest is CPU: rechecking 93,941 rows and
+ranking 10,061.
+
+The candidate set is now bounded (audit OQ-3 answered the open question below:
+approximate results are acceptable). `searchWorks` caps what reaches the ranking
+expression per match strategy — exact and prefix titles get their own
+reservations, the full-text and trigram strategies are capped and ordered by
+`edition_count` — so a query matching more works than the caps ranks the
+most-published ones plus every exact and prefix hit, rather than the whole match
+set.
+
+**Not yet measured against the real catalog**, which is what "done" needs. The
+change is verified for shape and for the property that matters — an exact title
+match with the lowest possible `edition_count` still ranks first among 3,000
+competitors, and removing the exact/prefix reservations fails that test — but
+this repo's own history is full of performance conclusions drawn from fixtures
+that did not survive contact with 6.9M works. The 1-second claim is unproven
+until someone runs it against the live database.
+
+*Done when:* no query in a representative set exceeds 1 s warm **measured on the
+real catalog**, and the plan assertion holds the bound.
+*~~Open question for you:~~ answered: approximate results for very common words
+are acceptable.*
 
 **R2. ~~A catalog rebuild must not take the site down.~~ Done.**
 Normalize builds into parallel tables and swaps them in, so the exclusive lock
@@ -111,7 +128,7 @@ Server allocation with room to spare.
 There is also a release gate now: `npm run deploy:verify` checks connection
 strings are the right way round, extensions, migrations, `work_mem`, the four
 search indexes, the search trigger, statistics, catalog contents, both probes,
-and the CSP's CDN origin — 21 checks, or 31 with a running app to point at. It
+and the CSP's CDN origin — 21 checks, or 29 with a running app to point at. It
 exits non-zero, so it gates a release rather than being a checklist someone
 reads.
 *Needs from you:* an Azure subscription, and `GOOGLE_BOOKS_API_KEY`.
@@ -120,10 +137,15 @@ tier, because that is R1 and not a configuration problem.
 
 ### P2 — worth doing, nothing waits on it
 
-**R6. Make the location features discoverable.** They are the differentiator
-and they are buried on work and author pages. A reader with no account has no
-route to the map. (`WorkLocationsSection` was in fact unreachable until
-recently — built, wired to nothing.)
+**R6. ~~Make the location features discoverable.~~ Largely done.** `/map` was
+not merely buried — it was behind `redirect("/login")`, so a reader with no
+account could not reach it at all. It is public now (audit OQ-4), and the navbar
+renders Home, Discover, Map and About for signed-out visitors, who previously got
+no navigation whatever and, on a phone, not even a search box. A conventions test
+pins the public-page list so making one private is a visible choice.
+
+What is left is placement rather than access: locations still appear only far
+down work and author pages, and nothing on the home page points at the map.
 
 **R7. Generalise the reachability check.** `core-loop.test.ts` now asserts the
 work page mounts its components, but only that page. Three separate components
@@ -132,7 +154,15 @@ all of them at once.
 
 **R8. Housekeeping.** Move rate limiting to a shared store before scaling past
 one replica — Container Apps scales by default, which makes the effective limit
-`limit × replicas`. That is the last item here; the rest are closed. `.env.local`
+`limit × replicas`. The in-process limiter is at least sound now: it was
+quadratic past 10,000 keys and keyed on the client-controlled end of
+`X-Forwarded-For`, both fixed in the 2026-08-31 audit.
+
+Also open from that audit, and not housekeeping: `/my-books` was shipping Prisma
+to the browser and never hydrated (fixed), CI's release gate could never pass
+(fixed), and two documented features — custom shelves and creating a fictional
+world — have working API routes with no UI to reach them. See
+`docs/audit/2026-08-31-work-completed.md` for what was deferred and why. `.env.local`
 is deleted and `npm run dev` works; `work_mem` now travels in a migration
 instead of being set by hand; the test database is built from the migration
 chain rather than `db push`; and all 19 migrations apply cleanly to Postgres 16,
@@ -147,9 +177,24 @@ which local development still does not run.
 - **Filtering the catalog to the rating corpus.** Implemented and left off: it
   would cut 6.9M works to 8,659. Its original purpose was fitting the AWS free
   tier, and the full catalog is 11 GB against a 20 GB limit.
-- **Serving anything derived from seed data.** `seed` is CC-BY-SA and
-  ShareAlike is viral. It stays behind `ENABLE_SEED_DATA` and nothing derived
-  from it is served.
+- **Redistributing the seed corpus.** `seed` is CC-BY-SA and ShareAlike is
+  viral, so the corpus itself is never served or exported.
+
+  This bullet used to say "nothing derived from it is served", and that was
+  false: `ENABLE_SEED_DATA` gates whether `compute-stats` folds `seed.ratings`
+  into its input, but the aggregates it writes land in `catalog.work_rating_stats`
+  and `catalog.work_similarity`, which the work page reads with no flag check —
+  so every star rating and "readers also enjoyed" list was corpus-derived. The
+  flag is a build-time switch on a batch job, not a serve-time switch on a read
+  path, and turning it off changes nothing already computed.
+
+  Decided (audit OQ-1/OQ-2): serving an aggregate is not redistributing the
+  corpus, so the reads are not gated. Both surfaces now carry CC-BY-SA
+  attribution, driven by the `seed_count` column that had been recorded "so the
+  mix is auditable" and read by nothing. Revisit if the licence position
+  changes — the gate would go in `getWorkRating`, `getWorkRatings` and
+  `getSimilarWorks`, and would empty both surfaces until R3 lands a corpus of
+  real ratings.
 
 ## 6. How we will know it is working
 

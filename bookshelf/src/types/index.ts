@@ -3,17 +3,11 @@ import type { User, Shelf, ShelfItem, Review, Follow } from "@prisma/client";
 // Re-export Prisma types
 export type { User, Shelf, ShelfItem, Review, Follow };
 
-/**
- * The subset of a user that may be shown to anyone. Prefer this over `User`
- * in anything that reaches a response — `User` spreads the Prisma row, so it
- * carries `email` and `passwordHash` by default.
- */
-export type PublicUser = Pick<User, "id" | "name" | "avatarUrl">;
-
-// Review with its author's public fields
-export type ReviewWithUser = Review & {
-  user: PublicUser;
-};
+// `PublicUser` and `ReviewWithUser` lived here with no consumer anywhere.
+// PublicUser's comment stated a policy — "prefer this over User in anything that
+// reaches a response" — that nothing imported and nothing enforced; the real
+// projection is `publicUserSelect` in src/server/users.ts. Removed rather than
+// left as documentation of a rule the code does not follow.
 
 // Open Library API types
 export interface OpenLibraryBook {

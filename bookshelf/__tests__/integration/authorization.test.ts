@@ -169,6 +169,66 @@ describe("crowdsourced location ownership", () => {
     ).not.toBeNull();
   });
 
+  /**
+   * PRD section 2: "anyone signed in may edit, uploader-or-moderator may
+   * delete." The moderator half existed for fictional-world maps and for
+   * neither location type, so an abusive pin on the public map could not be
+   * removed by anyone.
+   */
+  it("lets a moderator remove a book location contributed by someone else", async () => {
+    const contributor = await makeUser();
+    const moderator = await makeUser();
+    const work = await makeWork();
+    const location = await makeWorkLocation(work.olKey, contributor.id);
+
+    await deleteWorkLocation(location.id, moderator.id, true);
+
+    expect(
+      await prisma.workLocation.findUnique({ where: { id: location.id } })
+    ).toBeNull();
+  });
+
+  it("lets a moderator remove an author location contributed by someone else", async () => {
+    const contributor = await makeUser();
+    const moderator = await makeUser();
+    const { location } = await makeAuthorLocation(contributor.id);
+
+    await deleteAuthorLocation(location.id, moderator.id, true);
+
+    expect(
+      await prisma.authorLocation.findUnique({ where: { id: location.id } })
+    ).toBeNull();
+  });
+
+  /**
+   * `addedById` is nullable with onDelete: SetNull, deliberately, so a
+   * contribution outlives the account that made it. That left an orphaned pin
+   * undeletable by everyone: NULL matches no userId.
+   */
+  it("lets a moderator remove a location whose contributor is gone", async () => {
+    const contributor = await makeUser();
+    const moderator = await makeUser();
+    const work = await makeWork();
+    const location = await makeWorkLocation(work.olKey, contributor.id);
+
+    await prisma.user.delete({ where: { id: contributor.id } });
+    const orphaned = await prisma.workLocation.findUnique({
+      where: { id: location.id },
+    });
+    expect(orphaned?.addedById).toBeNull();
+
+    // Nobody can claim it, so without the moderator branch it is permanent.
+    await expect(
+      deleteWorkLocation(location.id, moderator.id)
+    ).rejects.toThrow(AuthorizationError);
+
+    await deleteWorkLocation(location.id, moderator.id, true);
+
+    expect(
+      await prisma.workLocation.findUnique({ where: { id: location.id } })
+    ).toBeNull();
+  });
+
   it("lets the contributor remove their own location", async () => {
     const contributor = await makeUser();
     const work = await makeWork();

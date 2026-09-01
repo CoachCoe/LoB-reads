@@ -15,7 +15,7 @@ import { useToast } from "@/components/providers/ToastProvider";
  * looking at a form that appeared to do nothing. They now surface as toasts.
  */
 export interface LocationEndpoint<T> {
-  /** e.g. `/api/books/abc123/locations` */
+  /** e.g. /api/works/OL45804W/locations */
   basePath: string;
   /** Endpoints differ: one returns `{ locations }`, the other a bare array. */
   extractList: (payload: unknown) => T[];
@@ -34,15 +34,21 @@ export function useCrowdsourcedLocations<T extends { id: string; name: string }>
   const refresh = useCallback(async () => {
     try {
       const res = await fetch(basePath);
-      if (res.ok) {
-        setLocations(extractList(await res.json()));
+      if (!res.ok) {
+        // The two writes below already toast, per this hook's own docstring.
+        // The READ did not, so a failed load presented as an authoritative
+        // "No locations added yet" — telling the reader there is nothing here
+        // when the truth is we could not find out.
+        showToast("Could not load locations for this page", "error");
+        return;
       }
-    } catch (error) {
-      console.error("Failed to fetch locations:", error);
+      setLocations(extractList(await res.json()));
+    } catch {
+      showToast("Could not reach the server. Try again.", "error");
     } finally {
       setLoading(false);
     }
-  }, [basePath, extractList]);
+  }, [basePath, extractList, showToast]);
 
   useEffect(() => {
     refresh();

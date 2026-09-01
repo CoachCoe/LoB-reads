@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { DEFAULT_SHELF_NAMES } from "./shelves";
 import { ValidationError } from "@/lib/http/errors";
 import { getWorksByKeys, type WorkSummary } from "./catalog";
 
@@ -16,8 +17,11 @@ const publicUserSelect = {
   createdAt: true,
 } as const;
 
-/** Every new account starts with these three; order is the display order. */
-const DEFAULT_SHELVES = ["Want to Read", "Currently Reading", "Read"];
+// The names live in ./shelves as DEFAULT_SHELF_NAMES. This file used to keep its
+// own copy, and it was the copy that actually created the shelves — so the
+// exported "canonical" list was used only as a type, by progress.ts. Since
+// progress.ts matches exclusive shelves BY NAME, a rename in one place and not
+// the other would have silently broken the exclusive-shelf move.
 
 export async function findUserByEmail(email: string) {
   return prisma.user.findUnique({ where: { email }, select: { id: true } });
@@ -38,7 +42,7 @@ export async function createUserWithDefaultShelves(data: {
     data: {
       ...data,
       shelves: {
-        create: DEFAULT_SHELVES.map((name) => ({ name, isDefault: true })),
+        create: DEFAULT_SHELF_NAMES.map((name) => ({ name, isDefault: true })),
       },
     },
     select: { id: true, email: true, name: true },
@@ -94,6 +98,29 @@ export async function getUserAvatarUrl(userId: string): Promise<string | null> {
     select: { avatarUrl: true },
   });
   return user?.avatarUrl ?? null;
+}
+
+/**
+ * The signed-in reader's own editable profile, including their email.
+ *
+ * This query lived inline in `src/app/(main)/settings/page.tsx`, which made that
+ * page the only one in the app importing prisma directly — contradicting both
+ * README.md ("All database access lives here, never in a route") and
+ * ARCHITECTURE.md, and invisible to conventions.test.ts, which only walked
+ * src/app/api. Email is included because this is the account's own settings
+ * form; `publicUserSelect` deliberately omits it.
+ */
+export async function getOwnProfile(userId: string) {
+  return prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      bio: true,
+      avatarUrl: true,
+    },
+  });
 }
 
 export async function updateUserProfile(

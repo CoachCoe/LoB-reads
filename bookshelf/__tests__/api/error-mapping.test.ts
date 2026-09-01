@@ -2,7 +2,8 @@
  * @jest-environment node
  */
 import { ZodError } from "zod";
-import { errorResponse } from "@/lib/http/api";
+import { Prisma } from "@prisma/client";
+import { errorResponse, declaredBodyTooLarge } from "@/lib/http/api";
 import {
   AuthorizationError,
   NotFoundError,
@@ -80,5 +81,89 @@ describe("errorResponse", () => {
     // The detail must not reach the client, but must reach the logs.
     expect(body.error).not.toContain("email");
     expect(consoleError).toHaveBeenCalledWith("Create user error:", prismaish);
+  });
+});
+
+/**
+ * The Prisma branch used to be covered by a fixture that could not reach it: a
+ * plain `new Error("Unique constraint failed on the fields: (`email`)")` — Prisma
+ * -shaped TEXT. `errorResponse` branches on `instanceof`, never on the message,
+ * so that fixture only ever exercised the 500 fallback while the suite reported
+ * the Prisma contract as covered. These use the real error class.
+ */
+describe("errorResponse with real Prisma errors", () => {
+  const consoleError = jest
+    .spyOn(console, "error")
+    .mockImplementation(() => {});
+
+  afterAll(() => consoleError.mockRestore());
+
+  const prismaError = (code: string) =>
+    new Prisma.PrismaClientKnownRequestError("boom", {
+      code,
+      clientVersion: "5.22.0",
+    });
+
+  it("maps P2025 (record not found) to 404", async () => {
+    const response = errorResponse("ctx", prismaError("P2025"));
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ error: "Not found" });
+  });
+
+  it("maps P2002 (unique constraint) to 409", async () => {
+    const response = errorResponse("ctx", prismaError("P2002"));
+    expect(response.status).toBe(409);
+  });
+
+  it("does not forward the Prisma message, which names columns", async () => {
+    const detailed = new Prisma.PrismaClientKnownRequestError(
+      "Unique constraint failed on the fields: (`email`)",
+      { code: "P2002", clientVersion: "5.22.0" }
+    );
+    const body = await errorResponse("ctx", detailed).json();
+    expect(JSON.stringify(body)).not.toContain("email");
+  });
+
+  it("still answers an unrecognised Prisma code with a fixed 500", async () => {
+    const response = errorResponse("ctx", prismaError("P2003"));
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({
+      error: "Something went wrong. Please try again.",
+    });
+  });
+});
+
+/**
+ * Every upload route checked `file.size`, which is only knowable after
+ * `formData()` has already buffered the whole body into memory. This is the
+ * cheap gate that runs first.
+ */
+describe("declaredBodyTooLarge", () => {
+  const withLength = (value: string | null) =>
+    new Request("https://example.com", {
+      method: "POST",
+      ...(value === null ? {} : { headers: { "content-length": value } }),
+    });
+
+  it("rejects a body larger than the cap", () => {
+    expect(declaredBodyTooLarge(withLength("20971520"), 5 * 1024 * 1024)).toBe(
+      true
+    );
+  });
+
+  it("allows a body at or under the cap", () => {
+    expect(declaredBodyTooLarge(withLength("5242880"), 5 * 1024 * 1024)).toBe(
+      false
+    );
+    expect(declaredBodyTooLarge(withLength("10"), 5 * 1024 * 1024)).toBe(false);
+  });
+
+  it.each([
+    ["absent (a chunked request)", null],
+    ["not a number", "banana"],
+    ["empty", ""],
+  ])("does not reject when content-length is %s", (_label, value) => {
+    // Advisory, not a guarantee — the per-account rate limits bound the rest.
+    expect(declaredBodyTooLarge(withLength(value), 5 * 1024 * 1024)).toBe(false);
   });
 });

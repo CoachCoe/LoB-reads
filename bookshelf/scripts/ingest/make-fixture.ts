@@ -1,6 +1,6 @@
 /**
  * Builds a small, gzipped dump fixture in the real Open Library format so the
- * pipeline can be exercised without downloading ~12GB.
+ * pipeline can be exercised without downloading ~16.5GB.
  *
  * Every gotcha the spec calls out is represented deliberately:
  *   - keys arrive prefixed (/works/OL…, /authors/OL…)

@@ -7,6 +7,7 @@ import {
   recordResult,
   recordFailure,
   releaseRunning,
+  reclaimStale,
   queueStats,
   MAX_ATTEMPTS,
 } from "@/server/enrichment";
@@ -105,10 +106,137 @@ describe("the queue", () => {
     });
 
     const [job] = await claimJobs(1);
-    await recordFailure(job.id, 0, "not yet");
+    // An explicit backoff rather than the jittered default. The default is
+    // `30 * (0.5 + random())` = 15-30 seconds, computed from the NODE clock,
+    // while claimJobs compares against Postgres `now()` — so the margin was 15
+    // seconds at worst plus any app/DB clock skew, and it failed twice in about
+    // ten runs under load. The behaviour under test is the
+    // `next_attempt_at <= now()` filter, which an hour exercises just as well.
+    await recordFailure(job.id, 0, "not yet", 3600);
 
     // Backoff puts it in the future, so a worker running now sees nothing.
     expect(await claimJobs(10)).toHaveLength(0);
+  });
+
+  it("applies a jittered backoff within the documented bounds", async () => {
+    // Kept as a separate, non-racing assertion so the jitter itself stays
+    // covered after the test above stopped depending on it.
+    const work = await makeWork();
+    await enqueue({
+      entityType: "work",
+      entityKey: work.olKey,
+      field: "description",
+      source: "google_books",
+    });
+
+    const [job] = await claimJobs(1);
+    const before = Date.now();
+    await recordFailure(job.id, 0, "jitter");
+
+    const row = await prisma.enrichmentJob.findUnique({
+      where: { id: job.id },
+      select: { nextAttemptAt: true },
+    });
+
+    // `30 * (0.5 + Math.random())`, and `0.5 + random()` spans [0.5, 1.5) — so
+    // the first backoff is 15 to 45 seconds, not 15 to 30. An earlier version of
+    // this test asserted 30 and failed at 40.7s, which is the range doing its
+    // job. STATUS.md only ever stated the lower bound.
+    expect(row?.nextAttemptAt).toBeInstanceOf(Date);
+    const delayMs = (row?.nextAttemptAt as Date).getTime() - before;
+    expect(delayMs).toBeGreaterThanOrEqual(15_000 - 1_000);
+    expect(delayMs).toBeLessThan(45_000 + 1_000);
+  });
+
+  it("caps a backoff the upstream asked for", async () => {
+    const work = await makeWork();
+    await enqueue({
+      entityType: "work",
+      entityKey: work.olKey,
+      field: "description",
+      source: "google_books",
+    });
+
+    const [job] = await claimJobs(1);
+    const before = Date.now();
+    // SEC-15: an upstream Retry-After used to bypass the ceiling entirely,
+    // which stranded the job permanently rather than delaying it.
+    await recordFailure(job.id, 0, "rate limited", 999_999_999);
+
+    const row = await prisma.enrichmentJob.findUnique({
+      where: { id: job.id },
+      select: { nextAttemptAt: true },
+    });
+
+    expect(row?.nextAttemptAt).toBeInstanceOf(Date);
+    expect((row?.nextAttemptAt as Date).getTime() - before).toBeLessThanOrEqual(
+      3_600_000 + 1_000
+    );
+  });
+
+  /**
+   * reclaimStale exists to return jobs abandoned by a killed worker. It used to
+   * compare `created_at`, which is when the job was ENQUEUED — so on a real
+   * queue, where a job is usually older than the cutoff by the time anyone
+   * claims it, it handed a worker's live batch to a second worker: the same
+   * rate-limited third party called twice for one row, and two racing
+   * recordResult calls writing the same catalog.enrichment key.
+   */
+  it("leaves a freshly claimed job alone even when it was enqueued long ago", async () => {
+    const work = await makeWork();
+    await enqueue({
+      entityType: "work",
+      entityKey: work.olKey,
+      field: "description",
+      source: "google_books",
+    });
+
+    // Enqueued 20 minutes ago — entirely normal for a queue with a backlog.
+    await prisma.$executeRaw`
+      UPDATE catalog.enrichment_queue
+         SET created_at = now() - interval '20 minutes'
+       WHERE entity_key = ${work.olKey}
+    `;
+
+    const [job] = await claimJobs(1);
+    expect(job).toBeDefined();
+
+    // Claimed a moment ago, so it is not stale however old the row is.
+    expect(await reclaimStale(15)).toBe(0);
+
+    const after = await prisma.enrichmentJob.findUnique({
+      where: { id: job.id },
+      select: { status: true },
+    });
+    expect(after?.status).toBe("running");
+  });
+
+  it("reclaims a job whose worker died", async () => {
+    const work = await makeWork();
+    await enqueue({
+      entityType: "work",
+      entityKey: work.olKey,
+      field: "description",
+      source: "google_books",
+    });
+
+    const [job] = await claimJobs(1);
+
+    // The worker took it 20 minutes ago and never came back.
+    await prisma.$executeRaw`
+      UPDATE catalog.enrichment_queue
+         SET claimed_at = now() - interval '20 minutes'
+       WHERE id = ${job.id}
+    `;
+
+    expect(await reclaimStale(15)).toBe(1);
+
+    const after = await prisma.enrichmentJob.findUnique({
+      where: { id: job.id },
+      select: { status: true, claimedAt: true },
+    });
+    expect(after?.status).toBe("pending");
+    expect(after?.claimedAt).toBeNull();
   });
 
   it("gives up after MAX_ATTEMPTS instead of cycling forever", async () => {

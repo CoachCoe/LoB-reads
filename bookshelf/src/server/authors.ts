@@ -22,6 +22,15 @@ export interface AuthorLocationData {
   createdAt: Date;
 }
 
+/**
+ * Works listed on an author page.
+ *
+ * The query had an ORDER BY and no LIMIT, so a prolific author — or a
+ * compilation-heavy author key, against 3.2M authors and 6.9M works — meant an
+ * unbounded query and an unbounded DOM.
+ */
+export const AUTHOR_WORKS_LIMIT = 100;
+
 export interface CatalogAuthorDetail {
   olKey: string;
   name: string;
@@ -34,6 +43,13 @@ export interface CatalogAuthorDetail {
     firstPublishYear: number | null;
     coverId: number | null;
   }[];
+  /**
+   * How many works this author has in the catalog, which is not
+   * `works.length` — that is capped at AUTHOR_WORKS_LIMIT. Rendering the capped
+   * figure as the total is the same defect as showing a shelf's preview size as
+   * its book count.
+   */
+  workCount: number;
   locations: AuthorLocationData[];
 }
 
@@ -56,7 +72,7 @@ export async function getAuthorByKey(
 
   if (!author) return null;
 
-  const [works, locations] = await Promise.all([
+  const [works, countRows, locations] = await Promise.all([
     prisma.$queryRaw<CatalogAuthorDetail["works"]>`
       SELECT w.ol_key AS "olKey", w.title,
              w.first_publish_year AS "firstPublishYear",
@@ -66,11 +82,21 @@ export async function getAuthorByKey(
       LEFT JOIN catalog.editions e ON e.ol_key = w.cover_edition_key
       WHERE wa.author_key = ${authorKey}
       ORDER BY w.first_publish_year NULLS LAST, w.title
+      LIMIT ${AUTHOR_WORKS_LIMIT}
+    `,
+    prisma.$queryRaw<{ count: bigint }[]>`
+      SELECT count(*) AS count
+      FROM catalog.work_authors WHERE author_key = ${authorKey}
     `,
     getAuthorLocations(authorKey),
   ]);
 
-  return { ...author, works, locations };
+  return {
+    ...author,
+    works,
+    workCount: Number(countRows[0]?.count ?? works.length),
+    locations,
+  };
 }
 
 /** Resolve a display name to a catalog author, for name-based URLs. */
@@ -145,7 +171,22 @@ export async function addAuthorLocation(
   });
 }
 
-export async function deleteAuthorLocation(locationId: string, userId: string) {
+/**
+ * PRD section 2 states the rule for contributed content: "anyone signed in may
+ * edit, uploader-or-moderator may delete." The moderator half was implemented
+ * for fictional-world maps and for neither location type, so there was no way to
+ * remove an abusive pin from the public map at all.
+ *
+ * It was worse than an inconvenience: `addedById` is nullable with
+ * `onDelete: SetNull`, deliberately, so contributions outlive the account that
+ * made them. Once a contributor deleted their account the column was NULL,
+ * `NULL !== userId` held for every caller, and nobody could ever delete that pin.
+ */
+export async function deleteAuthorLocation(
+  locationId: string,
+  userId: string,
+  isModerator = false
+) {
   const location = await prisma.authorLocation.findUnique({
     where: { id: locationId },
     select: { addedById: true },
@@ -155,7 +196,7 @@ export async function deleteAuthorLocation(locationId: string, userId: string) {
     throw new NotFoundError("Location not found");
   }
 
-  if (location.addedById !== userId) {
+  if (!isModerator && location.addedById !== userId) {
     throw new AuthorizationError(
       "You can only remove locations you contributed"
     );

@@ -8,6 +8,7 @@ import {
   getWorksBySubject,
   countWorksBySubject,
 } from "@/server/catalog";
+import { lastPageFor, resolvePage } from "@/lib/pagination";
 import WorkCard from "@/components/catalog/WorkCard";
 import SearchForm from "./SearchForm";
 
@@ -29,8 +30,9 @@ export default async function SearchPage({ searchParams }: Props) {
   const params = await searchParams;
   const query = (params.q ?? "").trim();
   const subject = (params.subject ?? "").trim();
-  const page = Math.max(1, Number(params.page) || 1);
-  const offset = (page - 1) * PAGE_SIZE;
+  // Requested page, clamped below only. The upper bound needs the count, which
+  // needs a query, so the real clamp happens once `total` is known.
+  const requestedPage = params.page;
 
   // Three modes, and each asks the database a different question.
   //
@@ -45,12 +47,7 @@ export default async function SearchPage({ searchParams }: Props) {
   const browsing = subject.length > 0;
   const searching = query.length > 0;
 
-  const [works, total, subjects] = await Promise.all([
-    browsing
-      ? getWorksBySubject(subject, { limit: PAGE_SIZE, offset })
-      : searching
-        ? searchWorks(query, { limit: PAGE_SIZE, offset })
-        : getPopularWorks(PAGE_SIZE),
+  const [total, subjects] = await Promise.all([
     browsing
       ? countWorksBySubject(subject)
       : searching
@@ -59,8 +56,18 @@ export default async function SearchPage({ searchParams }: Props) {
     browsing || searching ? Promise.resolve<string[]>([]) : getCatalogSubjects(12),
   ]);
 
-  const totalPages =
-    browsing || searching ? Math.ceil(total.count / PAGE_SIZE) : 1;
+  // A search count stops at COUNT_CEILING, so no page beyond it has anything to
+  // show. A subject browse has an exact count and an indexed lookup, so its own
+  // total is the only honest bound.
+  const totalPages = browsing || searching ? lastPageFor(total.count, PAGE_SIZE) : 1;
+  const page = resolvePage(requestedPage, { lastPage: totalPages });
+  const offset = (page - 1) * PAGE_SIZE;
+
+  const works = browsing
+    ? await getWorksBySubject(subject, { limit: PAGE_SIZE, offset })
+    : searching
+      ? await searchWorks(query, { limit: PAGE_SIZE, offset })
+      : await getPopularWorks(PAGE_SIZE);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
@@ -161,6 +168,8 @@ function Pagination({
     subject
       ? `/search?subject=${encodeURIComponent(subject)}&page=${n}`
       : `/search?q=${encodeURIComponent(query)}&page=${n}`;
+  // Display cap only: paging deeper still works by URL, and the resolver bounds
+  // it against the real total. 50 pages of 24 is more than anyone scrolls.
   const capped = Math.min(totalPages, 50);
 
   return (

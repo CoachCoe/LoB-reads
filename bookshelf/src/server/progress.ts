@@ -64,6 +64,33 @@ export async function getOpenSession(userId: string, workKey: string) {
   });
 }
 
+/**
+ * The most recent session for one work, finished or not.
+ *
+ * `getCurrentlyReading` filters `finishedAt: null`, which is right for the
+ * "what am I reading" list and wrong for a single work's panel: after finishing
+ * a book the panel found no session and fell back to "Start Reading", which
+ * then opened a NEW session and moved the work back to Currently Reading —
+ * quietly undoing the finish and double-counting it in getReadingStats and
+ * /wrapped.
+ *
+ * Re-reading a book is legitimate, so the server still allows a new session.
+ * The defect was the UI forgetting, which is what this fixes.
+ */
+export async function getLatestSessionForWork(
+  userId: string,
+  workKey: string
+): Promise<SessionWithWork | null> {
+  const session = await prisma.readingSession.findFirst({
+    where: { userId, workKey },
+    orderBy: [{ startedAt: "desc" }],
+  });
+
+  if (!session) return null;
+  const [hydrated] = await hydrate([session]);
+  return hydrated ?? null;
+}
+
 export async function getCurrentlyReading(
   userId: string
 ): Promise<SessionWithWork[]> {

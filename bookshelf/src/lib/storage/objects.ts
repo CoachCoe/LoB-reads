@@ -93,8 +93,20 @@ export class StorageNotConfiguredError extends Error {
   }
 }
 
+/**
+ * Whether a CDN is in front of the container.
+ *
+ * Captured at module load, like every other setting here. `isStorageConfigured`
+ * used to read `process.env.CDN_URL` at CALL time instead, which made this one
+ * module half-static and half-dynamic — and made its behaviour depend on the
+ * ambient environment rather than on the environment the module was imported
+ * with. That is not theoretical: it is why storage.test.ts passed locally and
+ * failed in CI, where CDN_URL is set for the whole job.
+ */
+const CDN_IN_FRONT = Boolean(process.env.CDN_URL);
+
 export function isStorageConfigured(): boolean {
-  const canBeServed = Boolean(process.env.CDN_URL) || CONTAINER_IS_PUBLIC;
+  const canBeServed = CDN_IN_FRONT || CONTAINER_IS_PUBLIC;
   return Boolean(CONFIGURED && PUBLIC_BASE_URL && canBeServed);
 }
 

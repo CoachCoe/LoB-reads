@@ -1,11 +1,16 @@
 import prisma from "@/lib/prisma";
+import { workExists } from "./catalog";
 
 /**
  * Locations describe the WORK — where Dune is set does not change between
  * printings. Contributions outlive the account that made them, so addedBy is
  * nullable and a deleted account leaves the pin with its attribution severed.
  */
-import { AuthorizationError, NotFoundError } from "@/lib/http/errors";
+import {
+  AuthorizationError,
+  NotFoundError,
+  ValidationError,
+} from "@/lib/http/errors";
 
 export interface WorkLocationData {
   id: string;
@@ -66,6 +71,28 @@ export async function addWorkLocation(
     fictionalWorldId?: string;
   }
 ) {
+  // No foreign key protects this — app holds none into catalog — so the check is
+  // explicit, as ARCHITECTURE.md requires of every write path and as
+  // addWorkToShelf, createOrUpdateReview, startReading and confirmMatch all do.
+  // Without it a bad key becomes a pin that renders on the public map forever as
+  // "Unknown work" (map.ts), indistinguishable from a legitimate casualty of a
+  // narrowed ingest. The sibling author route already validated.
+  if (!(await workExists(workKey))) {
+    throw new NotFoundError("That book is not in the catalog");
+  }
+
+  // `fictionalWorldId` reaches us as any non-empty string, and there IS a
+  // foreign key here, so an unchecked value became a Prisma error and a 500.
+  if (data.fictionalWorldId) {
+    const world = await prisma.fictionalWorld.findUnique({
+      where: { id: data.fictionalWorldId },
+      select: { id: true },
+    });
+    if (!world) {
+      throw new ValidationError("That fictional world does not exist");
+    }
+  }
+
   return prisma.workLocation.create({
     data: {
       workKey,
@@ -89,7 +116,22 @@ export async function addWorkLocation(
   });
 }
 
-export async function deleteWorkLocation(locationId: string, userId: string) {
+/**
+ * PRD section 2 states the rule for contributed content: "anyone signed in may
+ * edit, uploader-or-moderator may delete." The moderator half was implemented
+ * for fictional-world maps and for neither location type, so there was no way to
+ * remove an abusive pin from the public map at all.
+ *
+ * It was worse than an inconvenience: `addedById` is nullable with
+ * `onDelete: SetNull`, deliberately, so contributions outlive the account that
+ * made them. Once a contributor deleted their account the column was NULL,
+ * `NULL !== userId` held for every caller, and nobody could ever delete that pin.
+ */
+export async function deleteWorkLocation(
+  locationId: string,
+  userId: string,
+  isModerator = false
+) {
   const location = await prisma.workLocation.findUnique({
     where: { id: locationId },
     select: { addedById: true },
@@ -99,7 +141,7 @@ export async function deleteWorkLocation(locationId: string, userId: string) {
     throw new NotFoundError("Location not found");
   }
 
-  if (location.addedById !== userId) {
+  if (!isModerator && location.addedById !== userId) {
     throw new AuthorizationError(
       "You can only remove locations you contributed"
     );

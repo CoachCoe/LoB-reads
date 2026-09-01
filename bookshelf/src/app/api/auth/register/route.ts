@@ -26,6 +26,19 @@ export async function POST(request: Request) {
     // you out of reader@x.com.
     const { email, password, name } = await parseBody(request, registerSchema);
 
+    // This tells an unauthenticated caller whether an address is registered,
+    // which the sign-in path deliberately avoids doing (options.ts spends a
+    // dummy bcrypt compare so response timing does not reveal it). Audit SEC-12.
+    //
+    // Kept, as a recorded decision (OQ-6). The alternative is answering
+    // identically either way, which without email verification means a reader
+    // who has simply forgotten they have an account gets a success message and
+    // no account — a real and frequent harm against a modest disclosure. What
+    // made the trade acceptable is that the 5/hour cap above is now real: it was
+    // keyed on the leftmost X-Forwarded-For element, which the client controls,
+    // so it could be defeated by incrementing a header (SEC-2, fixed).
+    //
+    // Revisit if email verification lands, which removes the objection.
     if (await findUserByEmail(email)) {
       return NextResponse.json(
         { error: "User with this email already exists" },

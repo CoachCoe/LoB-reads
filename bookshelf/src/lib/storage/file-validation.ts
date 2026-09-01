@@ -93,13 +93,23 @@ export function sanitizeFilename(filename: string): string {
   // Remove special characters except dots, hyphens, and underscores
   const sanitized = basename.replace(/[^a-zA-Z0-9._-]/g, "_");
 
-  // Limit length
+  // Limit length.
+  //
+  // This used to take `split(".").pop()` as the extension, which returns the
+  // WHOLE string when there is no dot — so `maxLength - ext.length - 1` went
+  // negative, `slice(0, -51)` trimmed from the end instead of truncating, and
+  // the function returned something LONGER than its input. A 150-character
+  // name with no dot came back at 250. The value becomes a blob key, so the
+  // cap has to hold for every input, not just the one the test tried.
   const maxLength = 100;
-  if (sanitized.length > maxLength) {
-    const ext = sanitized.split(".").pop() || "";
-    const name = sanitized.slice(0, maxLength - ext.length - 1);
-    return `${name}.${ext}`;
-  }
+  if (sanitized.length <= maxLength) return sanitized;
 
-  return sanitized;
+  // Keep a plausible extension so the stored object keeps a usable suffix.
+  // Something long enough to be the filename itself is not an extension.
+  const MAX_EXT = 11; // ".jpeg" (5) with room to spare; excludes a long tail
+  const dot = sanitized.lastIndexOf(".");
+  const ext =
+    dot > 0 && sanitized.length - dot <= MAX_EXT ? sanitized.slice(dot) : "";
+
+  return sanitized.slice(0, maxLength - ext.length) + ext;
 }

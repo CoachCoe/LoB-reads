@@ -1,7 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getFictionalWorldById, addMapToWorld } from "@/server/fictional-worlds";
-import { validateImageFile, sanitizeFilename } from "@/lib/storage/file-validation";
+import {
+  validateImageFile,
+  sanitizeFilename,
+  MAX_FILE_SIZE,
+} from "@/lib/storage/file-validation";
+import {
+  declaredBodyTooLarge,
+  errorResponse,
+  payloadTooLarge,
+  unauthorized,
+} from "@/lib/http/api";
 import { checkLimit, LIMITS } from "@/lib/rate-limit";
 import { putObject, isStorageConfigured } from "@/lib/storage/objects";
 
@@ -13,7 +23,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
     const user = await getCurrentUser();
     if (!user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return unauthorized();
     }
 
     // Uploads write to paid blob storage, so cap them per account.
@@ -34,6 +44,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         { error: "Fictional world not found" },
         { status: 404 }
       );
+    }
+
+    // Before formData(), which buffers the entire body.
+    if (declaredBodyTooLarge(request, MAX_FILE_SIZE)) {
+      return payloadTooLarge("File too large. Maximum size is 5MB.");
     }
 
     const formData = await request.formData();
@@ -83,10 +98,6 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     return NextResponse.json({ map });
   } catch (error) {
-    console.error("Error uploading map image:", error);
-    return NextResponse.json(
-      { error: "Failed to upload map image" },
-      { status: 500 }
-    );
+    return errorResponse("Error uploading map image", error);
   }
 }

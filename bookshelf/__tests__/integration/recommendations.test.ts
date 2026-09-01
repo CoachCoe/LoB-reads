@@ -1,6 +1,10 @@
-import { prisma } from "./setup";
+import { prisma, resetDatabase } from "./setup";
 import { getSimilarWorks, getWorkRating, getWorkRatings } from "@/server/catalog";
 import { makeWork } from "./factories";
+import {
+  computeRatingStats,
+  computeSimilarity,
+} from "../../scripts/social/compute-stats";
 
 /**
  * M5 acceptance: "readers also enjoyed" returns non-empty for the top works.
@@ -24,6 +28,14 @@ interface Fixture {
 }
 
 async function seedRatingGraph(): Promise<Fixture> {
+  // beforeAll runs BEFORE the first beforeEach, so without this the fixture
+  // inherits whatever app.reviews rows the previous test FILE happened to leave
+  // — and computeRatingStats builds from app.reviews UNION seed.ratings, so a
+  // single stale review becomes an eighth work in work_rating_stats with no
+  // co-raters and therefore no neighbours. That made
+  // "covers 100% of the top works" fail as 7 of 8, depending purely on which
+  // file ran before this one.
+  await resetDatabase();
   await prisma.$executeRawUnsafe(`TRUNCATE seed.ratings, seed.users CASCADE`);
   await prisma.$executeRawUnsafe(`TRUNCATE catalog.work_similarity`);
   await prisma.$executeRawUnsafe(`TRUNCATE catalog.work_rating_stats`);
@@ -81,47 +93,28 @@ async function seedRatingGraph(): Promise<Fixture> {
   };
 }
 
-/** Mirrors scripts/social/compute-stats.ts with seed data enabled. */
+/**
+ * The shipped aggregates, not a copy of them.
+ *
+ * This used to re-implement compute-stats.ts inline — including the cosine
+ * expression, MIN_CO_RATERS and NEIGHBOURS_PER_WORK. The fixture below is
+ * genuinely discriminating, but it was discriminating against SQL that lived in
+ * this file: changing the shipped score to raw co-occurrence, which is the
+ * documented bug this test exists for, left all of these green.
+ *
+ * What it now catches, verified by mutation: replacing the cosine score
+ * expression with `p.co_raters` fails "recommends within a taste group".
+ *
+ * What it still does not catch, verified the same way: changing the window's
+ * ORDER BY alone. That only decides WHICH neighbours survive the
+ * NEIGHBOURS_PER_WORK cut, and getSimilarWorks reads back ordered by the stored
+ * score — so with a fixture whose works have fewer than 20 neighbours the kept
+ * set is identical either way. Catching it needs a work with more neighbours
+ * than the cut keeps, which is a fixture this test does not build.
+ */
 async function computeAggregates() {
-  await prisma.$executeRawUnsafe(`
-    INSERT INTO catalog.work_rating_stats
-      (work_key, avg_rating, rating_count, seed_count, computed_at)
-    SELECT work_key, round(avg(rating)::numeric, 2)::float8, count(*)::int,
-           count(*) FILTER (WHERE is_seed)::int, now()
-    FROM (
-      SELECT work_key, rating, false AS is_seed FROM app.reviews
-      UNION ALL SELECT work_key, rating, true FROM seed.ratings
-    ) r
-    GROUP BY work_key
-    ON CONFLICT (work_key) DO UPDATE
-      SET avg_rating = EXCLUDED.avg_rating, rating_count = EXCLUDED.rating_count
-  `);
-
-  await prisma.$executeRawUnsafe(`
-    WITH liked AS (
-      SELECT "userId" AS user_id, work_key FROM app.reviews WHERE rating >= 4
-      UNION ALL SELECT user_id, work_key FROM seed.ratings WHERE rating >= 4
-    ),
-    popularity AS (
-      SELECT work_key, count(DISTINCT user_id)::float8 AS raters FROM liked GROUP BY work_key
-    ),
-    pairs AS (
-      SELECT a.work_key, b.work_key AS similar_work_key, count(*)::int AS co_raters
-      FROM liked a JOIN liked b ON b.user_id = a.user_id AND b.work_key <> a.work_key
-      GROUP BY a.work_key, b.work_key HAVING count(*) >= 3
-    ),
-    scored AS (
-      SELECT p.*, p.co_raters / sqrt(pa.raters * pb.raters) AS score,
-             row_number() OVER (PARTITION BY p.work_key
-               ORDER BY p.co_raters / sqrt(pa.raters * pb.raters) DESC,
-                        p.co_raters DESC, p.similar_work_key) AS rank
-      FROM pairs p
-      JOIN popularity pa ON pa.work_key = p.work_key
-      JOIN popularity pb ON pb.work_key = p.similar_work_key
-    )
-    INSERT INTO catalog.work_similarity (work_key, similar_work_key, score, co_raters, computed_at)
-    SELECT work_key, similar_work_key, score, co_raters, now() FROM scored WHERE rank <= 20
-  `);
+  await computeRatingStats({ includeSeed: true });
+  await computeSimilarity({ includeSeed: true });
 }
 
 let fixture: Fixture;
@@ -221,6 +214,27 @@ describe("community ratings", () => {
     const ratings = await getWorkRatings([...fixture.groupA, fixture.popular]);
     expect(ratings.size).toBe(fixture.groupA.length + 1);
     expect(ratings.get(fixture.popular)!.count).toBe(READERS_PER_GROUP * 2);
+  });
+});
+
+describe("provenance is visible", () => {
+  /**
+   * `seed_count` has always been in the schema — "so the mix is auditable" —
+   * and nothing read it, so there was no way to tell how much of a rating came
+   * from the CC-BY-SA corpus rather than from readers here. The work page's
+   * attribution is driven by this number, so it has to reach the caller.
+   */
+  it("reports how much of a rating came from the seed corpus", async () => {
+    const stats = await getWorkRating(fixture.popular);
+
+    expect(stats).not.toBeNull();
+    expect(stats!.count).toBeGreaterThan(0);
+    expect(stats!.seedCount).toBe(stats!.count);
+  });
+
+  it("reports it for a bulk fetch too", async () => {
+    const map = await getWorkRatings([fixture.popular]);
+    expect(map.get(fixture.popular)?.seedCount).toBeGreaterThan(0);
   });
 });
 

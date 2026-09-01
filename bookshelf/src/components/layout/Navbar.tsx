@@ -24,6 +24,26 @@ import Avatar from "@/components/ui/Avatar";
 import Button from "@/components/ui/Button";
 import { useTheme } from "@/components/providers/ThemeProvider";
 
+/**
+ * One list, rendered twice (desktop row, mobile drawer).
+ *
+ * Every link used to live inside `{isAuthenticated && (`, so a signed-out
+ * visitor got no navigation at all — and on mobile not even a search box, since
+ * the desktop form is `hidden md:flex` and the menu button was inside the same
+ * branch. PRD section 2 describes a reader who "arrives with no account, follows
+ * a subject or an author"; they had no route to /search, /map or /about except
+ * by typing a URL.
+ */
+const NAV_LINKS = [
+  { href: "/", label: "Home", icon: Home, authOnly: false },
+  { href: "/my-books", label: "My Books", icon: BookMarked, authOnly: true },
+  { href: "/feed", label: "Feed", icon: Users, authOnly: true },
+  { href: "/search", label: "Discover", icon: Search, authOnly: false },
+  { href: "/map", label: "Map", icon: MapPin, authOnly: false },
+  { href: "/wrapped", label: "Wrapped", icon: Sparkles, authOnly: true, accent: true },
+  { href: "/about", label: "About", icon: Info, authOnly: false },
+] as const;
+
 export default function Navbar() {
   const { data: session, status } = useSession();
   const { theme, toggleTheme } = useTheme();
@@ -54,59 +74,27 @@ export default function Navbar() {
             </Link>
 
             {/* Desktop nav links */}
-            {isAuthenticated && (
-              <div className="hidden md:flex ml-8 space-x-1">
-                <Link
-                  href="/"
-                  className="flex items-center gap-1.5 px-4 py-2 text-[var(--foreground-secondary)] hover:text-[var(--foreground)] rounded-full hover:bg-[var(--border-light)] transition-all text-sm font-medium"
-                >
-                  <Home className="h-4 w-4" />
-                  Home
-                </Link>
-                <Link
-                  href="/my-books"
-                  className="flex items-center gap-1.5 px-4 py-2 text-[var(--foreground-secondary)] hover:text-[var(--foreground)] rounded-full hover:bg-[var(--border-light)] transition-all text-sm font-medium"
-                >
-                  <BookMarked className="h-4 w-4" />
-                  My Books
-                </Link>
-                <Link
-                  href="/feed"
-                  className="flex items-center gap-1.5 px-4 py-2 text-[var(--foreground-secondary)] hover:text-[var(--foreground)] rounded-full hover:bg-[var(--border-light)] transition-all text-sm font-medium"
-                >
-                  <Users className="h-4 w-4" />
-                  Feed
-                </Link>
-                <Link
-                  href="/search"
-                  className="flex items-center gap-1.5 px-4 py-2 text-[var(--foreground-secondary)] hover:text-[var(--foreground)] rounded-full hover:bg-[var(--border-light)] transition-all text-sm font-medium"
-                >
-                  <Search className="h-4 w-4" />
-                  Discover
-                </Link>
-                <Link
-                  href="/map"
-                  className="flex items-center gap-1.5 px-4 py-2 text-[var(--foreground-secondary)] hover:text-[var(--foreground)] rounded-full hover:bg-[var(--border-light)] transition-all text-sm font-medium"
-                >
-                  <MapPin className="h-4 w-4" />
-                  Map
-                </Link>
-                <Link
-                  href="/wrapped"
-                  className="flex items-center gap-1.5 px-4 py-2 text-[#D4A017] hover:bg-[#D4A017]/10 rounded-full transition-all text-sm font-medium"
-                >
-                  <Sparkles className="h-4 w-4" />
-                  Wrapped
-                </Link>
-                <Link
-                  href="/about"
-                  className="flex items-center gap-1.5 px-4 py-2 text-[var(--foreground-secondary)] hover:text-[var(--foreground)] rounded-full hover:bg-[var(--border-light)] transition-all text-sm font-medium"
-                >
-                  <Info className="h-4 w-4" />
-                  About
-                </Link>
-              </div>
-            )}
+            <div className="hidden md:flex ml-8 space-x-1">
+              {NAV_LINKS.filter((l) => !l.authOnly || isAuthenticated).map(
+                (link) => {
+                  const Icon = link.icon;
+                  return (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      className={
+                        "accent" in link && link.accent
+                          ? "flex items-center gap-1.5 px-4 py-2 text-[#D4A017] hover:bg-[#D4A017]/10 rounded-full transition-all text-sm font-medium"
+                          : "flex items-center gap-1.5 px-4 py-2 text-[var(--foreground-secondary)] hover:text-[var(--foreground)] rounded-full hover:bg-[var(--border-light)] transition-all text-sm font-medium"
+                      }
+                    >
+                      <Icon className="h-4 w-4" />
+                      {link.label}
+                    </Link>
+                  );
+                }
+              )}
+            </div>
           </div>
 
           {/* Search bar - Desktop */}
@@ -211,17 +199,6 @@ export default function Navbar() {
                   )}
                 </div>
 
-                {/* Mobile menu button */}
-                <button
-                  onClick={() => setIsMenuOpen(!isMenuOpen)}
-                  className="md:hidden p-2 rounded-full hover:bg-[var(--border-light)] transition-colors"
-                >
-                  {isMenuOpen ? (
-                    <X className="h-5 w-5 text-[var(--foreground)]" />
-                  ) : (
-                    <Menu className="h-5 w-5 text-[var(--foreground)]" />
-                  )}
-                </button>
               </>
             ) : (
               <div className="flex items-center gap-2">
@@ -235,12 +212,29 @@ export default function Navbar() {
                 </Link>
               </div>
             )}
+
+            {/* Mobile menu button — outside the session branch. It used to sit
+                inside it, so a signed-out visitor on a phone had no menu, and
+                the desktop search form is hidden below `md`: logo, theme toggle,
+                Sign In, Sign Up, and no way to reach anything. */}
+            <button
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              className="md:hidden p-2 rounded-full hover:bg-[var(--border-light)] transition-colors"
+              aria-label={isMenuOpen ? "Close menu" : "Open menu"}
+              aria-expanded={isMenuOpen}
+            >
+              {isMenuOpen ? (
+                <X className="h-5 w-5 text-[var(--foreground)]" />
+              ) : (
+                <Menu className="h-5 w-5 text-[var(--foreground)]" />
+              )}
+            </button>
           </div>
         </div>
       </div>
 
       {/* Mobile menu */}
-      {isMenuOpen && isAuthenticated && (
+      {isMenuOpen && (
         <div className="md:hidden border-t border-[var(--border)] bg-[var(--card-bg)]">
           <div className="px-4 py-4">
             <form action="/search" className="mb-4">
@@ -255,63 +249,26 @@ export default function Navbar() {
               </div>
             </form>
             <div className="space-y-1">
-              <Link
-                href="/"
-                className="flex items-center gap-3 px-4 py-3 text-[var(--foreground)] hover:bg-[var(--border-light)] rounded-xl transition-all"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                <Home className="h-5 w-5" />
-                Home
-              </Link>
-              <Link
-                href="/my-books"
-                className="flex items-center gap-3 px-4 py-3 text-[var(--foreground)] hover:bg-[var(--border-light)] rounded-xl transition-all"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                <BookMarked className="h-5 w-5" />
-                My Books
-              </Link>
-
-              <Link
-                href="/feed"
-                className="flex items-center gap-3 px-4 py-3 text-[var(--foreground)] hover:bg-[var(--border-light)] rounded-xl transition-all"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                <Users className="h-5 w-5" />
-                Feed
-              </Link>
-              <Link
-                href="/search"
-                className="flex items-center gap-3 px-4 py-3 text-[var(--foreground)] hover:bg-[var(--border-light)] rounded-xl transition-all"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                <Search className="h-5 w-5" />
-                Discover
-              </Link>
-              <Link
-                href="/map"
-                className="flex items-center gap-3 px-4 py-3 text-[var(--foreground)] hover:bg-[var(--border-light)] rounded-xl transition-all"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                <MapPin className="h-5 w-5" />
-                Map
-              </Link>
-              <Link
-                href="/wrapped"
-                className="flex items-center gap-3 px-4 py-3 text-[#D4A017] hover:bg-[#D4A017]/5 rounded-xl transition-all"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                <Sparkles className="h-5 w-5" />
-                Your Wrapped
-              </Link>
-              <Link
-                href="/about"
-                className="flex items-center gap-3 px-4 py-3 text-[var(--foreground)] hover:bg-[var(--border-light)] rounded-xl transition-all"
-                onClick={() => setIsMenuOpen(false)}
-              >
-                <Info className="h-5 w-5" />
-                About
-              </Link>
+              {NAV_LINKS.filter((l) => !l.authOnly || isAuthenticated).map(
+                (link) => {
+                  const Icon = link.icon;
+                  return (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      className={
+                        "accent" in link && link.accent
+                          ? "flex items-center gap-3 px-4 py-3 text-[#D4A017] hover:bg-[#D4A017]/5 rounded-xl transition-all"
+                          : "flex items-center gap-3 px-4 py-3 text-[var(--foreground)] hover:bg-[var(--border-light)] rounded-xl transition-all"
+                      }
+                      onClick={() => setIsMenuOpen(false)}
+                    >
+                      <Icon className="h-5 w-5" />
+                      {link.label}
+                    </Link>
+                  );
+                }
+              )}
             </div>
           </div>
         </div>

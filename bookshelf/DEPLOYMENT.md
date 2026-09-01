@@ -83,7 +83,7 @@ pg_dump -d bookshelf -Fd -j 8 --schema=catalog -f catalog-dump
 # against Azure — restore only the catalog; migrations own everything else.
 # Drop the schema migrations created first, or the restore collides with it.
 psql "<direct url>" -c "DROP SCHEMA catalog CASCADE;"
-pg_restore -h <server>.postgres.database.azure.com -U <user> -d <db> \
+pg_restore -j 8 -h <server>.postgres.database.azure.com -U <user> -d <db> \
   -j 4 --no-owner --no-privileges catalog-dump
 psql "<direct url>" -c "ANALYZE catalog.works; ANALYZE catalog.editions;"
 ```
@@ -416,7 +416,8 @@ NEXTAUTH_URL="https://…" NEXTAUTH_SECRET="…" CDN_URL="https://…" \
 BASE_URL="https://…" npm run deploy:verify
 ```
 
-It runs 21 checks over configuration and schema, and ten more against the
+It runs 21 checks over configuration and schema (23 when the pooled and
+direct URLs differ), and eight more against the
 running app when `BASE_URL` is set. Each corresponds to something that has gone
 wrong or would go wrong silently: the two connection strings the right way round and the
 pooled one carrying `pgbouncer=true`; `NEXTAUTH_SECRET` not a placeholder;

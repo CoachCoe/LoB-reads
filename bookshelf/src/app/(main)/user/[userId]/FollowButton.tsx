@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { UserPlus, UserMinus } from "lucide-react";
 import Button from "@/components/ui/Button";
+import { useToast } from "@/components/providers/ToastProvider";
 
 interface FollowButtonProps {
   userId: string;
@@ -15,6 +16,7 @@ export default function FollowButton({
 }: FollowButtonProps) {
   const [isFollowing, setIsFollowing] = useState(initialFollowing);
   const [isLoading, setIsLoading] = useState(false);
+  const { showToast } = useToast();
 
   const handleToggleFollow = async () => {
     setIsLoading(true);
@@ -23,11 +25,19 @@ export default function FollowButton({
         method: isFollowing ? "DELETE" : "POST",
       });
 
-      if (response.ok) {
-        setIsFollowing(!isFollowing);
+      if (!response.ok) {
+        // Both server functions used bare create/delete, so a duplicate follow
+        // or a stale unfollow arrived here as a 500 that this handler discarded
+        // — the button simply refused to change state with no explanation.
+        // errorResponse now maps those to 409/404; this makes them visible.
+        const data = await response.json().catch(() => ({}));
+        showToast(data.error ?? "Could not update who you follow", "error");
+        return;
       }
-    } catch (error) {
-      console.error("Failed to toggle follow:", error);
+
+      setIsFollowing(!isFollowing);
+    } catch {
+      showToast("Could not reach the server. Try again.", "error");
     } finally {
       setIsLoading(false);
     }

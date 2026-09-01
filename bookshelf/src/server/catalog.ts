@@ -82,20 +82,61 @@ const W_FTS = 10; // full-text relevance
 const W_TRIGRAM = 5; // fuzzy similarity, covers typos
 const W_POPULARITY = 0.5; // edition count, as a tiebreak only
 
-export async function searchWorks(
+/**
+ * How many works may reach the ranking expression, per match strategy.
+ *
+ * R1: "the candidate set has to be bounded so ranking never touches more than a
+ * fixed number of rows". "Fiction" matched 10,061 works and every one of them
+ * was scored with `ts_rank_cd` + `similarity` before the LIMIT threw all but 24
+ * away, and STATUS.md's measurements show the remaining cost after `work_mem`
+ * was raised is CPU, not I/O — "rechecking 93,941 rows and ranking 10,061".
+ *
+ * Bounded per strategy rather than overall, because a single popularity-ordered
+ * cap would drop an exact title match that happens to have few editions — which
+ * is the one result a title search must never lose. Exact and prefix matches get
+ * their own reservations; the broad strategies are capped and ordered by
+ * edition_count, which an index already supplies.
+ *
+ * This is the approximation PRD R1 asks about and OQ-3 approved: for a query
+ * matching more works than these caps, the ranking sees the most-published ones
+ * plus every exact and prefix hit, not the whole match set.
+ */
+const CANDIDATES_EXACT = 100;
+const CANDIDATES_PREFIX = 200;
+const CANDIDATES_FTS = 1000;
+const CANDIDATES_TRIGRAM = 200;
+
+export function searchWorksSql(
   query: string,
   { limit = 20, offset = 0 }: { limit?: number; offset?: number } = {}
-): Promise<WorkSearchResult[]> {
-  const trimmed = query.trim();
-  if (trimmed.length === 0) return [];
-
+): Prisma.Sql {
   // `websearch_to_tsquery` handles quoted phrases and OR without throwing on
   // punctuation the way `to_tsquery` does with raw user input.
-  return prisma.$queryRaw<WorkSearchResult[]>`
+  return Prisma.sql`
     WITH q AS (
       SELECT
-        websearch_to_tsquery('english', unaccent(${trimmed})) AS tsq,
-        unaccent(lower(${trimmed}))                           AS norm
+        websearch_to_tsquery('english', unaccent(${query})) AS tsq,
+        unaccent(lower(${query}))                           AS norm
+    ),
+    candidates AS (
+      (SELECT w.ol_key FROM catalog.works w CROSS JOIN q
+        WHERE w.title_norm = q.norm
+        LIMIT ${CANDIDATES_EXACT})
+      UNION
+      (SELECT w.ol_key FROM catalog.works w CROSS JOIN q
+        WHERE w.title_norm LIKE q.norm || '%'
+        ORDER BY w.edition_count DESC
+        LIMIT ${CANDIDATES_PREFIX})
+      UNION
+      (SELECT w.ol_key FROM catalog.works w CROSS JOIN q
+        WHERE w.search_vector @@ q.tsq
+        ORDER BY w.edition_count DESC
+        LIMIT ${CANDIDATES_FTS})
+      UNION
+      (SELECT w.ol_key FROM catalog.works w CROSS JOIN q
+        WHERE w.title_norm % q.norm
+        ORDER BY w.edition_count DESC
+        LIMIT ${CANDIDATES_TRIGRAM})
     )
     SELECT
       w.ol_key                                   AS "olKey",
@@ -113,14 +154,25 @@ export async function searchWorks(
         + similarity(w.title_norm, q.norm) * ${W_TRIGRAM}
         + ln(1 + w.edition_count) * ${W_POPULARITY}
       )::double precision                        AS rank
-    FROM catalog.works w
+    FROM candidates c
+    JOIN catalog.works w ON w.ol_key = c.ol_key
     CROSS JOIN q
     LEFT JOIN catalog.editions e ON e.ol_key = w.cover_edition_key
-    WHERE w.search_vector @@ q.tsq
-       OR w.title_norm % q.norm
     ORDER BY rank DESC, w.edition_count DESC, w.ol_key
     LIMIT ${limit} OFFSET ${offset}
   `;
+}
+
+export async function searchWorks(
+  query: string,
+  { limit = 20, offset = 0 }: { limit?: number; offset?: number } = {}
+): Promise<WorkSearchResult[]> {
+  const trimmed = query.trim();
+  if (trimmed.length === 0) return [];
+
+  return prisma.$queryRaw<WorkSearchResult[]>(
+    searchWorksSql(trimmed, { limit, offset })
+  );
 }
 
 /**
@@ -146,14 +198,20 @@ export const COUNT_CEILING = 1000;
  * one of them. An indexed array containment lookup answers the question the
  * subject chips are actually asking, and does it in milliseconds.
  */
-export async function getWorksBySubject(
+/**
+ * The statements behind the hot read paths, as `Prisma.Sql` rather than inline
+ * tagged templates.
+ *
+ * read-path-plans.test.ts used to EXPLAIN SQL typed into the test, so it
+ * asserted the shape of its own copy: three of the four bugs its header lists
+ * could be reintroduced here while it stayed green. Exporting the builder means
+ * the plan assertions run against the statement this module actually sends.
+ */
+export function worksBySubjectSql(
   subject: string,
   { limit = 24, offset = 0 }: { limit?: number; offset?: number } = {}
-): Promise<WorkSearchResult[]> {
-  const trimmed = subject.trim();
-  if (trimmed.length === 0) return [];
-
-  return prisma.$queryRaw<WorkSearchResult[]>`
+): Prisma.Sql {
+  return Prisma.sql`
     SELECT
       w.ol_key             AS "olKey",
       w.title,
@@ -166,10 +224,22 @@ export async function getWorksBySubject(
       0::double precision  AS rank
     FROM catalog.works w
     LEFT JOIN catalog.editions e ON e.ol_key = w.cover_edition_key
-    WHERE w.subjects @> ARRAY[${trimmed}]::text[]
+    WHERE w.subjects @> ARRAY[${subject}]::text[]
     ORDER BY w.edition_count DESC, w.ol_key
     LIMIT ${limit} OFFSET ${offset}
   `;
+}
+
+export async function getWorksBySubject(
+  subject: string,
+  { limit = 24, offset = 0 }: { limit?: number; offset?: number } = {}
+): Promise<WorkSearchResult[]> {
+  const trimmed = subject.trim();
+  if (trimmed.length === 0) return [];
+
+  return prisma.$queryRaw<WorkSearchResult[]>(
+    worksBySubjectSql(trimmed, { limit, offset })
+  );
 }
 
 /**
@@ -202,26 +272,32 @@ export async function countWorksBySubject(
   return { count, atCeiling: count >= COUNT_CEILING };
 }
 
-export async function countWorkMatches(
-  query: string
-): Promise<{ count: number; atCeiling: boolean }> {
-  const trimmed = query.trim();
-  if (trimmed.length === 0) return { count: 0, atCeiling: false };
-
-  const rows = await prisma.$queryRaw<{ count: bigint }[]>`
+export function countWorkMatchesSql(query: string): Prisma.Sql {
+  return Prisma.sql`
     SELECT count(*) AS count FROM (
       SELECT 1
       FROM catalog.works w
       CROSS JOIN (
         SELECT
-          websearch_to_tsquery('english', unaccent(${trimmed})) AS tsq,
-          unaccent(lower(${trimmed}))                           AS norm
+          websearch_to_tsquery('english', unaccent(${query})) AS tsq,
+          unaccent(lower(${query}))                           AS norm
       ) q
       WHERE w.search_vector @@ q.tsq
          OR w.title_norm % q.norm
       LIMIT ${COUNT_CEILING}
     ) matched
   `;
+}
+
+export async function countWorkMatches(
+  query: string
+): Promise<{ count: number; atCeiling: boolean }> {
+  const trimmed = query.trim();
+  if (trimmed.length === 0) return { count: 0, atCeiling: false };
+
+  const rows = await prisma.$queryRaw<{ count: bigint }[]>(
+    countWorkMatchesSql(trimmed)
+  );
   const count = Number(rows[0]?.count ?? 0);
   return { count, atCeiling: count >= COUNT_CEILING };
 }
@@ -320,29 +396,9 @@ export async function getOtherWorksByAuthor(
   `;
 }
 
-/**
- * Cover image URL.
- *
- * Prefers a copy stored in our own object storage, falling back to hotlinking
- * Open Library for anything the cover worker has not reached yet. Pass
- * `storedUrl` wherever it is available; the fallback exists so a fresh catalog
- * still shows covers before the first backfill has run.
- *
- * The `id` form rather than `isbn`: we already hold cover_id, and the isbn form
- * is more aggressively rate limited.
- */
-export function coverUrl(
-  coverId: number | null | undefined,
-  size: "S" | "M" | "L" = "M",
-  storedUrl?: string | null
-): string | null {
-  if (storedUrl) return storedUrl;
-  return coverId ? `https://covers.openlibrary.org/b/id/${coverId}-${size}.jpg` : null;
-}
-
 /** Browse entry point: the works with the most editions. */
-export async function getPopularWorks(limit = 24): Promise<WorkSearchResult[]> {
-  return prisma.$queryRaw<WorkSearchResult[]>`
+export function popularWorksSql(limit = 24): Prisma.Sql {
+  return Prisma.sql`
     SELECT
       w.ol_key             AS "olKey",
       w.title,
@@ -360,6 +416,10 @@ export async function getPopularWorks(limit = 24): Promise<WorkSearchResult[]> {
   `;
 }
 
+export async function getPopularWorks(limit = 24): Promise<WorkSearchResult[]> {
+  return prisma.$queryRaw<WorkSearchResult[]>(popularWorksSql(limit));
+}
+
 /** Distinct subjects across the catalog, for browse filters. */
 /**
  * The most common subjects, for the discover page.
@@ -374,17 +434,20 @@ export async function getPopularWorks(limit = 24): Promise<WorkSearchResult[]> {
  * aggregate: that fallback would be invisible on a small catalog and would
  * reintroduce the four-second page the moment the table went missing.
  */
-export async function getCatalogSubjects(limit = 40): Promise<string[]> {
-  const rows = await prisma.$queryRaw<{ subject: string }[]>`
+export function catalogSubjectsSql(limit = 40): Prisma.Sql {
+  return Prisma.sql`
     SELECT subject FROM catalog.subject_counts
     ORDER BY work_count DESC, subject
     LIMIT ${limit}
   `;
-  return rows.map((r) => r.subject);
 }
 
-/** Kept for the explain-plan check in the performance test. */
-export const SEARCH_SQL_MARKER = Prisma.sql`catalog.works`;
+export async function getCatalogSubjects(limit = 40): Promise<string[]> {
+  const rows = await prisma.$queryRaw<{ subject: string }[]>(
+    catalogSubjectsSql(limit)
+  );
+  return rows.map((r) => r.subject);
+}
 
 /**
  * Summary of a work, as shown in a shelf, a review or an activity feed.
@@ -492,12 +555,21 @@ export async function findWorkKeyByTitleAuthor(
   title: string,
   author: string
 ): Promise<string | null> {
+  // `author` is bound safely, but binding does not disarm LIKE's own
+  // metacharacters. An author of "%" made the predicate `LIKE '%%%'`, matching
+  // every row — which switched off the author half of the match on the
+  // AUTO-APPLY path: imports.ts feeds this straight to applyRow and marks the
+  // row `matched`/`title_author` with no review. A crafted CSV row could
+  // therefore attach to whichever work shares the title and has the most
+  // editions, regardless of who wrote it. Backslash is Postgres's default LIKE
+  // escape, so the clause needs no ESCAPE addition.
+  const authorPattern = `%${author.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+
   const rows = await prisma.$queryRaw<{ olKey: string }[]>`
     SELECT ol_key AS "olKey"
     FROM catalog.works
     WHERE title_norm = unaccent(lower(${title}))
-      AND coalesce(author_names_norm, '') LIKE
-          '%' || unaccent(lower(${author})) || '%'
+      AND coalesce(author_names_norm, '') LIKE unaccent(lower(${authorPattern}))
     ORDER BY edition_count DESC
     LIMIT 1
   `;
@@ -507,6 +579,16 @@ export async function findWorkKeyByTitleAuthor(
 export interface RatingStats {
   average: number;
   count: number;
+  /**
+   * How many of `count` came from the CC-BY-SA corpus in `seed` rather than
+   * from readers here.
+   *
+   * The column has always existed — its schema comment says it is there "so the
+   * mix is auditable" — and nothing read it, so there was no way to tell how
+   * much of a rating was borrowed. Attribution needs that answer, and so does
+   * anyone deciding whether the corpus is still carrying the feature.
+   */
+  seedCount: number;
 }
 
 /**
@@ -517,7 +599,7 @@ export async function getWorkRating(
   workKey: string
 ): Promise<RatingStats | null> {
   const rows = await prisma.$queryRaw<RatingStats[]>`
-    SELECT avg_rating AS average, rating_count AS count
+    SELECT avg_rating AS average, rating_count AS count, seed_count AS "seedCount"
     FROM catalog.work_rating_stats WHERE work_key = ${workKey}
   `;
   return rows[0] ?? null;
@@ -531,10 +613,16 @@ export async function getWorkRatings(
   if (unique.length === 0) return new Map();
 
   const rows = await prisma.$queryRaw<(RatingStats & { workKey: string })[]>`
-    SELECT work_key AS "workKey", avg_rating AS average, rating_count AS count
+    SELECT work_key AS "workKey", avg_rating AS average, rating_count AS count,
+           seed_count AS "seedCount"
     FROM catalog.work_rating_stats WHERE work_key = ANY(${unique})
   `;
-  return new Map(rows.map((r) => [r.workKey, { average: r.average, count: r.count }]));
+  return new Map(
+    rows.map((r) => [
+      r.workKey,
+      { average: r.average, count: r.count, seedCount: r.seedCount },
+    ])
+  );
 }
 
 /**

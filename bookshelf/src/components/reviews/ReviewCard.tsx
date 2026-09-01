@@ -37,15 +37,23 @@ export default function ReviewCard({ review, showWork = false }: ReviewCardProps
             >
               {review.user.name}
             </Link>
-            {showWork && review.work && (
+            {showWork && (
               <>
                 <span className="text-[var(--foreground-secondary)]">reviewed</span>
-                <Link
-                  href={`/work/${review.workKey}`}
-                  className="font-medium text-[var(--foreground)] hover:text-[#D4A017]"
-                >
-                  {review.work?.title ?? "Unknown work"}
-                </Link>
+                {review.work ? (
+                  <Link
+                    href={`/work/${review.workKey}`}
+                    className="font-medium text-[var(--foreground)] hover:text-[#D4A017]"
+                  >
+                    {review.work.title}
+                  </Link>
+                ) : (
+                  // Not a link: the work page 404s on a key the current ingest
+                  // dropped, and this is the normal case, not an error.
+                  <span className="text-[var(--foreground-secondary)] italic">
+                    a book no longer in the catalog
+                  </span>
+                )}
               </>
             )}
           </div>

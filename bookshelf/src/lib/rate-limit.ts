@@ -37,7 +37,10 @@ export interface RateLimitResult {
   retryAfterSeconds: number;
 }
 
-/** Buckets are pruned opportunistically; this bounds the work per call. */
+/**
+ * Hard cap on tracked keys. Eviction is least-recently-touched and O(1)
+ * amortised — see the note in `checkLimit`.
+ */
 const MAX_BUCKETS = 10_000;
 
 export function checkLimit(
@@ -51,8 +54,15 @@ export function checkLimit(
     (timestamp) => timestamp > windowStart
   );
 
+  // Touch the key on every call, allowed or not, so an actively-limited client
+  // stays at the back of the eviction order and cannot be flushed out by a flood
+  // of unrelated keys. A Map iterates in insertion order, so delete-then-set is
+  // what moves an entry to the back.
+  buckets.delete(key);
+
   if (hits.length >= limit) {
     const oldest = hits[0];
+    buckets.set(key, hits);
     return {
       allowed: false,
       remaining: 0,
@@ -67,12 +77,19 @@ export function checkLimit(
   buckets.set(key, hits);
 
   // Keep the map from growing without bound in a long-lived process.
-  if (buckets.size > MAX_BUCKETS) {
-    for (const [bucketKey, timestamps] of buckets) {
-      if (timestamps.every((timestamp) => timestamp <= windowStart)) {
-        buckets.delete(bucketKey);
-      }
-    }
+  //
+  // This used to scan EVERY bucket on every call once size passed MAX_BUCKETS,
+  // deleting only buckets whose every timestamp had already aged out. With
+  // LIMITS.register's one-hour window a fresh bucket is unprunable for an hour,
+  // so the map grew monotonically while each call got more expensive: measured
+  // at 10ms for the first 9,000 keys, then ~2,000ms per 5,000 once the map
+  // reached 25,000 — quadratic total work, reachable unauthenticated by
+  // rotating X-Forwarded-For against /api/auth/register. Evicting the
+  // least-recently-touched entry is O(1) amortised and bounds memory outright.
+  while (buckets.size > MAX_BUCKETS) {
+    const oldest = buckets.keys().next().value;
+    if (oldest === undefined) break;
+    buckets.delete(oldest);
   }
 
   return {
@@ -83,16 +100,58 @@ export function checkLimit(
 }
 
 /**
- * Best-effort client identifier for rate-limit keys. Falls back to a shared
- * bucket when no forwarding header is present, which is the safe direction:
- * unknown clients share a limit rather than each getting their own.
+ * How many proxies we sit behind and therefore trust to have appended to
+ * `X-Forwarded-For`. One by default: Azure Front Door, per DEPLOYMENT.md.
+ *
+ * Set to 0 to ignore the header entirely, which is the right answer when
+ * nothing trusted is in front of the app.
  */
-export function getClientIp(request: Request): string {
-  const forwardedFor = request.headers.get("x-forwarded-for");
-  if (forwardedFor) {
-    return forwardedFor.split(",")[0].trim();
+function trustedProxyHops(): number {
+  const configured = Number(process.env.TRUSTED_PROXY_HOPS ?? 1);
+  return Number.isInteger(configured) && configured >= 0 ? configured : 1;
+}
+
+/**
+ * Client identifier for rate-limit keys, derived from the part of
+ * `X-Forwarded-For` a trusted proxy actually wrote.
+ *
+ * This used to take the LEFTMOST element, which is precisely the part the client
+ * controls: a proxy *appends* the peer it saw, so `XFF: 1.2.3.4` arriving from
+ * an attacker becomes `1.2.3.4, <real peer>`. Reading the left meant every
+ * IP-keyed limit could be defeated by incrementing a header — unbounded
+ * registrations against LIMITS.register, and `login:ip:*`, whose whole job is to
+ * stop one host guessing across many accounts, reduced to nothing.
+ *
+ * Counting from the right instead: with one trusted hop the last element is what
+ * that proxy observed, which the client cannot forge.
+ *
+ * Falls back to a shared bucket when there is nothing usable, which is the safe
+ * direction — unknown clients share a limit rather than each getting their own.
+ */
+export function clientIpFromHeaders(
+  forwardedFor: string | null | undefined,
+  realIp?: string | null
+): string {
+  const hops = trustedProxyHops();
+
+  if (hops > 0) {
+    const chain = (forwardedFor ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+
+    if (chain.length >= hops) return chain[chain.length - hops];
   }
-  return request.headers.get("x-real-ip") ?? "unknown";
+
+  return realIp?.trim() || "unknown";
+}
+
+/** `clientIpFromHeaders` for a standard `Request`. */
+export function getClientIp(request: Request): string {
+  return clientIpFromHeaders(
+    request.headers.get("x-forwarded-for"),
+    request.headers.get("x-real-ip")
+  );
 }
 
 /** Shared limits, kept here so they're visible in one place. */

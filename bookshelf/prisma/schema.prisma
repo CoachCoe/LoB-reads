@@ -3,7 +3,8 @@ generator client {
   // Three schemas, per the data-layer spec:
   //   catalog — rebuilt monthly from Open Library dumps, disposable
   //   app     — user-owned data, survives every ingest
-  //   seed    — synthetic / restricted-licence, never served
+  //   seed    — synthetic / restricted-licence, never served raw; aggregates
+  //             derived from it are served with attribution (PRD section 5)
   previewFeatures = ["multiSchema"]
   // The container needs an engine for its own platform, not the developer's.
   // Both Debian targets are listed because the image is built on arm64 locally
@@ -511,6 +512,9 @@ model EnrichmentJob {
   status        String    @default("pending") // pending | running | done | failed
   attempts      Int       @default(0)
   nextAttemptAt DateTime  @default(now()) @map("next_attempt_at") @db.Timestamptz(6)
+  /// Set when a worker claims the job. reclaimStale measures from here, not
+  /// from createdAt, which is when the job was enqueued.
+  claimedAt     DateTime? @map("claimed_at") @db.Timestamptz(6)
   lastError     String?   @map("last_error")
   createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   completedAt   DateTime? @map("completed_at") @db.Timestamptz(6)
@@ -641,6 +645,8 @@ model ImportRow {
 
   /// matched | needs_review | confirmed | skipped | failed
   status    String  @default("needs_review")
+  /// Why a `failed` row did not apply. Null for every other status.
+  error     String?
   /// How it was resolved: isbn | title_author | confirmed_by_user
   matchedBy String? @map("matched_by")
   workKey   String? @map("work_key")

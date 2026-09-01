@@ -1,4 +1,14 @@
 import { prisma } from "./setup";
+import {
+  catalogSubjectsSql,
+  countWorkMatchesSql,
+  popularWorksSql,
+  searchWorks,
+  searchWorksSql,
+  worksBySubjectSql,
+  COUNT_CEILING,
+} from "@/server/catalog";
+import type { Prisma } from "@prisma/client";
 
 /**
  * The hot read paths must not scan or sort the whole catalog.
@@ -33,6 +43,18 @@ async function plan(sql: string, params: unknown[] = []): Promise<string> {
   );
   return rows.map((r) => r["QUERY PLAN"]).join("\n");
 }
+
+/**
+ * EXPLAIN the statement the application actually sends.
+ *
+ * These assertions used to run against SQL typed into this file, which meant
+ * they described the shape of their own copy: getCatalogSubjects could be
+ * changed back to the live aggregate, getPopularWorks to an unindexable ORDER
+ * BY, and getWorksBySubject to a text LIKE, and every test here stayed green.
+ * The builders come from src/server/catalog.ts, so a change there is a change
+ * to what is explained.
+ */
+const planOf = (sql: Prisma.Sql) => plan(sql.text, sql.values as unknown[]);
 
 /**
  * The plan with sequential scans priced out of the way.
@@ -120,26 +142,29 @@ describe("the discover page must not read the whole catalog", () => {
     // The bug: ORDER BY edition_count with no index sorted all 6.9M rows,
     // spilling ~480MB of temp files, to return 24. The giveaway is not the
     // time, it is that the number of rows read has nothing to do with 24.
-    const explained = await plan(`
-      SELECT w.ol_key
-      FROM catalog.works w
-      LEFT JOIN catalog.editions e ON e.ol_key = w.cover_edition_key
-      ORDER BY w.edition_count DESC, w.ol_key
-      LIMIT 24
-    `);
+    const explained = await planOf(popularWorksSql(24));
 
     expect(explained).toContain("works_edition_count_ol_key_idx");
+
+    // No Sort node at all. This is the assertion that discriminates, and it is
+    // scale-independent: if the index supplies the ordering there is nothing to
+    // sort, and if it cannot, Postgres adds a Sort above the scan — which at
+    // 3,000 rows is a quicksort in 25kB and at 6.9M was the 480MB external
+    // merge. Asserting only "external merge" or a row bound tested the symptom
+    // at a size where the symptom does not appear: changing the ORDER BY to
+    // `w.edition_count DESC, w.title` left both green.
+    expect(explained).not.toMatch(/\bSort\b/);
     expect(explained).not.toMatch(/external merge/i);
+    // worksRowsRead returns 0 when no line matches, so a bound on its own would
+    // pass vacuously if the plan's node labels ever changed.
+    expect(worksRowsRead(explained)).toBeGreaterThan(0);
     expect(worksRowsRead(explained)).toBeLessThan(200);
   });
 
   it("reads subject chips from the precomputed counts, not from works", async () => {
     // The bug: this aggregated every work's subjects on every request, and the
     // search page paid for it too and threw the result away.
-    const explained = await plan(`
-      SELECT subject FROM catalog.subject_counts
-      ORDER BY work_count DESC, subject LIMIT 12
-    `);
+    const explained = await planOf(catalogSubjectsSql(12));
 
     expect(explained).not.toMatch(/on works\b/);
     expect(explained).not.toMatch(/HashAggregate/i);
@@ -150,22 +175,13 @@ describe("search must stay bounded by what it returns", () => {
   it("counts matches up to a ceiling rather than reading them all", async () => {
     // The bug: an exact count read every matching row. "Fiction" matched
     // 735,956 works and took 5.5 seconds, twice per page load.
-    const explained = await plan(
-      `
-      SELECT count(*) FROM (
-        SELECT 1 FROM catalog.works w
-        CROSS JOIN (SELECT websearch_to_tsquery('english', unaccent($1)) AS tsq,
-                           unaccent(lower($1)) AS norm) q
-        WHERE w.search_vector @@ q.tsq OR w.title_norm % q.norm
-        LIMIT 1000
-      ) t
-      `,
-      ["Fixture"]
-    );
+    const explained = await planOf(countWorkMatchesSql("Fixture"));
 
-    // Every fixture row matches "Fixture", so an unbounded count would read
-    // all 3,000. The ceiling must stop it at 1,000.
-    expect(worksRowsRead(explained)).toBeLessThanOrEqual(1000);
+    // Every fixture row matches "Fixture", so an unbounded count would read all
+    // 3,000. The ceiling must stop it. COUNT_CEILING comes from the module too:
+    // this test used to hardcode 1000 beside its own copy of the LIMIT.
+    expect(worksRowsRead(explained)).toBeGreaterThan(0);
+    expect(worksRowsRead(explained)).toBeLessThanOrEqual(COUNT_CEILING);
   });
 
   it("does not match works through their subjects", async () => {
@@ -193,6 +209,16 @@ describe("search must stay bounded by what it returns", () => {
     );
 
     expect(explained).toContain("works_subjects_idx");
+
+    // The isolated predicate is deliberate (see above), but on its own it is
+    // another copy — it would keep passing if getWorksBySubject stopped using
+    // containment. Tie the two together. This is a text assertion and says so:
+    // EXPLAINing the full browse cannot discriminate, because its ORDER BY on
+    // edition_count lets the planner walk that index and filter as it goes,
+    // whichever predicate is used.
+    expect(worksBySubjectSql("Fixture Subject 3").text).toContain(
+      "subjects @> ARRAY"
+    );
   });
 
   it("cannot use that index if subjects are matched as text", async () => {
@@ -205,6 +231,60 @@ describe("search must stay bounded by what it returns", () => {
     );
 
     expect(explained).not.toContain("works_subjects_idx");
+  });
+});
+
+/**
+ * R1: "the candidate set has to be bounded so ranking never touches more than a
+ * fixed number of rows". PRD.md asked whether approximate results are
+ * acceptable for very common words; audit OQ-3 answered yes.
+ *
+ * The bound is per strategy, not one popularity-ordered cap over everything,
+ * precisely so the approximation cannot cost a result a title search must never
+ * lose. That is the property worth testing — a plan assertion alone would not
+ * catch a bound that quietly drops exact matches.
+ */
+describe("search bounds what it ranks without losing exact matches", () => {
+  it("caps the rows that reach the ranking expression", async () => {
+    // All 3,000 fixture works match "Fixture". Without a bound every one of them
+    // is scored with ts_rank_cd + similarity before LIMIT discards all but 24.
+    const explained = await planOf(searchWorksSql("Fixture", { limit: 24 }));
+
+    // Each candidate strategy carries its own Limit, so the union feeding the
+    // ranking is a constant regardless of how many works match.
+    const limitNodes = explained.match(/->\s+Limit/g) ?? [];
+    expect(limitNodes.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("still ranks an exact title first when thousands of works match", async () => {
+    // edition_count 1 — the least popular thing in the fixture. A single
+    // popularity-ordered cap would drop it below 1,000 better-published works
+    // that also match, and the reader would search a title they own and not
+    // find it.
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO catalog.works
+        (ol_key, title, author_names, subjects, edition_count, first_publish_year)
+      VALUES ('OLPLANEXACTW', 'Plan Fixture', 'Obscure Author',
+              ARRAY['Fixture Subject 1'], 1, 1990)
+      ON CONFLICT (ol_key) DO NOTHING
+    `);
+
+    try {
+      const results = await searchWorks("Plan Fixture", { limit: 5 });
+      expect(results[0]?.olKey).toBe("OLPLANEXACTW");
+    } finally {
+      await prisma.$executeRawUnsafe(
+        `DELETE FROM catalog.works WHERE ol_key = 'OLPLANEXACTW'`
+      );
+    }
+  });
+
+  it("returns fewer results than match, which is the approximation", async () => {
+    // Not a defect: OQ-3 accepted it. Pinned so the trade is visible rather
+    // than discovered.
+    const results = await searchWorks("Fixture", { limit: 24 });
+    expect(results.length).toBe(24);
+    expect(results.every((r) => r.olKey.startsWith("OLPLAN"))).toBe(true);
   });
 });
 

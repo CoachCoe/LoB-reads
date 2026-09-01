@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { normalizeEmail } from "@/lib/auth/email";
 
 /**
  * Request shapes for the API routes.
@@ -40,9 +41,12 @@ export const coordinatesSchema = z.object({
 export const registerSchema = z.object({
   email: z
     .string()
-    .trim()
-    .toLowerCase()
-    .max(254, "Email address is too long") // RFC 5321
+    // email.ts states that "every lookup must go through this function"; the
+    // registration path re-implemented it as .trim().toLowerCase() instead. They
+    // agreed, but the stated invariant did not hold, and a change to the
+    // canonical helper would not have reached the write path.
+    .transform(normalizeEmail)
+    .pipe(z.string().max(254, "Email address is too long")) // RFC 5321
     .refine((v) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v), {
       message: "Please enter a valid email address",
     }),
@@ -98,10 +102,58 @@ export const updateProgressSchema = z
     { message: "Either action or currentPage is required" }
   );
 
+/**
+ * Hosts an avatar may point at, besides our own storage origin.
+ *
+ * `api.dicebear.com` is the generator the app itself uses — at registration
+ * (`api/auth/register/route.ts`) and from the settings form.
+ */
+const AVATAR_HOSTS = ["api.dicebear.com"];
+
+/**
+ * An avatar URL, constrained to somewhere we control.
+ *
+ * `z.url()` on its own is not a scheme check: verified against the installed
+ * zod, it accepts `javascript:alert(1)`, `data:text/html,...` and `vbscript:`.
+ * The value is rendered straight into an `<img src>` by `Avatar.tsx` with
+ * `unoptimized`, which skips the image optimizer and therefore bypasses
+ * `next.config.ts`'s `remotePatterns` altogether — so nothing else was
+ * constraining it but the CSP.
+ *
+ * It also allowed a reader to set their own `avatarUrl` to another user's
+ * stored blob URL and have their next upload delete that blob, since the
+ * deletion only checked the origin. The upload route now scopes deletion to the
+ * caller's own prefix as well; this is the other half.
+ */
+const avatarUrlSchema = z
+  .url()
+  .max(2000)
+  .refine((value) => {
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch {
+      return false;
+    }
+
+    // Our own storage origin, whatever scheme it is configured with — the local
+    // blob emulator is served over http.
+    const configured = process.env.CDN_URL;
+    if (configured) {
+      try {
+        if (parsed.origin === new URL(configured).origin) return true;
+      } catch {
+        // A malformed CDN_URL is a deployment problem, not this value's.
+      }
+    }
+
+    return parsed.protocol === "https:" && AVATAR_HOSTS.includes(parsed.hostname);
+  }, "Avatar URL must point at our own storage or the avatar generator");
+
 export const updateProfileSchema = z.object({
   name: shortText("Name").optional(),
   bio: optionalLongText,
-  avatarUrl: z.url().max(2000).optional().nullable(),
+  avatarUrl: avatarUrlSchema.optional().nullable(),
 });
 
 export const createFictionalWorldSchema = z.object({

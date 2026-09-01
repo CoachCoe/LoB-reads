@@ -15,7 +15,14 @@ export default async function WrappedPage({ searchParams }: Props) {
   }
 
   const params = await searchParams;
-  const year = params.year ? parseInt(params.year) : new Date().getFullYear();
+  // `parseInt("abc")` is NaN, which became `new Date(NaN, 0, 1)` — an Invalid
+  // Date passed straight into a Prisma gte/lte, answering 500.
+  const thisYear = new Date().getFullYear();
+  const requested = Number(params.year);
+  const year =
+    Number.isInteger(requested) && requested >= 1900 && requested <= thisYear
+      ? requested
+      : thisYear;
   const stats = await getWrappedStats(user.id, year);
 
   return <WrappedExperience stats={stats} userName={user.name || "Reader"} />;

@@ -13,7 +13,7 @@ import {
   ChevronDown,
   Minus
 } from "lucide-react";
-import { WrappedProjections } from "@/server/wrapped";
+import type { WrappedProjections } from "@/server/wrapped";
 import Card, { CardContent, CardHeader } from "@/components/ui/Card";
 
 interface ProjectionsViewProps {

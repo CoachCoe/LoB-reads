@@ -4,7 +4,7 @@ import { BookOpen, Star, BookMarked, CheckCircle2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import Avatar from "@/components/ui/Avatar";
 import StarRating from "@/components/ui/StarRating";
-import { coverUrl } from "@/server/catalog";
+import { coverUrl } from "@/lib/covers";
 import type { FeedItem } from "@/server/users";
 
 /**

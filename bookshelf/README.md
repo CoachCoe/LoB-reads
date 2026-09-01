@@ -116,7 +116,7 @@ A modern reading tracker for book lovers. Track your library, discover new stori
 
    ```bash
    npm run ingest:acquire         # ~16.5GB of Open Library dumps
-   npm run ingest                 # ~2h41m, needs the tuning in DEPLOYMENT.md
+   npm run ingest                 # normalize ~2h41m + ~20m staging; see DEPLOYMENT.md
    ```
 
    The full ingest produces 6.9M works in an 11GB database, and wants a
@@ -199,8 +199,9 @@ src/
 │   ├── login/             # Login page
 │   └── register/          # Registration page
 ├── components/            # React components
+│   ├── authors/ catalog/ import/ locations/ map/ reviews/ shelves/ social/
 │   ├── layout/           # Navbar, Footer
-│   ├── providers/        # Context providers (Theme)
+│   ├── providers/        # Session, Theme, Toast
 │   └── ui/               # Reusable UI components
 ├── lib/                   # Grouped by concern: auth/, http/, sources/, storage/
 ├── server/               # All database access lives here, never in a route
@@ -229,7 +230,8 @@ src/
 - `npm run storage:smoke` - Verify object storage against a real blob endpoint
 - `npm run deploy:verify` - Assert a deployment's invariants and exit non-zero
   if any fail, so it can gate a release. 21 checks over configuration and
-  schema, plus ten more against the running app when `BASE_URL` is set
+  schema (23 when the pooled and direct URLs differ), plus eight more against
+  the running app when `BASE_URL` is set
 
 ## API Routes
 
@@ -253,23 +255,27 @@ shelves and reviews were repointed from `app.books` onto catalog work keys.
 ### Authors
 - `GET/POST/DELETE /api/authors/[authorName]/locations` - Crowdsourced author locations
 
+> These exist because a client component fetches them. Anything a page can read
+> server-side is not a route — there is no public API here, so a handler with no
+> in-app caller is a leftover rather than a product. Six were removed on that
+> basis in the 2026-08-31 audit.
+
 ### Shelves
 - `GET/POST /api/shelves` - List/create shelves
-- `GET/PUT/DELETE /api/shelves/[shelfId]` - Manage shelf
+- `DELETE /api/shelves/[shelfId]` - Delete a custom shelf
 - `POST/DELETE /api/shelves/[shelfId]/works` - Add/remove a work
 
 ### Reviews
-- `GET/POST /api/reviews` - List/create reviews
-- `PUT/DELETE /api/reviews/[reviewId]` - Update/delete review
+- `POST /api/reviews` - Create or update your review of a work
+- `DELETE /api/reviews/[reviewId]` - Delete review (a re-POST updates)
 
 ### Users
-- `GET/PUT /api/users/[userId]` - Get/update user profile
+- `PATCH /api/users/[userId]` - Update your own profile
 - `POST /api/users/[userId]/avatar` - Upload avatar
-- `POST /api/users/[userId]/follow` - Follow/unfollow user
-- `GET /api/users/feed` - Get activity feed
+- `POST/DELETE /api/users/[userId]/follow` - Follow or unfollow
 
 ### Progress
-- `POST /api/progress` - Update reading progress
+- `GET/POST /api/progress` - Read open sessions, or update reading progress
 
 ### Import
 - `POST /api/import/goodreads` - Import Goodreads CSV
@@ -278,7 +284,6 @@ shelves and reviews were repointed from `app.books` onto catalog work keys.
 
 ### Fictional Worlds
 - `GET/POST /api/fictional-worlds` - List/create worlds
-- `GET /api/fictional-worlds/[worldId]` - Get world details
 - `POST /api/fictional-worlds/[worldId]/upload` - Upload world map
 - `DELETE/PATCH /api/fictional-worlds/maps/[mapId]` - Delete or update map details
 

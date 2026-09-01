@@ -4,6 +4,7 @@ import {
   createAuthorLocationSchema,
   createWorkLocationSchema,
   createShelfSchema,
+  updateProfileSchema,
 } from "@/lib/http/schemas";
 
 /**
@@ -143,5 +144,49 @@ describe("createShelfSchema", () => {
     expect(() =>
       createShelfSchema.parse({ name: "x".repeat(201) })
     ).toThrow();
+  });
+});
+
+/**
+ * `updateProfileSchema` had no test at all, which is how `avatarUrl` stayed a
+ * bare `z.url()`. Two separate problems rode on that: `z.url()` is not a scheme
+ * check, and `Avatar.tsx` renders the value with `unoptimized`, which bypasses
+ * next.config.ts's remotePatterns — so the CSP was the only thing left. And
+ * because the field accepted any URL, a reader could point their own profile at
+ * another user's stored blob and have their next upload delete it.
+ */
+describe("updateProfileSchema", () => {
+  const parse = (avatarUrl: string) => updateProfileSchema.parse({ avatarUrl });
+
+  it("accepts the avatar generator the app itself uses", () => {
+    const url = "https://api.dicebear.com/7.x/avataaars/svg?seed=Alice";
+    expect(parse(url).avatarUrl).toBe(url);
+  });
+
+  it.each([
+    ["a javascript: URL", "javascript:alert(1)"],
+    ["a data: URL", "data:text/html,<script>alert(1)</script>"],
+    ["a vbscript: URL", "vbscript:msgbox"],
+    ["an arbitrary third-party host", "https://evil.example/track.png"],
+    ["http on an allowed host", "http://api.dicebear.com/7.x/x.svg"],
+  ])("rejects %s", (_label, url) => {
+    expect(() => parse(url)).toThrow();
+  });
+
+  it("accepts our own storage origin when one is configured", () => {
+    const previous = process.env.CDN_URL;
+    process.env.CDN_URL = "https://cdn.example.invalid";
+    try {
+      const url = "https://cdn.example.invalid/avatars/u1/1700000000-pic.jpg";
+      expect(parse(url).avatarUrl).toBe(url);
+    } finally {
+      if (previous === undefined) delete process.env.CDN_URL;
+      else process.env.CDN_URL = previous;
+    }
+  });
+
+  it("still allows clearing the avatar", () => {
+    expect(updateProfileSchema.parse({ avatarUrl: null }).avatarUrl).toBeNull();
+    expect(updateProfileSchema.parse({}).avatarUrl).toBeUndefined();
   });
 });
