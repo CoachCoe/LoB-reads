@@ -11,7 +11,14 @@ export default function ProgressBar({
   showLabel = true,
   className = "",
 }: ProgressBarProps) {
-  const percentage = max > 0 ? Math.round((value / max) * 100) : 0;
+  // Clamped, the way server/progress.ts percentOf already clamps. With the
+  // numerator and denominator taken from the same session this should not
+  // trigger, but a width over 100% overflows its own track and a bar cannot be
+  // more than full. Belt to the caller's braces.
+  const percentage =
+    max > 0
+      ? Math.min(100, Math.max(0, Math.round((value / max) * 100)))
+      : 0;
 
   return (
     <div className={`w-full ${className}`}>
