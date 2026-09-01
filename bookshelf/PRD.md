@@ -61,13 +61,30 @@ A common word took 4.2 s. Raising `work_mem` from the 4 MB default to 32 MB
 brought that to **1.23 s** — the default made the bitmap scan go lossy and
 recheck a million rows. Do that first; it is one setting.
 
-It does not finish the job. With the whole working set cached and zero disk
-reads the query is still 1.2 s, so the rest is CPU and the candidate set has to
-be bounded so ranking never touches more than a fixed number of rows.
-*Done when:* no query in a representative set exceeds 1 s warm, and a plan
-assertion holds the bound.
-*Open question for you:* approximate results for very common words — is that
-acceptable? It is the only way to bound the work.
+It did not finish the job. With the whole working set cached and zero disk reads
+the query was still 1.2 s, so the rest is CPU: rechecking 93,941 rows and
+ranking 10,061.
+
+The candidate set is now bounded (audit OQ-3 answered the open question below:
+approximate results are acceptable). `searchWorks` caps what reaches the ranking
+expression per match strategy — exact and prefix titles get their own
+reservations, the full-text and trigram strategies are capped and ordered by
+`edition_count` — so a query matching more works than the caps ranks the
+most-published ones plus every exact and prefix hit, rather than the whole match
+set.
+
+**Not yet measured against the real catalog**, which is what "done" needs. The
+change is verified for shape and for the property that matters — an exact title
+match with the lowest possible `edition_count` still ranks first among 3,000
+competitors, and removing the exact/prefix reservations fails that test — but
+this repo's own history is full of performance conclusions drawn from fixtures
+that did not survive contact with 6.9M works. The 1-second claim is unproven
+until someone runs it against the live database.
+
+*Done when:* no query in a representative set exceeds 1 s warm **measured on the
+real catalog**, and the plan assertion holds the bound.
+*~~Open question for you:~~ answered: approximate results for very common words
+are acceptable.*
 
 **R2. ~~A catalog rebuild must not take the site down.~~ Done.**
 Normalize builds into parallel tables and swaps them in, so the exclusive lock

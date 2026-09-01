@@ -82,20 +82,61 @@ const W_FTS = 10; // full-text relevance
 const W_TRIGRAM = 5; // fuzzy similarity, covers typos
 const W_POPULARITY = 0.5; // edition count, as a tiebreak only
 
-export async function searchWorks(
+/**
+ * How many works may reach the ranking expression, per match strategy.
+ *
+ * R1: "the candidate set has to be bounded so ranking never touches more than a
+ * fixed number of rows". "Fiction" matched 10,061 works and every one of them
+ * was scored with `ts_rank_cd` + `similarity` before the LIMIT threw all but 24
+ * away, and STATUS.md's measurements show the remaining cost after `work_mem`
+ * was raised is CPU, not I/O — "rechecking 93,941 rows and ranking 10,061".
+ *
+ * Bounded per strategy rather than overall, because a single popularity-ordered
+ * cap would drop an exact title match that happens to have few editions — which
+ * is the one result a title search must never lose. Exact and prefix matches get
+ * their own reservations; the broad strategies are capped and ordered by
+ * edition_count, which an index already supplies.
+ *
+ * This is the approximation PRD R1 asks about and OQ-3 approved: for a query
+ * matching more works than these caps, the ranking sees the most-published ones
+ * plus every exact and prefix hit, not the whole match set.
+ */
+const CANDIDATES_EXACT = 100;
+const CANDIDATES_PREFIX = 200;
+const CANDIDATES_FTS = 1000;
+const CANDIDATES_TRIGRAM = 200;
+
+export function searchWorksSql(
   query: string,
   { limit = 20, offset = 0 }: { limit?: number; offset?: number } = {}
-): Promise<WorkSearchResult[]> {
-  const trimmed = query.trim();
-  if (trimmed.length === 0) return [];
-
+): Prisma.Sql {
   // `websearch_to_tsquery` handles quoted phrases and OR without throwing on
   // punctuation the way `to_tsquery` does with raw user input.
-  return prisma.$queryRaw<WorkSearchResult[]>`
+  return Prisma.sql`
     WITH q AS (
       SELECT
-        websearch_to_tsquery('english', unaccent(${trimmed})) AS tsq,
-        unaccent(lower(${trimmed}))                           AS norm
+        websearch_to_tsquery('english', unaccent(${query})) AS tsq,
+        unaccent(lower(${query}))                           AS norm
+    ),
+    candidates AS (
+      (SELECT w.ol_key FROM catalog.works w CROSS JOIN q
+        WHERE w.title_norm = q.norm
+        LIMIT ${CANDIDATES_EXACT})
+      UNION
+      (SELECT w.ol_key FROM catalog.works w CROSS JOIN q
+        WHERE w.title_norm LIKE q.norm || '%'
+        ORDER BY w.edition_count DESC
+        LIMIT ${CANDIDATES_PREFIX})
+      UNION
+      (SELECT w.ol_key FROM catalog.works w CROSS JOIN q
+        WHERE w.search_vector @@ q.tsq
+        ORDER BY w.edition_count DESC
+        LIMIT ${CANDIDATES_FTS})
+      UNION
+      (SELECT w.ol_key FROM catalog.works w CROSS JOIN q
+        WHERE w.title_norm % q.norm
+        ORDER BY w.edition_count DESC
+        LIMIT ${CANDIDATES_TRIGRAM})
     )
     SELECT
       w.ol_key                                   AS "olKey",
@@ -113,14 +154,25 @@ export async function searchWorks(
         + similarity(w.title_norm, q.norm) * ${W_TRIGRAM}
         + ln(1 + w.edition_count) * ${W_POPULARITY}
       )::double precision                        AS rank
-    FROM catalog.works w
+    FROM candidates c
+    JOIN catalog.works w ON w.ol_key = c.ol_key
     CROSS JOIN q
     LEFT JOIN catalog.editions e ON e.ol_key = w.cover_edition_key
-    WHERE w.search_vector @@ q.tsq
-       OR w.title_norm % q.norm
     ORDER BY rank DESC, w.edition_count DESC, w.ol_key
     LIMIT ${limit} OFFSET ${offset}
   `;
+}
+
+export async function searchWorks(
+  query: string,
+  { limit = 20, offset = 0 }: { limit?: number; offset?: number } = {}
+): Promise<WorkSearchResult[]> {
+  const trimmed = query.trim();
+  if (trimmed.length === 0) return [];
+
+  return prisma.$queryRaw<WorkSearchResult[]>(
+    searchWorksSql(trimmed, { limit, offset })
+  );
 }
 
 /**

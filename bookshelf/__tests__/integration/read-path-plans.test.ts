@@ -3,6 +3,8 @@ import {
   catalogSubjectsSql,
   countWorkMatchesSql,
   popularWorksSql,
+  searchWorks,
+  searchWorksSql,
   worksBySubjectSql,
   COUNT_CEILING,
 } from "@/server/catalog";
@@ -229,6 +231,60 @@ describe("search must stay bounded by what it returns", () => {
     );
 
     expect(explained).not.toContain("works_subjects_idx");
+  });
+});
+
+/**
+ * R1: "the candidate set has to be bounded so ranking never touches more than a
+ * fixed number of rows". PRD.md asked whether approximate results are
+ * acceptable for very common words; audit OQ-3 answered yes.
+ *
+ * The bound is per strategy, not one popularity-ordered cap over everything,
+ * precisely so the approximation cannot cost a result a title search must never
+ * lose. That is the property worth testing — a plan assertion alone would not
+ * catch a bound that quietly drops exact matches.
+ */
+describe("search bounds what it ranks without losing exact matches", () => {
+  it("caps the rows that reach the ranking expression", async () => {
+    // All 3,000 fixture works match "Fixture". Without a bound every one of them
+    // is scored with ts_rank_cd + similarity before LIMIT discards all but 24.
+    const explained = await planOf(searchWorksSql("Fixture", { limit: 24 }));
+
+    // Each candidate strategy carries its own Limit, so the union feeding the
+    // ranking is a constant regardless of how many works match.
+    const limitNodes = explained.match(/->\s+Limit/g) ?? [];
+    expect(limitNodes.length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("still ranks an exact title first when thousands of works match", async () => {
+    // edition_count 1 — the least popular thing in the fixture. A single
+    // popularity-ordered cap would drop it below 1,000 better-published works
+    // that also match, and the reader would search a title they own and not
+    // find it.
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO catalog.works
+        (ol_key, title, author_names, subjects, edition_count, first_publish_year)
+      VALUES ('OLPLANEXACTW', 'Plan Fixture', 'Obscure Author',
+              ARRAY['Fixture Subject 1'], 1, 1990)
+      ON CONFLICT (ol_key) DO NOTHING
+    `);
+
+    try {
+      const results = await searchWorks("Plan Fixture", { limit: 5 });
+      expect(results[0]?.olKey).toBe("OLPLANEXACTW");
+    } finally {
+      await prisma.$executeRawUnsafe(
+        `DELETE FROM catalog.works WHERE ol_key = 'OLPLANEXACTW'`
+      );
+    }
+  });
+
+  it("returns fewer results than match, which is the approximation", async () => {
+    // Not a defect: OQ-3 accepted it. Pinned so the trade is visible rather
+    // than discovered.
+    const results = await searchWorks("Fixture", { limit: 24 });
+    expect(results.length).toBe(24);
+    expect(results.every((r) => r.olKey.startsWith("OLPLAN"))).toBe(true);
   });
 });
 
