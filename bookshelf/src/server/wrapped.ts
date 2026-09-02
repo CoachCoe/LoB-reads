@@ -49,16 +49,21 @@ export interface WrappedStats {
 }
 
 export async function getWrappedStats(userId: string, year: number = new Date().getFullYear()): Promise<WrappedStats> {
+  // Half-open, and it has to be. The bound used to be built as
+  // `new Date(year, 11, 31, 23, 59, 59)` — millisecond .000 — and compared
+  // with `lte`, so anything finished in the last second of 31 December was
+  // outside this year's report AND outside the next one's, whose lower bound
+  // is 1 January 00:00:00.000. A book could belong to no year at all.
   const startOfYear = new Date(year, 0, 1);
-  const endOfYear = new Date(year, 11, 31, 23, 59, 59);
+  const startOfNextYear = new Date(year + 1, 0, 1);
 
   const [sessions, reviewRows] = await Promise.all([
     prisma.readingSession.findMany({
-      where: { userId, finishedAt: { gte: startOfYear, lte: endOfYear } },
+      where: { userId, finishedAt: { gte: startOfYear, lt: startOfNextYear } },
       orderBy: { finishedAt: "asc" },
     }),
     prisma.review.findMany({
-      where: { userId, createdAt: { gte: startOfYear, lte: endOfYear } },
+      where: { userId, createdAt: { gte: startOfYear, lt: startOfNextYear } },
     }),
   ]);
 
@@ -98,10 +103,17 @@ export async function getWrappedStats(userId: string, year: number = new Date().
     .sort((a, b) => b.count - a.count)
     .slice(0, 5);
 
-  // Author analysis
+  // Author analysis. A book the catalog cannot name is left out rather than
+  // counted under "Unknown": an ingest can narrow the slice and drop a work
+  // someone has shelved, and `author_names` is nullable besides, so that
+  // bucket collected every unnameable book, outvoted the real authors, and
+  // rendered "Your favourite author: Unknown". The book still counts towards
+  // booksRead — only the attribution is missing. Genres already behave this
+  // way, because an absent subjects array contributes nothing.
   const authorCounts: Record<string, number> = {};
   finishedBooks.forEach((p) => {
-    const author = p.book?.authorNames ?? "Unknown";
+    const author = p.book?.authorNames;
+    if (!author) return;
     authorCounts[author] = (authorCounts[author] || 0) + 1;
   });
   const topAuthors = Object.entries(authorCounts)
@@ -243,7 +255,8 @@ export async function getWrappedProjections(userId: string): Promise<WrappedProj
   const now = new Date();
   const year = now.getFullYear();
   const startOfYear = new Date(year, 0, 1);
-  const endOfYear = new Date(year, 11, 31, 23, 59, 59);
+  // Half-open, for the reason given in getWrappedStats.
+  const startOfNextYear = new Date(year + 1, 0, 1);
 
   // Calculate days elapsed and remaining
   const msPerDay = 24 * 60 * 60 * 1000;
@@ -253,7 +266,7 @@ export async function getWrappedProjections(userId: string): Promise<WrappedProj
 
   // Get books finished this year
   const finishedSessions = await prisma.readingSession.findMany({
-    where: { userId, finishedAt: { gte: startOfYear, lte: endOfYear } },
+    where: { userId, finishedAt: { gte: startOfYear, lt: startOfNextYear } },
     orderBy: { finishedAt: "desc" },
   });
 
@@ -277,20 +290,19 @@ export async function getWrappedProjections(userId: string): Promise<WrappedProj
       userId,
       createdAt: {
         gte: startOfYear,
-        lte: endOfYear,
+        lt: startOfNextYear,
       },
     },
   });
 
   // Get previous year stats
   const previousYearStart = new Date(year - 1, 0, 1);
-  const previousYearEnd = new Date(year - 1, 11, 31, 23, 59, 59);
   const previousYearBooks = await prisma.readingSession.count({
     where: {
       userId,
       finishedAt: {
         gte: previousYearStart,
-        lte: previousYearEnd,
+        lt: startOfYear,
       },
     },
   });
