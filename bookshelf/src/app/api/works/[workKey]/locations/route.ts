@@ -1,12 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import {
-  getWorkLocations,
-  addWorkLocation,
-  deleteWorkLocation,
-} from "@/server/work-locations";
+import { getWorkLocations, addWorkLocation, deleteWorkLocation, updateWorkLocation } from "@/server/work-locations";
 import { getCurrentUser } from "@/lib/auth/session";
 import { errorResponse, parseBody, unauthorized } from "@/lib/http/api";
-import { createWorkLocationSchema } from "@/lib/http/schemas";
+import { createWorkLocationSchema, updateWorkLocationSchema } from "@/lib/http/schemas";
 import { ValidationError } from "@/lib/http/errors";
 import { checkLimit, LIMITS, refundHit } from "@/lib/rate-limit";
 
@@ -79,6 +75,57 @@ export async function POST(
     // Nothing was written, so the attempt costs nothing.
     refundHit(limitKey);
     return errorResponse("Error adding work location", error);
+  }
+}
+
+/**
+ * Edit a contributed location.
+ *
+ * Anyone signed in may edit, which is the PRD's wiki rule and the reason there
+ * is no ownership check here — DELETE below is contributor-or-moderator, and the
+ * asymmetry is deliberate. A reader who spotted a wrong pin could previously do
+ * nothing at all: they could neither edit it nor delete it, so a bad pin from
+ * someone who never returned was permanent until a moderator intervened.
+ *
+ * Rate limited, which is SEC-7's lesson: community-editable without a limit is
+ * one account rewriting every record on the site in a loop. Refunded on any
+ * failure, so a contributor whose correction is rejected is not charged for it —
+ * the budget is spent on edits that happened.
+ *
+ * Takes the id from the query string, as DELETE does, so the two read the same.
+ */
+export async function PATCH(request: NextRequest) {
+  let limitKey = "";
+
+  try {
+    const user = await getCurrentUser();
+    if (!user?.id) {
+      return unauthorized();
+    }
+
+    limitKey = `edit:work-location:${user.id}`;
+    const limit = checkLimit(limitKey, LIMITS.contribute);
+    if (!limit.allowed) {
+      return NextResponse.json(
+        { error: "You are editing these very quickly. Try again shortly." },
+        { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+      );
+    }
+
+    const { searchParams } = new URL(request.url);
+    const locationId = searchParams.get("locationId");
+
+    if (!locationId) {
+      throw new ValidationError("Location ID is required");
+    }
+
+    const data = await parseBody(request, updateWorkLocationSchema);
+    const updated = await updateWorkLocation(locationId, user.id, data);
+
+    return NextResponse.json(updated);
+  } catch (error) {
+    refundHit(limitKey);
+    return errorResponse("Error updating work location", error);
   }
 }
 

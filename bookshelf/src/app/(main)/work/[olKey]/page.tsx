@@ -294,11 +294,17 @@ export default async function WorkPage({ params }: Props) {
               <WorkCard key={other.olKey} {...other} />
             ))}
           </div>
-          {/* Same corpus as the rating, so the same credit is owed. Neighbours
-              come from catalog.work_similarity, which has no per-row provenance
-              column — the graph is wholly corpus-derived today, so this is
-              unconditional rather than driven by a count. */}
-          <CorpusAttribution />
+          {/* Gated the same way the rating above is, and for the same reason.
+              This used to be unconditional, on the stated grounds that the graph
+              was "wholly corpus-derived today" — but at the documented default
+              (ENABLE_SEED_DATA unset) computeSimilarity builds it purely from
+              app.reviews, so the page asserted CC BY-SA 4.0 over readers' own
+              reviews. Null counts as owing credit: a row computed before
+              provenance was recorded might contain corpus data, and crediting is
+              the safe direction for a licence. See SPEC-3. */}
+          {alsoEnjoyed.some(
+            (other) => other.seedCoRaters === null || other.seedCoRaters > 0
+          ) && <CorpusAttribution />}
         </section>
       )}
 

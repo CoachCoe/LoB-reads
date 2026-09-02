@@ -183,6 +183,38 @@ export const createWorkLocationSchema = z.object({
   fictionalWorldId: z.string().min(1).optional().nullable(),
 });
 
+/**
+ * Editing a contributed location.
+ *
+ * Deliberately the same fields as creating one, minus `isFictional` and
+ * `fictionalWorldId`: changing what kind of place a pin is, or which world it
+ * belongs to, is a different act from correcting its name or moving it, and
+ * would let an edit silently drop a real-world pin off the map. Delete and
+ * re-add for that.
+ *
+ * `coordinates` is required here for the same reason it is on create: a
+ * real-world pin without them stores NULL lat/lng, gets filtered out of the map
+ * read, and vanishes silently. The route enforces the fictional exception.
+ */
+export const updateWorkLocationSchema = z.object({
+  name: shortText("Location name"),
+  type: z.enum(["setting", "mentioned", "inspired_by"]),
+  description: optionalLongText,
+  coordinates: coordinatesSchema.optional().nullable(),
+});
+
+export const updateAuthorLocationSchema = z.object({
+  name: shortText("Location name"),
+  type: z.enum(["birthplace", "residence", "worked", "death"]),
+  description: optionalLongText,
+  // Required, exactly as on create: an author location is always a real place,
+  // and there is no fictional exception here. An update must not be able to
+  // loosen what a create insists on.
+  coordinates: coordinatesSchema,
+  yearStart: z.int().min(-3000).max(3000).optional().nullable(),
+  yearEnd: z.int().min(-3000).max(3000).optional().nullable(),
+});
+
 export const createAuthorLocationSchema = z.object({
   name: shortText("Location name"),
   type: z.enum(["birthplace", "residence", "worked", "death"]),

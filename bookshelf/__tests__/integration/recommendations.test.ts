@@ -1,6 +1,6 @@
 import { prisma, resetDatabase } from "./setup";
 import { getSimilarWorks, getWorkRating, getWorkRatings } from "@/server/catalog";
-import { makeWork } from "./factories";
+import { makeWork, makeUser } from "./factories";
 import {
   computeRatingStats,
   computeSimilarity,
@@ -119,9 +119,14 @@ async function computeAggregates() {
 
 let fixture: Fixture;
 
+let neighboursOfAnchor: Awaited<ReturnType<typeof getSimilarWorks>> = [];
+
 beforeAll(async () => {
   fixture = await seedRatingGraph();
   await computeAggregates();
+  // Captured here because the SPEC-3 block at the end of this file recomputes
+  // the graph, and this is what the corpus-derived one looked like.
+  neighboursOfAnchor = await getSimilarWorks(fixture.groupA[0], 6);
 }, 60_000);
 
 afterAll(async () => {
@@ -251,5 +256,83 @@ describe("seed data isolation", () => {
       where: { OR: [{ isSynthetic: false }, { source: "" }] },
     });
     expect(unmarked).toBe(0);
+  });
+});
+
+/**
+ * SPEC-3: the CC BY-SA credit has to follow the data.
+ *
+ * The work page rendered `<CorpusAttribution />` under "Readers also enjoyed"
+ * unconditionally, on the recorded grounds that the graph was "wholly
+ * corpus-derived today". At the documented default — `ENABLE_SEED_DATA` unset —
+ * `computeSimilarity` builds it purely from `app.reviews`, so the page asserted a
+ * viral ShareAlike licence over readers' own reviews. That is the inverse of the
+ * error the OQ-1/OQ-2 work fixed: under-claiming risks a breach, over-claiming
+ * misstates the terms on which readers' own content is held.
+ *
+ * Provenance is per pair rather than per run, matching how the rating surface
+ * already gates on `seedCount > 0`.
+ *
+ * These run last in the file on purpose: the first recomputes
+ * `catalog.work_similarity`, which the fixture above shares.
+ */
+describe("SPEC-3: attribution follows the data", () => {
+  it("credits the corpus when the graph was built from it", () => {
+    // The file's own fixture is corpus-derived — seedRatingGraph writes to
+    // seed.ratings, and computeAggregates passes includeSeed: true — so this
+    // asserts against the graph the other tests already rely on, without
+    // disturbing it.
+    expect(neighboursOfAnchor.length).toBeGreaterThan(0);
+    expect(neighboursOfAnchor.every((n) => (n.seedCoRaters ?? 0) > 0)).toBe(true);
+  });
+
+  it("credits nothing when the graph was built from readers' own reviews", async () => {
+    await resetDatabase();
+    await prisma.$executeRawUnsafe(`TRUNCATE catalog.work_similarity`);
+
+    // Real readers, real reviews — no corpus anywhere.
+    const a = await makeWork({ title: "Reader A" });
+    const b = await makeWork({ title: "Reader B" });
+    for (let i = 0; i < 12; i++) {
+      const user = await makeUser();
+      for (const workKey of [a.olKey, b.olKey]) {
+        await prisma.review.create({
+          data: { userId: user.id, workKey, rating: 5 },
+        });
+      }
+    }
+
+    await computeSimilarity({ includeSeed: false });
+
+    const neighbours = await getSimilarWorks(a.olKey, 6);
+    expect(neighbours.length).toBeGreaterThan(0);
+
+    // Zero, not null: the pair was computed and owes nothing.
+    for (const n of neighbours) expect(n.seedCoRaters).toBe(0);
+
+    // Which is what the page's condition reads.
+    expect(
+      neighbours.some((n) => n.seedCoRaters === null || n.seedCoRaters > 0)
+    ).toBe(false);
+  });
+
+  it("treats a row with no recorded provenance as owing attribution", async () => {
+    // NULL means "computed before the column existed". A graph that might
+    // contain corpus data has to be credited: for a licence, unknown is not no.
+    await resetDatabase();
+    await prisma.$executeRawUnsafe(`TRUNCATE catalog.work_similarity`);
+    const a = await makeWork({ title: "Legacy A" });
+    const b = await makeWork({ title: "Legacy B" });
+    await prisma.$executeRaw`
+      INSERT INTO catalog.work_similarity
+        (work_key, similar_work_key, score, co_raters, seed_co_raters)
+      VALUES (${a.olKey}, ${b.olKey}, 0.9, 5, NULL)`;
+
+    const neighbours = await getSimilarWorks(a.olKey, 6);
+
+    expect(neighbours[0].seedCoRaters).toBeNull();
+    expect(
+      neighbours.some((n) => n.seedCoRaters === null || n.seedCoRaters > 0)
+    ).toBe(true);
   });
 });
