@@ -205,6 +205,52 @@ export async function addAuthorLocation(
  * made them. Once a contributor deleted their account the column was NULL,
  * `NULL !== userId` held for every caller, and nobody could ever delete that pin.
  */
+/**
+ * Edit a contributed author location.
+ *
+ * Anyone signed in may edit, per the PRD's wiki rule — see
+ * `updateWorkLocation`, which this deliberately mirrors so the two contributed
+ * types behave the same way. Deletion remains contributor-or-moderator.
+ *
+ * Coordinates are required, as they are on create: an author location is always
+ * a real place, so there is no fictional exception to carry.
+ */
+export async function updateAuthorLocation(
+  locationId: string,
+  userId: string,
+  data: {
+    name: string;
+    type: string;
+    description?: string | null;
+    coordinates: { lat: number; lng: number };
+    yearStart?: number | null;
+    yearEnd?: number | null;
+  }
+) {
+  const exists = await prisma.authorLocation.findUnique({
+    where: { id: locationId },
+    select: { id: true },
+  });
+
+  if (!exists) {
+    throw new NotFoundError("Location not found");
+  }
+
+  return prisma.authorLocation.update({
+    where: { id: locationId },
+    data: {
+      name: data.name,
+      type: data.type,
+      description: data.description ?? null,
+      lat: data.coordinates.lat,
+      lng: data.coordinates.lng,
+      yearStart: data.yearStart ?? null,
+      yearEnd: data.yearEnd ?? null,
+      updatedById: userId,
+    },
+  });
+}
+
 export async function deleteAuthorLocation(
   locationId: string,
   userId: string,

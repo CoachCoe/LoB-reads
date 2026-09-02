@@ -251,10 +251,10 @@ shelves and reviews were repointed from `app.books` onto catalog work keys.
 ### Works
 - `GET /api/works/[workKey]/editions` - Editions of a work
 - `GET /api/works/[workKey]/shelves` - Which of your shelves hold this work
-- `GET/POST/DELETE /api/works/[workKey]/locations` - Crowdsourced work locations
+- `GET/POST/PATCH/DELETE /api/works/[workKey]/locations` - Crowdsourced work locations. Anyone signed in may edit; contributor or moderator may delete
 
 ### Authors
-- `GET/POST/DELETE /api/authors/[authorName]/locations` - Crowdsourced author locations
+- `GET/POST/PATCH/DELETE /api/authors/[authorName]/locations` - Crowdsourced author locations. Same rule
 
 > These exist because a client component fetches them. Anything a page can read
 > server-side is not a route — there is no public API here, so a handler with no

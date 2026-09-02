@@ -68,7 +68,7 @@ The catalog is the English-language, ISBN-bearing, cover-bearing slice from
 `/shelf/[shelfId]` `/user/[userId]` `/feed` `/map` `/settings` `/wrapped`
 `/wrapped/projections` `/import/[sessionId]` `/about` `/login` `/register`
 
-23 API routes (including liveness and readiness probes). 21 migrations.
+23 API routes (including liveness and readiness probes). 25 migrations.
 
 ### Measured latency, against the real 6.9M-work catalog
 
@@ -91,7 +91,7 @@ cause turned out to be a lossy bitmap. 1.23 s is that query after raising
 
 ## Quality posture
 
-606 tests: 267 unit, 339 integration. Integration runs against real Postgres
+627 tests: 273 unit, 354 integration. Integration runs against real Postgres
 and must run serially — they share a database and truncate between tests.
 
 The 2026-08-31 audit added 127 of those, and the reason is worth stating plainly:
@@ -347,7 +347,7 @@ those differs from `npm run dev` in a way that has hidden a real failure.
 |---|---|
 | image | 479 MB, `output: "standalone"`, Debian, unprivileged |
 | `next build` | 5.4 s, ~2 GB peak — more than a burstable instance has, so CI builds it |
-| migrations | all 21 apply to an empty Postgres 16 |
+| migrations | all 25 apply to an empty Postgres 16 |
 | catalog dump | **103 s**, 1.7 GB compressed from 10 GB |
 | storage | 11/11 checks against a real blob endpoint, both private and public postures |
 | probes | liveness stays 200 with the database stopped; readiness returns 503 in 2.0 s |
