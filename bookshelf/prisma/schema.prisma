@@ -604,6 +604,10 @@ model WorkSimilarity {
   /// Cosine over co-raters, so popular books do not dominate every list.
   score          Float
   coRaters       Int      @map("co_raters")
+  /// Of `coRaters`, how many came from the CC-BY-SA corpus. 0 means the pair is
+  /// wholly reader-derived and owes no attribution; null means it predates the
+  /// column, which the read path treats as owing attribution. See SPEC-3.
+  seedCoRaters   Int?     @map("seed_co_raters")
   computedAt     DateTime @default(now()) @map("computed_at") @db.Timestamptz(6)
 
   @@id([workKey, similarWorkKey])

@@ -98,13 +98,17 @@ export async function computeSimilarity({
 }: ComputeOptions): Promise<void> {
   await prisma.$executeRawUnsafe(`TRUNCATE catalog.work_similarity`);
 
+  // `is_seed` travels with each liked row so the pair counts below can say how
+  // much of a given neighbour pair came from the corpus. Attribution is owed per
+  // pair, not per run: even with the corpus included, a pair whose co-raters are
+  // all real readers owes nothing. See SPEC-3.
   const seedUnion = includeSeed
-    ? `UNION ALL SELECT user_id, work_key FROM seed.ratings WHERE rating >= ${LIKED_THRESHOLD}`
+    ? `UNION ALL SELECT user_id, work_key, true FROM seed.ratings WHERE rating >= ${LIKED_THRESHOLD}`
     : "";
 
   await prisma.$executeRawUnsafe(`
-    WITH liked AS (
-      SELECT "userId" AS user_id, work_key FROM app.reviews WHERE rating >= ${LIKED_THRESHOLD}
+    WITH liked (user_id, work_key, is_seed) AS (
+      SELECT "userId" AS user_id, work_key, false FROM app.reviews WHERE rating >= ${LIKED_THRESHOLD}
       ${seedUnion}
     ),
     popularity AS (
@@ -114,14 +118,17 @@ export async function computeSimilarity({
     pairs AS (
       SELECT a.work_key AS work_key,
              b.work_key AS similar_work_key,
-             count(*)::int AS co_raters
+             count(*)::int AS co_raters,
+             -- The rater is the "a" side; "b" is the same person's other book,
+             -- so counting a's provenance counts each co-rating exactly once.
+             count(*) FILTER (WHERE a.is_seed)::int AS seed_co_raters
       FROM liked a
       JOIN liked b ON b.user_id = a.user_id AND b.work_key <> a.work_key
       GROUP BY a.work_key, b.work_key
       HAVING count(*) >= ${MIN_CO_RATERS}
     ),
     scored AS (
-      SELECT p.work_key, p.similar_work_key, p.co_raters,
+      SELECT p.work_key, p.similar_work_key, p.co_raters, p.seed_co_raters,
              p.co_raters / sqrt(pa.raters * pb.raters) AS score,
              row_number() OVER (
                PARTITION BY p.work_key
@@ -134,8 +141,8 @@ export async function computeSimilarity({
       JOIN popularity pb ON pb.work_key = p.similar_work_key
     )
     INSERT INTO catalog.work_similarity
-      (work_key, similar_work_key, score, co_raters, computed_at)
-    SELECT work_key, similar_work_key, score, co_raters, now()
+      (work_key, similar_work_key, score, co_raters, seed_co_raters, computed_at)
+    SELECT work_key, similar_work_key, score, co_raters, seed_co_raters, now()
     FROM scored
     WHERE rank <= ${NEIGHBOURS_PER_WORK}
   `);
