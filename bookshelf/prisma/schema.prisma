@@ -54,6 +54,8 @@ model User {
   shelfItems      ShelfItem[]
   workLocations   WorkLocation[] // Locations this user contributed
   authorLocations AuthorLocation[] // Author locations this user contributed
+  workLocationEdits   WorkLocation[]   @relation("WorkLocationEditor")
+  authorLocationEdits AuthorLocation[] @relation("AuthorLocationEditor")
   worldLinks      WorkFictionalWorld[]
   importSessions  ImportSession[]
   mapsUploaded    FictionalWorldMap[]  @relation("MapUploader")
@@ -230,6 +232,10 @@ model WorkLocation {
   // it. ON DELETE SET NULL against a NOT NULL column is accepted at CREATE
   // TABLE and only fails later, when someone actually deletes their account.
   addedById        String?  @map("added_by_id")
+  /// Whoever last edited it. Anyone signed in may edit — PRD's wiki rule — so
+  /// this is how an edit is attributable at all. Matches
+  /// FictionalWorldMap.updatedById.
+  updatedById      String?  @map("updated_by_id")
   name             String // e.g., "Arrakis", "Paris", "Shire"
   type             String // "setting", "mentioned", "inspired_by"
   description      String?
@@ -241,10 +247,12 @@ model WorkLocation {
   updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   addedBy        User?           @relation(fields: [addedById], references: [id], onDelete: SetNull)
+  updatedBy      User?           @relation("WorkLocationEditor", fields: [updatedById], references: [id], onDelete: SetNull)
   fictionalWorld FictionalWorld? @relation(fields: [fictionalWorldId], references: [id], onDelete: SetNull)
 
   @@index([workKey])
   @@index([addedById])
+  @@index([updatedById])
   @@map("work_locations")
   @@schema("app")
 }
@@ -253,6 +261,9 @@ model AuthorLocation {
   id          String   @id @default(cuid())
   authorKey   String   @map("author_key") // catalog.authors.ol_key
   addedById   String?  @map("added_by_id")
+  /// Whoever last edited it. Anyone signed in may edit — PRD's wiki rule — so
+  /// this is how an edit is attributable at all.
+  updatedById String?  @map("updated_by_id")
   name        String // e.g., "Oxford, UK"
   type        String // "birthplace", "residence", "death", "worked"
   description String?
@@ -263,10 +274,12 @@ model AuthorLocation {
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  addedBy User? @relation(fields: [addedById], references: [id], onDelete: SetNull)
+  addedBy   User? @relation(fields: [addedById], references: [id], onDelete: SetNull)
+  updatedBy User? @relation("AuthorLocationEditor", fields: [updatedById], references: [id], onDelete: SetNull)
 
   @@index([authorKey])
   @@index([addedById])
+  @@index([updatedById])
   @@map("author_locations")
   @@schema("app")
 }
@@ -604,6 +617,10 @@ model WorkSimilarity {
   /// Cosine over co-raters, so popular books do not dominate every list.
   score          Float
   coRaters       Int      @map("co_raters")
+  /// Of `coRaters`, how many came from the CC-BY-SA corpus. 0 means the pair is
+  /// wholly reader-derived and owes no attribution; null means it predates the
+  /// column, which the read path treats as owing attribution. See SPEC-3.
+  seedCoRaters   Int?     @map("seed_co_raters")
   computedAt     DateTime @default(now()) @map("computed_at") @db.Timestamptz(6)
 
   @@id([workKey, similarWorkKey])

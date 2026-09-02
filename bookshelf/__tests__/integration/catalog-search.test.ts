@@ -408,3 +408,82 @@ describe("subjects are browsed, not searched", () => {
     expect(total.atCeiling).toBe(false);
   }, 60_000);
 });
+
+/**
+ * DEAD-5: the normalised columns have to be normalised.
+ *
+ * `title_norm` was `unaccent(lower(title))`. Under `lc_collate=C` — which this
+ * database and the deployed one both use — `lower()` folds only ASCII, so
+ * `lower('Ö')` is still `'Ö'` and `unaccent` then produces a capital `'O'`. The
+ * column stored `"Offentliche steuerung…"` for `"Öffentliche Steuerung…"`.
+ *
+ * Both sides shared the fault, so a query in the same casing still matched and
+ * the existing accented-title test passed. Measured on the real catalog before
+ * the fix:
+ *
+ *   query "Öffentliche Steuerung und Gest"  ->  trigram 1, prefix 1
+ *   query "öffentliche steuerung und gest"  ->  trigram 1, prefix 0
+ *
+ * The trigram fallback still found the work, so nothing looked broken — the
+ * W_PREFIX +20 bonus was simply lost for a reader typing an accented title the
+ * normal way. This asserts the prefix path, because that is the half that failed
+ * while the visible behaviour did not.
+ */
+describe("DEAD-5: accent folding is case-independent", () => {
+  const KEY = "OLACC001W";
+  const TITLE = "Öffentliche Steuerung und Gestaltung";
+
+  beforeAll(async () => {
+    await prisma.$executeRaw`
+      INSERT INTO catalog.works (ol_key, title, author_names, subjects, edition_count)
+      VALUES (${KEY}, ${TITLE}, 'Übel Autor', ARRAY['Fiction'], 3)
+      ON CONFLICT (ol_key) DO UPDATE SET title = EXCLUDED.title`;
+  });
+
+  afterAll(async () => {
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM catalog.works WHERE ol_key LIKE 'OLACC%'`
+    );
+  });
+
+  it("stores the column fully folded, not half", async () => {
+    const rows = await prisma.$queryRaw<{ titleNorm: string }[]>`
+      SELECT title_norm AS "titleNorm" FROM catalog.works WHERE ol_key = ${KEY}`;
+
+    // The assertion that fails on unaccent(lower(x)), which yields
+    // "Offentliche steuerung und gestaltung" — capital O.
+    expect(rows[0].titleNorm).toBe("offentliche steuerung und gestaltung");
+    expect(rows[0].titleNorm).toBe(rows[0].titleNorm.toLowerCase());
+  });
+
+  it("folds the author column the same way", async () => {
+    const rows = await prisma.$queryRaw<{ authorNorm: string }[]>`
+      SELECT author_names_norm AS "authorNorm" FROM catalog.works WHERE ol_key = ${KEY}`;
+    expect(rows[0].authorNorm).toBe("ubel autor");
+  });
+
+  it("prefix-matches an accented title typed in any casing", async () => {
+    const prefixHits = async (query: string) => {
+      const rows = await prisma.$queryRaw<{ n: bigint }[]>`
+        SELECT count(*) AS n FROM catalog.works
+        WHERE ol_key = ${KEY}
+          AND title_norm LIKE lower(unaccent(${query})) || '%'`;
+      return Number(rows[0].n);
+    };
+
+    // All three must hit. Before the fix the lowercase forms scored zero, and
+    // with them the +20 ranking bonus.
+    expect(await prefixHits("Öffentliche Steuerung")).toBe(1);
+    expect(await prefixHits("öffentliche steuerung")).toBe(1);
+    expect(await prefixHits("offentliche steuerung")).toBe(1);
+  });
+
+  it("still finds it through the ranked search path", async () => {
+    // The user-visible behaviour that never broke, asserted so the fix cannot
+    // have traded it away.
+    for (const q of ["Öffentliche Steuerung", "öffentliche steuerung"]) {
+      const results = await searchWorks(q, { limit: 10 });
+      expect(results.map((r) => r.olKey)).toContain(KEY);
+    }
+  });
+});

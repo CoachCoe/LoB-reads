@@ -41,6 +41,7 @@ jest.mock("@/lib/auth/session", () => ({
 import {
   DELETE as deleteWorkLocationRoute,
   POST as postWorkLocation,
+  PATCH as patchWorkLocation,
 } from "@/app/api/works/[workKey]/locations/route";
 import { DELETE as deleteAuthorLocationRoute } from "@/app/api/authors/[authorName]/locations/route";
 
@@ -391,5 +392,141 @@ describe("the contribution budget is spent on rows, not attempts", () => {
       LIMITS.contribute
     ).remaining;
     expect(remaining).toBe(LIMITS.contribute.limit - 2);
+  });
+});
+
+/**
+ * The wiki rule, both halves of it.
+ *
+ * PRD.md: "Editing is wiki-style — anyone signed in may edit,
+ * uploader-or-moderator may delete — because the data only exists if
+ * contributing is easy."
+ *
+ * The delete half was implemented for all three contributed types; the edit half
+ * only for fictional-world maps. So a reader who spotted someone else's wrong
+ * pin could do **nothing**: not edit it, and not delete it either, because
+ * deletion is contributor-or-moderator. A bad pin from a contributor who never
+ * came back was permanent until a moderator intervened — which defeats the
+ * premise, that crowdsourced data becomes accurate because strangers can correct
+ * it.
+ *
+ * The asymmetry between these two describes is the finding: a stranger gets 403
+ * on DELETE and 200 on PATCH, deliberately.
+ */
+describe("PATCH /api/works/[workKey]/locations", () => {
+  const patchRequest = (locationId: string, body: unknown) =>
+    new Request(
+      `http://localhost/api/works/${WORK_KEY}/locations?locationId=${locationId}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }
+    ) as never;
+
+  const validEdit = {
+    name: "Gont Corrected",
+    type: "setting",
+    coordinates: { lat: 51.5, lng: -0.12 },
+  };
+
+  beforeEach(() => {
+    __resetRateLimits();
+  });
+
+  it("rejects an anonymous caller with 401", async () => {
+    mockGetCurrentUser.mockResolvedValue(null);
+    const response = await patchWorkLocation(patchRequest("anything", validEdit));
+    expect(response.status).toBe(401);
+  });
+
+  it("lets a signed-in stranger correct someone else's pin", async () => {
+    // The rule, stated. This is the case that could not be done at all before.
+    const contributor = await makeUser();
+    const stranger = await makeUser();
+    const location = await makeWorkLocation(WORK_KEY, contributor.id);
+
+    mockGetCurrentUser.mockResolvedValue({ id: stranger.id, isModerator: false });
+
+    const response = await patchWorkLocation(
+      patchRequest(location.id, validEdit)
+    );
+
+    expect(response.status).toBe(200);
+    const after = await prisma.workLocation.findUniqueOrThrow({
+      where: { id: location.id },
+    });
+    expect(after.name).toBe("Gont Corrected");
+    // Attributable: the edit records who made it, and does not rewrite who
+    // contributed it.
+    expect(after.updatedById).toBe(stranger.id);
+    expect(after.addedById).toBe(contributor.id);
+  });
+
+  it("still refuses that same stranger a delete", async () => {
+    // The asymmetry is the design, not an oversight: edit is open, delete is not.
+    const contributor = await makeUser();
+    const stranger = await makeUser();
+    const location = await makeWorkLocation(WORK_KEY, contributor.id);
+
+    mockGetCurrentUser.mockResolvedValue({ id: stranger.id, isModerator: false });
+
+    expect((await patchWorkLocation(patchRequest(location.id, validEdit))).status)
+      .toBe(200);
+    expect((await deleteWorkLocationRoute(deleteRequest(location.id))).status)
+      .toBe(403);
+  });
+
+  it("refuses to strip the coordinates off a real-world pin", async () => {
+    // Same rule the create path enforces: NULL lat/lng is filtered out of the
+    // map read, so an edit that dropped them would make the pin vanish silently.
+    const contributor = await makeUser();
+    const location = await makeWorkLocation(WORK_KEY, contributor.id);
+    mockGetCurrentUser.mockResolvedValue({ id: contributor.id, isModerator: false });
+
+    const response = await patchWorkLocation(
+      patchRequest(location.id, { name: "No coords", type: "setting" })
+    );
+
+    expect(response.status).toBe(400);
+    const after = await prisma.workLocation.findUniqueOrThrow({
+      where: { id: location.id },
+    });
+    expect(after.lat).not.toBeNull();
+  });
+
+  it("404s on a location that does not exist", async () => {
+    const user = await makeUser();
+    mockGetCurrentUser.mockResolvedValue({ id: user.id, isModerator: false });
+
+    const response = await patchWorkLocation(
+      patchRequest("no-such-location", validEdit)
+    );
+    expect(response.status).toBe(404);
+  });
+
+  it("is rate limited, and refunds a rejected edit", async () => {
+    const user = await makeUser();
+    const location = await makeWorkLocation(WORK_KEY, user.id);
+    mockGetCurrentUser.mockResolvedValue({ id: user.id, isModerator: false });
+
+    // Five rejected edits cost nothing, because nothing was written.
+    for (let i = 0; i < 5; i++) {
+      const bad = await patchWorkLocation(
+        patchRequest(location.id, { name: "x", type: "setting" })
+      );
+      expect(bad.status).toBe(400);
+    }
+    expect(
+      (await patchWorkLocation(patchRequest(location.id, validEdit))).status
+    ).toBe(200);
+
+    // But a full budget of real edits does stop the next one.
+    for (let i = 0; i < LIMITS.contribute.limit; i++) {
+      checkLimit(`edit:work-location:${user.id}`, LIMITS.contribute);
+    }
+    expect(
+      (await patchWorkLocation(patchRequest(location.id, validEdit))).status
+    ).toBe(429);
   });
 });

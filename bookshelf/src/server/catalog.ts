@@ -15,7 +15,7 @@ import { NotFoundError } from "@/lib/http/errors";
  * input with `unaccent()` here.
  *
  * Comparisons therefore go against `title_norm` / `author_names_norm`, never
- * `unaccent(lower(title))`. They are equal in meaning but not to the planner:
+ * `lower(unaccent(title))`. They are equal in meaning but not to the planner:
  * a function of a column cannot use that column's index, and `unaccent()` is
  * STABLE so no expression index can stand in. Wrapping the column is how the
  * fuzzy path silently became a sequential scan once already.
@@ -113,7 +113,12 @@ export function searchWorksSql(
     WITH q AS (
       SELECT
         websearch_to_tsquery('english', unaccent(${query})) AS tsq,
-        unaccent(lower(${query}))                           AS norm
+        -- unaccent first: under lc_collate=C, lower() folds only ASCII, so
+        -- lower('Ö') is still 'Ö' and unaccent then gives a capital 'O'. Both
+        -- sides shared that fault, so same-casing queries matched and nothing
+        -- looked wrong — a lowercase-accented query just silently lost the
+        -- W_PREFIX bonus. DEAD-5.
+        lower(unaccent(${query}))                           AS norm
     )
     SELECT
       w.ol_key                                   AS "olKey",
@@ -258,7 +263,7 @@ export function countWorkMatchesSql(query: string): Prisma.Sql {
       CROSS JOIN (
         SELECT
           websearch_to_tsquery('english', unaccent(${query})) AS tsq,
-          unaccent(lower(${query}))                           AS norm
+          lower(unaccent(${query}))                           AS norm
       ) q
       WHERE w.search_vector @@ q.tsq
          OR w.title_norm % q.norm
@@ -567,8 +572,8 @@ export async function findWorkKeyByTitleAuthor(
   const rows = await prisma.$queryRaw<{ olKey: string }[]>`
     SELECT ol_key AS "olKey"
     FROM catalog.works
-    WHERE title_norm = unaccent(lower(${title}))
-      AND coalesce(author_names_norm, '') LIKE unaccent(lower(${authorPattern}))
+    WHERE title_norm = lower(unaccent(${title}))
+      AND coalesce(author_names_norm, '') LIKE lower(unaccent(${authorPattern}))
     ORDER BY edition_count DESC
     LIMIT 1
   `;
@@ -624,6 +629,12 @@ export async function getWorkRatings(
   );
 }
 
+/** A neighbour, plus how much of the pair came from the licensed corpus. */
+export interface SimilarWork extends WorkSummary {
+  /** Null for rows computed before provenance was recorded. */
+  seedCoRaters: number | null;
+}
+
 /**
  * "Readers also enjoyed".
  *
@@ -631,17 +642,27 @@ export async function getWorkRatings(
  * behind it is not something to run while someone waits for a page. Returns an
  * empty list rather than throwing when a work has no neighbours yet, which is
  * the normal state on a thin ratings graph.
+ *
+ * `seedCoRaters` comes back so the page can decide whether CC BY-SA attribution
+ * is owed. It used to be credited unconditionally, which over-claimed a viral
+ * ShareAlike licence over readers' own reviews whenever the graph was built
+ * without the corpus — the documented default. See SPEC-3.
+ *
+ * NULL sums to attribution rather than away from it: a row computed before the
+ * column existed might contain corpus data, and the safe direction for a licence
+ * is to credit.
  */
 export async function getSimilarWorks(
   workKey: string,
   limit = 6
-): Promise<WorkSummary[]> {
-  return prisma.$queryRaw<WorkSummary[]>`
+): Promise<SimilarWork[]> {
+  return prisma.$queryRaw<SimilarWork[]>`
     SELECT w.ol_key             AS "olKey",
            w.title,
            w.author_names       AS "authorNames",
            w.first_publish_year AS "firstPublishYear",
-           e.cover_id::int      AS "coverId"
+           e.cover_id::int      AS "coverId",
+           s.seed_co_raters     AS "seedCoRaters"
     FROM catalog.work_similarity s
     JOIN catalog.works w ON w.ol_key = s.similar_work_key
     LEFT JOIN catalog.editions e ON e.ol_key = w.cover_edition_key

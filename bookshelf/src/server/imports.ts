@@ -194,7 +194,7 @@ export async function matchSession(
  * Fuzzy candidates for a row that did not match exactly.
  *
  * Compares against `title_norm` / `author_names_norm` rather than
- * `unaccent(lower(title))`. The two are equivalent in meaning, but only the
+ * `lower(unaccent(title))`. The two are equivalent in meaning, but only the
  * former can use the trigram index — see the note in `catalog.ts`.
  */
 export async function findCandidates(
@@ -206,8 +206,8 @@ export async function findCandidates(
 
   return prisma.$queryRaw<MatchCandidate[]>`
     WITH q AS (
-      SELECT unaccent(lower(${cleanTitle})) AS title_q,
-             unaccent(lower(${author.trim()})) AS author_q
+      SELECT lower(unaccent(${cleanTitle})) AS title_q,
+             lower(unaccent(${author.trim()})) AS author_q
     )
     SELECT w.ol_key AS "workKey",
            w.title,

@@ -138,6 +138,60 @@ export async function addWorkLocation(
  * made them. Once a contributor deleted their account the column was NULL,
  * `NULL !== userId` held for every caller, and nobody could ever delete that pin.
  */
+/**
+ * Edit a contributed location.
+ *
+ * **Anyone signed in may edit**, which is the PRD's wiki rule and is why this
+ * takes no ownership check — unlike deletion, which is contributor-or-moderator.
+ * The asymmetry is the point: the data only becomes accurate if a stranger who
+ * spots a wrong pin can fix it, and before this they could do nothing at all,
+ * since they could neither edit nor delete someone else's contribution.
+ *
+ * `updatedById` records who, so an edit is attributable. `fictionalWorldId` and
+ * `isFictional` are deliberately not editable here — changing what kind of place
+ * a pin is would let an edit drop a real-world pin off the map silently.
+ */
+export async function updateWorkLocation(
+  locationId: string,
+  userId: string,
+  data: {
+    name: string;
+    type: string;
+    description?: string | null;
+    coordinates?: { lat: number; lng: number } | null;
+  }
+) {
+  const location = await prisma.workLocation.findUnique({
+    where: { id: locationId },
+    select: { isFictional: true },
+  });
+
+  if (!location) {
+    throw new NotFoundError("Location not found");
+  }
+
+  // Same rule the create path enforces: a real-world pin without coordinates
+  // stores NULL lat/lng, is filtered out of the map read, and disappears
+  // without saying so.
+  if (!location.isFictional && !data.coordinates) {
+    throw new ValidationError(
+      "Coordinates are required for real-world locations"
+    );
+  }
+
+  return prisma.workLocation.update({
+    where: { id: locationId },
+    data: {
+      name: data.name,
+      type: data.type,
+      description: data.description ?? null,
+      lat: data.coordinates?.lat ?? null,
+      lng: data.coordinates?.lng ?? null,
+      updatedById: userId,
+    },
+  });
+}
+
 export async function deleteWorkLocation(
   locationId: string,
   userId: string,
