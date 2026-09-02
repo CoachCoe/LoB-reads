@@ -106,7 +106,7 @@ export async function getAuthorByKey(
  *
  * Compares against `name_norm`, not `lower(a.name)`. Two reasons, both from
  * DEAD-4 — and catalog.ts:16-20 states the rule: "Comparisons therefore go
- * against `title_norm` / `author_names_norm`, never `unaccent(lower(title))`…
+ * against `title_norm` / `author_names_norm`, never `lower(unaccent(title))`…
  * Wrapping the column is how the fuzzy path silently became a sequential scan
  * once already."
  *
