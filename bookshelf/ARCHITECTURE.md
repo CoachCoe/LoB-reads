@@ -111,6 +111,25 @@ B, subtitle C — subjects were deliberately removed; see "Subjects are a browse
 not a search"), with trigram similarity carrying typos that FTS
 cannot match at all.
 
+**Three statements, tried in order — not one query with an `OR`.** That was the
+R1 fix and the ordering is the whole of it:
+
+1. **Full text** (`search_vector @@ tsq`). Answers almost everything, and
+   ranking is cheap: all 10,120 matches for "Fiction" cost 57 ms.
+2. **Exact title** (`title_norm = norm`), when the query is entirely English
+   stopwords so the tsquery is empty. "It", "Us" and "She" are real titles and
+   the full-text arm cannot see them at all.
+3. **Fuzzy** (`title_norm % norm`), only when full text found nothing — which
+   is what a typo looks like. "mockingbrd" reaches "Mockingbird" here and
+   nowhere else.
+
+The two trigram arms are the expensive ones and are bounded by a 700 ms
+`statement_timeout`, because their cost depends on how common the query's
+trigrams are and that cannot be known before running: the same statement is
+58 ms for "mockingbrd" and 5.5 s for "thexx". Union rather than fallback is what
+made common words slow — `?q=the` pulled 1,933,084 candidate rows through the
+heap to keep 2,111 of them, 18.5 seconds of the 19.
+
 Ranking is not `ts_rank` alone. Relevance scoring puts "Dune Messiah" level
 with "Dune" for the query *dune*, so exact-title and prefix matches carry most
 of the weight and relevance only breaks ties. Edition count contributes a
@@ -341,6 +360,8 @@ moment the catalog held 6.9 million works. All measured, all on the search page.
 | `countWorkMatches` ("Fiction") | 5,481 ms | 49 ms (ceiling) |
 | search page, "dune" | 3.6 s | 0.17 s |
 | search page, "Fiction" | 110 s | 6.7 s |
+| query, "Fiction" (R1) | 1,065 ms | 31 ms (arms split) |
+| query, "the" (R1) | 19,189 ms | 1 ms (arms split) |
 
 Two of them were the same mistake in different clothes: a query that aggregates
 or sorts the whole table to produce a handful of rows. `getCatalogSubjects`

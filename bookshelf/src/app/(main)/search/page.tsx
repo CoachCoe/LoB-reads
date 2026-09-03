@@ -1,8 +1,7 @@
 import Link from "next/link";
 import { Search as SearchIcon } from "lucide-react";
 import {
-  searchWorks,
-  countWorkMatches,
+  searchWorksPaged,
   getPopularWorks,
   getCatalogSubjects,
   getWorksBySubject,
@@ -47,11 +46,18 @@ export default async function SearchPage({ searchParams }: Props) {
   const browsing = subject.length > 0;
   const searching = query.length > 0;
 
+  // Searching resolves its count, page and rows in one call, because the arm it
+  // picks decides all three and the fuzzy arm is too expensive to scan twice.
+  // See searchWorksPaged.
+  const searched = searching
+    ? await searchWorksPaged(query, { pageSize: PAGE_SIZE, requestedPage })
+    : null;
+
   const [total, subjects] = await Promise.all([
     browsing
       ? countWorksBySubject(subject)
-      : searching
-        ? countWorkMatches(query)
+      : searched
+        ? Promise.resolve({ count: searched.count, atCeiling: searched.atCeiling })
         : Promise.resolve({ count: 0, atCeiling: false }),
     browsing || searching ? Promise.resolve<string[]>([]) : getCatalogSubjects(12),
   ]);
@@ -59,14 +65,20 @@ export default async function SearchPage({ searchParams }: Props) {
   // A search count stops at COUNT_CEILING, so no page beyond it has anything to
   // show. A subject browse has an exact count and an indexed lookup, so its own
   // total is the only honest bound.
-  const totalPages = browsing || searching ? lastPageFor(total.count, PAGE_SIZE) : 1;
-  const page = resolvePage(requestedPage, { lastPage: totalPages });
+  const totalPages = searched
+    ? searched.totalPages
+    : browsing
+      ? lastPageFor(total.count, PAGE_SIZE)
+      : 1;
+  const page = searched
+    ? searched.page
+    : resolvePage(requestedPage, { lastPage: totalPages });
   const offset = (page - 1) * PAGE_SIZE;
 
   const works = browsing
     ? await getWorksBySubject(subject, { limit: PAGE_SIZE, offset })
-    : searching
-      ? await searchWorks(query, { limit: PAGE_SIZE, offset })
+    : searched
+      ? searched.works
       : await getPopularWorks(PAGE_SIZE);
 
   return (

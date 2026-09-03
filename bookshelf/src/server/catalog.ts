@@ -1,4 +1,5 @@
 import prisma from "@/lib/prisma";
+import { lastPageFor, resolvePage } from "@/lib/pagination";
 import { Prisma } from "@prisma/client";
 import { NotFoundError } from "@/lib/http/errors";
 
@@ -102,6 +103,26 @@ const W_POPULARITY = 0.5; // edition count, as a tiebreak only
  * and only at real scale: at 3,000 fixture rows walking the whole table is
  * instant, so no fixture-based test could see it. That is the same lesson
  * STATUS.md already records, learned again the hard way.
+ *
+ * ---
+ *
+ * R1 is now closed WITHOUT bounding candidates, because measurement showed the
+ * candidate set was never the cost. Ranking is cheap: 10,120 matches for
+ * "Fiction", fully ranked, is 57ms. What cost a second was the OTHER arm of the
+ * WHERE clause.
+ *
+ * `title_norm % q.norm` is a trigram similarity match, and for a query whose
+ * trigrams are common the GIN index cannot be selective. `?q=the` returned
+ * 1,933,084 candidate rows from the index; all of them were fetched from the
+ * heap (373,236 blocks, ~2.9GB against a 128MB shared_buffers) so that
+ * `similarity()` could discard 1,926,798 and leave 2,111. That was 18.5 of the
+ * 19 seconds. Raising `pg_trgm.similarity_threshold` does not help — 0.3, 0.5
+ * and 0.7 all return the same 1.9M index candidates and only differ in how many
+ * the recheck throws away.
+ *
+ * So the two arms are now separate statements and the fuzzy one is a FALLBACK
+ * rather than a union: see `searchWorks`. This statement is the full-text arm
+ * alone, and it keeps its single LIMIT and single pass.
  */
 export function searchWorksSql(
   query: string,
@@ -140,12 +161,237 @@ export function searchWorksSql(
     CROSS JOIN q
     LEFT JOIN catalog.editions e ON e.ol_key = w.cover_edition_key
     WHERE w.search_vector @@ q.tsq
-       OR w.title_norm % q.norm
     ORDER BY rank DESC, w.edition_count DESC, w.ol_key
     LIMIT ${limit} OFFSET ${offset}
   `;
 }
 
+/**
+ * The fuzzy arm, run only when the full-text arm found nothing.
+ *
+ * Identical to `searchWorksSql` except for the predicate, deliberately: the
+ * ranking expression has to be the same or the two arms would order results by
+ * different rules and paging between them would reshuffle.
+ *
+ * This is the expensive statement and it is why it is a fallback. It is worth
+ * keeping because it is the only thing that answers a typo — "mockingbrd"
+ * finds "To Kill a Mockingbird" through this arm and nothing else, in 58ms,
+ * because those trigrams are rare. The cost is entirely a function of how
+ * common the query's trigrams are, which cannot be known before running it:
+ * "mockingbrd" pulls 324 index candidates, "thex" pulls 1,801,551.
+ *
+ * Hence the timeout in `searchWorks`, which is the actual bound. Nothing here
+ * can be made cheap by rewriting it.
+ */
+export function searchWorksFuzzySql(
+  query: string,
+  { limit = 20, offset = 0 }: { limit?: number; offset?: number } = {}
+): Prisma.Sql {
+  return Prisma.sql`
+    WITH q AS (
+      SELECT
+        websearch_to_tsquery('english', unaccent(${query})) AS tsq,
+        lower(unaccent(${query}))                           AS norm
+    )
+    SELECT
+      w.ol_key                                   AS "olKey",
+      w.title,
+      w.subtitle,
+      w.author_names                             AS "authorNames",
+      w.first_publish_year                       AS "firstPublishYear",
+      w.edition_count                            AS "editionCount",
+      w.cover_edition_key                        AS "coverEditionKey",
+      e.cover_id::int                            AS "coverId",
+      (
+          (CASE WHEN w.title_norm = q.norm THEN ${W_EXACT} ELSE 0 END)
+        + (CASE WHEN w.title_norm LIKE q.norm || '%' THEN ${W_PREFIX} ELSE 0 END)
+        + ts_rank_cd(w.search_vector, q.tsq) * ${W_FTS}
+        + similarity(w.title_norm, q.norm) * ${W_TRIGRAM}
+        + ln(1 + w.edition_count) * ${W_POPULARITY}
+      )::double precision                        AS rank
+    FROM catalog.works w
+    CROSS JOIN q
+    LEFT JOIN catalog.editions e ON e.ol_key = w.cover_edition_key
+    WHERE w.title_norm % q.norm
+    ORDER BY rank DESC, w.edition_count DESC, w.ol_key
+    LIMIT ${limit} OFFSET ${offset}
+  `;
+}
+
+/**
+ * The exact-title arm, for a query with no full-text content at all.
+ *
+ * "It" is an English stopword, so `websearch_to_tsquery` reduces it to an empty
+ * query and the full-text arm cannot match Stephen King's novel — which
+ * `catalog-search.test.ts` requires it to, as an M2 acceptance criterion. The
+ * same is true of "Us", "She", "Them". A title being entirely stopwords does
+ * not make it less of a title.
+ *
+ * Equality is used rather than similarity because it is both what is wanted and
+ * what is affordable: `title_norm = 'it'` reads 35,463 index candidates for its
+ * 18 matches, where `title_norm % 'it'` would read millions. The GIN trigram
+ * index serves the equality directly, so this needs no new index.
+ *
+ * It is still bounded by the same timeout, because the cost remains a function
+ * of trigram frequency: 'it' is 125ms, 'us' 50ms, 'she' 68ms — and 'the' is
+ * 1,154ms for six results, 'and' 990ms for nine. Those are the ones worth
+ * abandoning.
+ */
+export function searchWorksExactTitleSql(
+  query: string,
+  { limit = 20, offset = 0 }: { limit?: number; offset?: number } = {}
+): Prisma.Sql {
+  return Prisma.sql`
+    WITH q AS (SELECT lower(unaccent(${query})) AS norm)
+    SELECT
+      w.ol_key                                   AS "olKey",
+      w.title,
+      w.subtitle,
+      w.author_names                             AS "authorNames",
+      w.first_publish_year                       AS "firstPublishYear",
+      w.edition_count                            AS "editionCount",
+      w.cover_edition_key                        AS "coverEditionKey",
+      e.cover_id::int                            AS "coverId",
+      (${W_EXACT} + ln(1 + w.edition_count) * ${W_POPULARITY})::double precision AS rank
+    FROM catalog.works w
+    CROSS JOIN q
+    LEFT JOIN catalog.editions e ON e.ol_key = w.cover_edition_key
+    WHERE w.title_norm = q.norm
+    ORDER BY rank DESC, w.edition_count DESC, w.ol_key
+    LIMIT ${limit} OFFSET ${offset}
+  `;
+}
+
+/**
+ * How long the fuzzy fallback may run before it is abandoned.
+ *
+ * This is the bound R1 asks for, and it is a wall-clock one because the thing
+ * being bounded is data-dependent in a way no rewrite fixes: the same statement
+ * costs 58ms for "mockingbrd" and 5.5s for "thex", decided entirely by how
+ * common the query's trigrams are in 6.9M titles.
+ *
+ * A timeout is honest about that. It fails SAFE — the reader gets the full-text
+ * results, which for this path are none, so they see "no results" rather than
+ * waiting. Every fuzzy query that returns something useful is far inside the
+ * budget; the ones it abandons were going to return nothing anyway. "thex" at
+ * similarity >= 0.5 matches no title in the catalog after 5.5 seconds of work.
+ *
+ * Overridable by SEARCH_FUZZY_TIMEOUT_MS so a test can prove the abandonment
+ * path returns results rather than throwing, which is the half of this that a
+ * clock cannot check.
+ *
+ * 700ms is chosen from measurement, not taste. The slowest legitimate typo in
+ * the benchmark is "the hobbitt" — 76,457 index candidates for 20 matches,
+ * about 590ms for the whole page — so the budget has to clear that. The
+ * adversarial cases sit an order of magnitude away ("thexx" and "andzz" would
+ * run 4-5.5s unbounded), so anything between roughly 600ms and 900ms separates
+ * them; 700ms keeps ~150ms of headroom under R1's one-second budget for the
+ * rest of the request.
+ *
+ * The alternative considered was a partial GIN index over popular works only,
+ * which would shrink the candidate set rather than cap the clock. It was not
+ * taken: it needs a migration and an index build over 6.9M rows, it changes
+ * recall silently and data-dependently, and it still would not bound the worst
+ * case — only move it. Recorded here so the next person does not have to
+ * rediscover the trade-off.
+ */
+export const FUZZY_TIMEOUT_MS = Number(
+  process.env.SEARCH_FUZZY_TIMEOUT_MS ?? 700
+);
+
+/**
+ * Shortest query the fuzzy arm will run for.
+ *
+ * A cheap pre-filter, not the bound — the timeout above is the bound. This
+ * exists because the abandoned queries are overwhelmingly short, and skipping
+ * them costs nothing measurable in recall while avoiding both the 250ms wait
+ * and a logged statement cancellation.
+ *
+ * The reason it costs nothing is the 0.5 similarity threshold, set at database
+ * level by the 20260820100000_trigram_threshold migration and checked by
+ * `deploy:verify`. `similarity()` compares the query against the WHOLE title,
+ * so to clear 0.5 a four-character query needs a title of about the same length
+ * that is nearly identical to it — and such a title is matched by the full-text
+ * arm anyway, which runs first. Measured: `similarity('dnue', 'dune')` is 0.111
+ * and `title_norm % 'dnue'` matches zero of 6.9M works. The shortest typo that
+ * this arm genuinely rescues is five characters ('hobit').
+ */
+export const MIN_FUZZY_LENGTH = 5;
+
+/**
+ * True when Postgres reduces the query to an empty tsquery.
+ *
+ * That happens when every word is an English stopword — "the", "of the", "and".
+ * It matters because such a query has no searchable content at all, so the
+ * fuzzy arm must not run for it: fuzzy-matching "the" means finding titles that
+ * are nearly the word "the", which is not what anyone typing it wants, and it
+ * is also the single worst case in the catalog (1.9M index candidates, 18.5s).
+ *
+ * Asked of Postgres rather than a stopword list in TypeScript, because the
+ * authority on what 'english' considers a stopword is the 'english' config, and
+ * a second list here would drift from it silently.
+ */
+async function tsqueryIsEmpty(query: string): Promise<boolean> {
+  const rows = await prisma.$queryRaw<{ empty: boolean }[]>`
+    SELECT websearch_to_tsquery('english', unaccent(${query}))::text = '' AS empty
+  `;
+  return rows[0]?.empty ?? true;
+}
+
+/**
+ * Run the fuzzy arm under a statement timeout, returning [] if it runs long.
+ *
+ * `SET LOCAL` needs a transaction to be local to, hence the wrapper. The
+ * timeout raises 57014 (query_canceled), which is a success for our purposes:
+ * the reader gets the full-text answer instead of waiting.
+ */
+/**
+ * Run one search arm under the budget, returning [] if Postgres cancels it.
+ *
+ * Exported because the abandonment is the half of the bound that a clock cannot
+ * check. `bench:search` proves the arms are fast enough on the real catalog; it
+ * cannot prove what happens when one is not, and at fixture scale the arms
+ * finish in 0.045ms so no timeout can be provoked through them. A test drives
+ * this directly with a statement that cannot finish instead.
+ *
+ * The catch is load-bearing rather than defensive: Postgres raises 57014 on
+ * cancellation and Prisma surfaces that as a thrown error, so without it a slow
+ * fuzzy search is a 500 on /search rather than an empty result.
+ */
+export async function runSearchArmWithinBudget(
+  sql: Prisma.Sql
+): Promise<WorkSearchResult[]> {
+  try {
+    return await prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(`SET LOCAL statement_timeout = ${FUZZY_TIMEOUT_MS}`);
+      return tx.$queryRaw<WorkSearchResult[]>(sql);
+    });
+  } catch (error) {
+    if (isStatementTimeout(error)) return [];
+    throw error;
+  }
+}
+
+/** Postgres 57014, query_canceled — what statement_timeout raises. */
+function isStatementTimeout(error: unknown): boolean {
+  const code = (error as { meta?: { code?: string }; code?: string } | null)?.meta?.code;
+  return code === "57014" || /statement timeout|canceling statement/i.test(String(error));
+}
+
+/**
+ * Search, full-text first and fuzzy only as a fallback.
+ *
+ * The two arms used to be `OR`ed in one statement, which meant every query paid
+ * for the fuzzy one. Since the fuzzy arm's cost depends on how common the
+ * query's trigrams are, that made common words slow: "Fiction" 1,065ms,
+ * "the lord of the rings" 2,013ms, "the" 19,189ms — all measured warm on the
+ * real 6.9M-work catalog. The same queries against the full-text arm alone are
+ * 57ms, 5ms and 1ms. See PRD R1.
+ *
+ * Fallback rather than union is a small change in results, and it is the right
+ * way round: fuzzy matching exists to rescue a query that found nothing —
+ * a typo — not to add near-misses to a query that already worked.
+ */
 export async function searchWorks(
   query: string,
   { limit = 20, offset = 0 }: { limit?: number; offset?: number } = {}
@@ -153,9 +399,29 @@ export async function searchWorks(
   const trimmed = query.trim();
   if (trimmed.length === 0) return [];
 
-  return prisma.$queryRaw<WorkSearchResult[]>(
+  const fullText = await prisma.$queryRaw<WorkSearchResult[]>(
     searchWorksSql(trimmed, { limit, offset })
   );
+  if (fullText.length > 0) return fullText;
+
+  // An empty page is not the same as no matches. Past the last page of a
+  // full-text result set this is also empty, and falling back there would
+  // splice fuzzy results onto the end of a good search.
+  if (offset > 0) {
+    const anyFullText = await prisma.$queryRaw<WorkSearchResult[]>(
+      searchWorksSql(trimmed, { limit: 1, offset: 0 })
+    );
+    if (anyFullText.length > 0) return [];
+  }
+
+  // No full-text content at all: the only sensible match is an exact title.
+  if (await tsqueryIsEmpty(trimmed)) {
+    return runSearchArmWithinBudget(searchWorksExactTitleSql(trimmed, { limit, offset }));
+  }
+
+  if (trimmed.length < MIN_FUZZY_LENGTH) return [];
+
+  return runSearchArmWithinBudget(searchWorksFuzzySql(trimmed, { limit, offset }));
 }
 
 /**
@@ -261,17 +527,21 @@ export function countWorkMatchesSql(query: string): Prisma.Sql {
       SELECT 1
       FROM catalog.works w
       CROSS JOIN (
-        SELECT
-          websearch_to_tsquery('english', unaccent(${query})) AS tsq,
-          lower(unaccent(${query}))                           AS norm
-      ) q
+        SELECT websearch_to_tsquery('english', unaccent(${query})) AS tsq) q
       WHERE w.search_vector @@ q.tsq
-         OR w.title_norm % q.norm
       LIMIT ${COUNT_CEILING}
     ) matched
   `;
 }
 
+/**
+ * Counted the same way the results are chosen, which is the point.
+ *
+ * If this counted both arms while `searchWorks` returns one, the pager and the
+ * result list would disagree — "1 to 24 of 300" over an empty page. So the
+ * fallback rule lives in both, and the fuzzy count is bounded by the same
+ * timeout for the same reason.
+ */
 export async function countWorkMatches(
   query: string
 ): Promise<{ count: number; atCeiling: boolean }> {
@@ -282,8 +552,101 @@ export async function countWorkMatches(
     countWorkMatchesSql(trimmed)
   );
   const count = Number(rows[0]?.count ?? 0);
-  return { count, atCeiling: count >= COUNT_CEILING };
+  if (count > 0) return { count, atCeiling: count >= COUNT_CEILING };
+
+  const stopwordsOnly = await tsqueryIsEmpty(trimmed);
+  if (!stopwordsOnly && trimmed.length < MIN_FUZZY_LENGTH) {
+    return { count: 0, atCeiling: false };
+  }
+
+  const fallback = await runSearchArmWithinBudget(
+    stopwordsOnly
+      ? searchWorksExactTitleSql(trimmed, { limit: COUNT_CEILING, offset: 0 })
+      : searchWorksFuzzySql(trimmed, { limit: COUNT_CEILING, offset: 0 })
+  );
+  return { count: fallback.length, atCeiling: fallback.length >= COUNT_CEILING };
 }
+
+export interface SearchPage {
+  works: WorkSearchResult[];
+  count: number;
+  atCeiling: boolean;
+  page: number;
+  totalPages: number;
+}
+
+/**
+ * A page of search results and the count that sizes the pager, resolved
+ * together so the chosen arm is scanned once.
+ *
+ * The page used to call `countWorkMatches` and then `searchWorks`, which it has
+ * to do in that order because the offset depends on the resolved page. Two
+ * calls means two scans, and that is affordable for the full-text arm (3-15ms
+ * each) and not for the fuzzy one: "the hobbitt" costs 659ms per scan, so
+ * paying twice put a legitimate typo over R1's one-second budget on its own.
+ *
+ * The fuzzy path therefore fetches its whole match set once — bounded by
+ * COUNT_CEILING, and fuzzy match sets are small (20 to 429 rows for the typos
+ * measured) — and slices the page in memory. The full-text path keeps its two
+ * cheap queries, because counting 6.9M works by fetching them would be worse.
+ */
+export async function searchWorksPaged(
+  query: string,
+  { pageSize, requestedPage }: { pageSize: number; requestedPage?: string }
+): Promise<SearchPage> {
+  const empty: SearchPage = {
+    works: [],
+    count: 0,
+    atCeiling: false,
+    page: 1,
+    totalPages: 1,
+  };
+
+  const trimmed = query.trim();
+  if (trimmed.length === 0) return empty;
+
+  const ftsRows = await prisma.$queryRaw<{ count: bigint }[]>(
+    countWorkMatchesSql(trimmed)
+  );
+  const ftsCount = Number(ftsRows[0]?.count ?? 0);
+
+  if (ftsCount > 0) {
+    const totalPages = lastPageFor(ftsCount, pageSize);
+    const page = resolvePage(requestedPage, { lastPage: totalPages });
+    const works = await prisma.$queryRaw<WorkSearchResult[]>(
+      searchWorksSql(trimmed, { limit: pageSize, offset: (page - 1) * pageSize })
+    );
+    return {
+      works,
+      count: ftsCount,
+      atCeiling: ftsCount >= COUNT_CEILING,
+      page,
+      totalPages,
+    };
+  }
+
+  const fallbackArm = (await tsqueryIsEmpty(trimmed))
+    ? searchWorksExactTitleSql(trimmed, { limit: COUNT_CEILING, offset: 0 })
+    : trimmed.length >= MIN_FUZZY_LENGTH
+      ? searchWorksFuzzySql(trimmed, { limit: COUNT_CEILING, offset: 0 })
+      : null;
+  if (!fallbackArm) return empty;
+
+  const matches = await runSearchArmWithinBudget(fallbackArm);
+  if (matches.length === 0) return empty;
+
+  const totalPages = lastPageFor(matches.length, pageSize);
+  const page = resolvePage(requestedPage, { lastPage: totalPages });
+  const start = (page - 1) * pageSize;
+  return {
+    works: matches.slice(start, start + pageSize),
+    count: matches.length,
+    atCeiling: matches.length >= COUNT_CEILING,
+    page,
+    totalPages,
+  };
+}
+
 
 export async function getWorkByKey(olKey: string): Promise<WorkDetail | null> {
   // Canonical description wins; third-party enrichment fills the gap. Expired
