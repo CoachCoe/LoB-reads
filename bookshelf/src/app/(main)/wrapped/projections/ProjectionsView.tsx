@@ -27,7 +27,17 @@ const MONTH_NAMES = [
 ];
 
 export default function ProjectionsView({ projections, userName }: ProjectionsViewProps) {
-  const progressPercentage = (projections.daysElapsed / 365) * 100;
+  // The denominator was hardcoded 365, so 31 December of a leap year is day
+  // 366 and reported 100.3% — written straight into a CSS width. The real
+  // year length is already on the payload as elapsed + remaining. TEST-20.
+  //
+  // No clamp, deliberately: `daysRemaining` is computed as
+  // `totalDaysInYear - daysElapsed`, so this denominator is that total by
+  // construction and the ratio cannot exceed 1. A Math.min here would be a
+  // guard no test could ever make fire, which is the kind of unfalsifiable
+  // code the audits keep finding. The 366-of-366 case below pins the ceiling.
+  const daysInYear = projections.daysElapsed + projections.daysRemaining;
+  const progressPercentage = (projections.daysElapsed / daysInYear) * 100;
   const nextYear = projections.year + 1;
 
   return (

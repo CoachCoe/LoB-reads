@@ -22,6 +22,64 @@ describe("checkLimit", () => {
     expect(blocked.retryAfterSeconds).toBeGreaterThan(0);
   });
 
+  /**
+   * TEST-18: `retryAfterSeconds` was only ever asserted `> 0`, which the
+   * `Math.max(1, …)` floor guarantees on its own. So replacing the whole
+   * expression with the constant `1` passed the suite, and every 429 would
+   * have advertised `Retry-After: 1` — inviting a client to retry immediately
+   * and forever against a limit measured in minutes, which is worse than no
+   * header at all.
+   *
+   * The value is the wait until the OLDEST hit in the window expires, so it
+   * has to shrink as the window slides. A clock frozen with fake timers is
+   * what makes that exact rather than approximate; the real clock leaves it
+   * one millisecond either side of a `Math.ceil` boundary.
+   */
+  it("advertises the wait until the oldest hit leaves the window", () => {
+    jest.useFakeTimers();
+    const at = (iso: string) => jest.setSystemTime(new Date(iso));
+    const opts = { limit: 3, windowMs: 15 * 60_000 };
+
+    // Spaced deliberately. A first version of this test spent all three hits
+    // at one frozen instant, which made `hits[0]` and `hits[hits.length - 1]`
+    // the same value — so reading the window from the NEWEST hit instead of
+    // the oldest was indistinguishable, and the mutation survived.
+    at("2026-09-02T12:00:00.000Z");
+    checkLimit("login:someone", opts);
+    at("2026-09-02T12:01:00.000Z");
+    checkLimit("login:someone", opts);
+    at("2026-09-02T12:02:00.000Z");
+    checkLimit("login:someone", opts);
+
+    // The window clears when the OLDEST hit ages out: 12:00 + 15min = 12:15,
+    // which is 13 minutes from now. Measuring from the newest hit would say
+    // 15 minutes, and keep saying it for as long as the client kept trying.
+    at("2026-09-02T12:02:00.000Z");
+    expect(checkLimit("login:someone", opts).retryAfterSeconds).toBe(780);
+
+    // Later still, the same three hits are inside the window and the wait has
+    // shrunk — not reset, and not the floor of one second.
+    at("2026-09-02T12:10:00.000Z");
+    expect(checkLimit("login:someone", opts).retryAfterSeconds).toBe(300);
+  });
+
+  it("counts a hit inside the window and forgets one that has aged out", () => {
+    jest.useFakeTimers();
+    const opts = { limit: 1, windowMs: 1_000 };
+
+    jest.setSystemTime(new Date("2026-09-02T12:00:00.000Z"));
+    expect(checkLimit("edge", opts).allowed).toBe(true);
+
+    // One millisecond short of the window closing: the hit still counts.
+    jest.setSystemTime(new Date("2026-09-02T12:00:00.999Z"));
+    expect(checkLimit("edge", opts).allowed).toBe(false);
+
+    // Exactly on the boundary the filter is `> windowStart`, so the hit at T
+    // is no longer inside a window starting at T, and the budget is back.
+    jest.setSystemTime(new Date("2026-09-02T12:00:01.000Z"));
+    expect(checkLimit("edge", opts).allowed).toBe(true);
+  });
+
   it("counts each key separately", () => {
     const opts = { limit: 1, windowMs: 60_000 };
 

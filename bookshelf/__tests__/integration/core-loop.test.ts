@@ -289,6 +289,115 @@ describe("FLOW-5: starting a session with an explicit edition", () => {
 });
 
 /**
+ * TEST-7 and TEST-8: the two guards in `updateProgress`, neither of which had
+ * a test that could fail.
+ *
+ * Both matter more since FLOW-28 made the session's `pageCount` the single
+ * source of truth for the progress UI, and both are one character wide.
+ *
+ * TEST-7 — the page ceiling. Every existing progress test posts 120 or -1
+ * against a 412-page book, so deleting `currentPage > session.pageCount`
+ * entirely changed nothing: page 5,000 of a 412-page book was accepted, the
+ * bar rendered past its own end, and /wrapped counted it.
+ *
+ * TEST-8 — `currentPage >= session.pageCount` is what makes reaching the last
+ * page finish the book, which the code comment calls "what a reader means",
+ * and it is also what moves the work to the Read shelf. Every test reached
+ * "finished" through `action: "finish"` instead, so weakening `>=` to `>` left
+ * the documented behaviour and the shelf move it drives completely unguarded.
+ *
+ * The boundary is asserted from both sides — 411 does not finish, 412 does —
+ * because a test that only proves "a big page number finishes it" is equally
+ * happy with `>`, with `>= pageCount - 1`, and with no comparison at all.
+ */
+describe("TEST-7 and TEST-8: the page ceiling and the last page", () => {
+  /** The shelves this user currently has the work on, by name. */
+  async function shelvesFor(work: string) {
+    const items = await prisma.shelfItem.findMany({
+      where: { workKey: work, userId },
+      include: { shelf: true },
+    });
+    return items.map((i) => i.shelf.name).sort();
+  }
+
+  it("refuses a page beyond the edition's length, and records nothing", async () => {
+    await progressPost(json({ workKey, action: "start" }));
+
+    const response = await progressPost(json({ workKey, currentPage: 5000 }));
+
+    expect(response.status).toBe(400);
+    // The message carries the real length, so the reader can tell what
+    // happened rather than being told "invalid".
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringContaining("412"),
+    });
+    // Status alone would pass if the write happened and the error came after.
+    const open = await prisma.readingSession.findFirstOrThrow({
+      where: { userId, workKey },
+    });
+    expect(open.currentPage).toBe(0);
+    expect(open.finishedAt).toBeNull();
+  });
+
+  it("accepts the last page itself, which is not beyond the length", async () => {
+    await progressPost(json({ workKey, action: "start" }));
+
+    // The ceiling is `>`, not `>=`. Tightening it would make a book
+    // impossible to finish by reading it.
+    expect((await progressPost(json({ workKey, currentPage: 412 }))).status).toBe(200);
+  });
+
+  it("does not finish the book one page short of the end", async () => {
+    await progressPost(json({ workKey, action: "start" }));
+    await progressPost(json({ workKey, currentPage: 411 }));
+
+    const session = await prisma.readingSession.findFirstOrThrow({
+      where: { userId, workKey },
+    });
+    expect(session.currentPage).toBe(411);
+    expect(session.finishedAt).toBeNull();
+    expect(await shelvesFor(workKey)).toEqual(["Currently Reading"]);
+  });
+
+  it("finishes the book on reaching the last page, and moves it to Read", async () => {
+    await progressPost(json({ workKey, action: "start" }));
+    expect(await shelvesFor(workKey)).toEqual(["Currently Reading"]);
+
+    const response = await progressPost(json({ workKey, currentPage: 412 }));
+
+    expect(response.status).toBe(200);
+    const session = await prisma.readingSession.findFirstOrThrow({
+      where: { userId, workKey },
+    });
+    expect(session.currentPage).toBe(412);
+    expect(session.finishedAt).not.toBeNull();
+    // The shelf move is the visible half, and it is downstream of the same
+    // comparison — so it is asserted rather than assumed.
+    expect(await shelvesFor(workKey)).toEqual(["Read"]);
+  });
+
+  it("leaves a session with no page count open however far it is read", async () => {
+    // `pageCount` is null when the catalog has no page count for the edition,
+    // and `session.pageCount != null` is what keeps both guards off that path.
+    // Without it, `currentPage >= null` would finish the book at page 0.
+    const unpaged = await makeWork();
+    await prisma.readingSession.create({
+      data: { userId, workKey: unpaged.olKey, pageCount: null, currentPage: 0 },
+    });
+
+    expect(
+      (await progressPost(json({ workKey: unpaged.olKey, currentPage: 900 }))).status
+    ).toBe(200);
+
+    const session = await prisma.readingSession.findFirstOrThrow({
+      where: { userId, workKey: unpaged.olKey },
+    });
+    expect(session.currentPage).toBe(900);
+    expect(session.finishedAt).toBeNull();
+  });
+});
+
+/**
  * TEST-9: `getReadingStats` is the "books read" number on two pages and had no
  * test at all.
  *
