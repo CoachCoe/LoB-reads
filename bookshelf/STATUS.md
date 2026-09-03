@@ -79,13 +79,18 @@ The catalog is the English-language, ISBN-bearing, cover-bearing slice from
 | `/work/[olKey]` | 0.009 s | 0.07 s |
 | `/search?subject=Fiction` | 0.031 s | 0.10 s |
 | `/search?q=dune` | 0.091 s | 0.17 s |
-| `/search?q=Fiction` | **1.23 s** | 4.2 s — see limitations |
+| `/search?q=Fiction` | ~~**1.23 s**~~ **0.031 s** | 4.2 s → 0.03 s |
+| `/search?q=the` | ~~19.2 s~~ **0.001 s** | — |
 
 A production build is five to ten times faster everywhere except the common-word
 search, which barely moved (4.2 s to 3.5 s). That asymmetry is what ruled out
 rendering overhead and sent the investigation to the query plan, where the real
-cause turned out to be a lossy bitmap. 1.23 s is that query after raising
-`work_mem`; see limitations for why it is not yet under a second.
+cause turned out to be a lossy bitmap.
+
+The common-word row is now the query-level figure, measured warm against the
+real catalog by `npm run bench:search`. It is no longer a limitation: see the
+search section below for what the remaining second actually was, which was not
+what the previous two diagnoses said.
 
 ---
 
@@ -176,18 +181,18 @@ day earlier.
 
 Ordered by how much they would hurt.
 
-### Common-word search is slow — and the earlier diagnosis was wrong
+### ~~Common-word search is slow~~ — fixed, and the diagnosis was wrong twice
 
-"Fiction" matches 10,061 works. The rank expression is not the cost —
-substituting a trivial `ln(1 + edition_count)` still took 5.5 s — and this was
-previously attributed to heap reads against a 3 GB table with `shared_buffers`
-at 128 MB. Reading the plan shows something more specific and much cheaper to
-fix.
+Worth reading as a sequence, because each stage was measured and each conclusion
+was superseded by the next measurement.
 
-At the 4 MB `work_mem` default the bitmap index scan **overflows and goes
-lossy**: it can no longer track individual rows, so it degrades to page
-granularity and rechecks every row on every candidate page. Raising `work_mem`
-alone, with `shared_buffers` untouched at 128 MB:
+**First diagnosis: heap reads against a 3 GB table.** Wrong. With
+`shared_buffers` at 3 GB the query reports `shared hit=202478, read=0` — the
+whole working set resident, zero disk reads — and still took 1.2 s.
+
+**Second diagnosis: a lossy bitmap scan, then CPU spent ranking.** Half right.
+At the 4 MB `work_mem` default the bitmap index scan overflows and degrades to
+page granularity, rechecking every row on every candidate page:
 
 | `work_mem` | rows rechecked | heap blocks | query |
 |---|---|---|---|
@@ -195,23 +200,42 @@ alone, with `shared_buffers` untouched at 128 MB:
 | 32 MB | 93,941 | 67,069 exact, none lossy | **1007 ms** |
 | 256 MB | 93,941 | 66,682 exact | 926 ms |
 
-A 3.5× speed-up from one setting, and 32 MB is the knee — more buys almost
-nothing. On the page: **3.5 s → 1.23 s**.
+That part holds: 32 MB is the knee and it travels in a migration. The
+conclusion drawn from it did not. "Whatever remains is CPU: rechecking 93,941
+rows and ranking 10,061 of them" named the wrong half. **Ranking is cheap** —
+all 10,120 full-text matches for "Fiction", fully ranked with the real
+expression, take 57 ms. Which also means bounding the candidate set, the thing
+R1 was open for, was never the fix.
 
-**Caching cannot finish the job.** With `shared_buffers` at 3 GB the query
-reports `shared hit=202478, read=0` — the entire working set is resident, zero
-disk reads — and still takes 1.2 s. Whatever remains is CPU: rechecking 93,941
-rows and ranking 10,061 of them.
+**Third and actual diagnosis: the query had two arms and every query paid for
+both.** `title_norm % q.norm` is a trigram similarity match, and when a query's
+trigrams are common the GIN index cannot be selective. `?q=the` pulled
+**1,933,084 candidate rows** from the index; all of them were fetched from the
+heap so that `similarity()` could discard 1,926,798 and keep 2,111. That was
+18.5 of its 19 seconds. `pg_trgm.similarity_threshold` does not help — 0.3, 0.5
+and 0.7 return the same 1.9 M candidates and differ only in how many the recheck
+throws away.
 
-So the ordering is now clear. Raise `work_mem` for the immediate 3.5×; bounding
-the candidate set (R1) is still required to get under a second, and no amount of
-memory substitutes for it.
+The arms are now separate statements tried in order — full text, then exact
+title for a stopword-only query, then fuzzy only when full text found nothing —
+with a 700 ms `statement_timeout` bounding the two trigram arms. Measured warm
+on the real catalog:
 
-`work_mem` now travels in a migration (`ALTER DATABASE … SET work_mem`) rather
-than being set by hand on one machine, which is how a fresh clone used to get
-the slow query back silently. If a managed provider refuses `ALTER DATABASE`,
-the migration raises a warning and `npm run deploy:verify` fails on it — warned
-at migrate time, caught at deploy time.
+| page | before | after |
+|---|---|---|
+| `/search?q=the` | 19,189 ms | 1 ms |
+| `/search?q=the+lord+of+the+rings` | 2,013 ms | 6 ms |
+| `/search?q=Fiction` | 1,065 ms | 31 ms |
+| `/search?q=dune` | 90 ms | 7 ms |
+| `/search?q=the+hobbitt` | 0 results | 20 results, 565 ms |
+
+Twenty-two queries, none over a second, slowest 854 ms. `npm run bench:search`
+is the gate; it needs the real catalog and says so when it does not have one.
+
+**The lesson this keeps teaching.** Every wrong turn here came from reasoning
+about the query instead of reading the plan, and the one that shipped — bounded
+candidates, 500× slower — was never measured at all. `EXPLAIN (ANALYZE,
+BUFFERS)` answered it in one command each time.
 
 ### ~~A catalog rebuild takes the catalog offline~~ — fixed
 
@@ -334,7 +358,8 @@ is the only fix.
   What is left is an Azure subscription, a Flexible Server, a storage account
   and `GOOGLE_BOOKS_API_KEY`. See below.
 - Cover storage at scale (above).
-- Bounded-candidate search (above).
+- ~~Bounded-candidate search.~~ Not built and not needed — it was the wrong
+  fix for the right problem, and the right one was cheaper. See above.
 - Instrumentation. Every performance problem so far was found by hand.
 
 ## Deployment readiness

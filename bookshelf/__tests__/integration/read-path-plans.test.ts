@@ -5,6 +5,8 @@ import {
   popularWorksSql,
   searchWorks,
   searchWorksSql,
+  searchWorksFuzzySql,
+  searchWorksExactTitleSql,
   worksBySubjectSql,
   COUNT_CEILING,
 } from "@/server/catalog";
@@ -256,19 +258,42 @@ describe("search must stay bounded by what it returns", () => {
  * that is what the first test does. It is a text assertion and says so.
  */
 describe("search stays a single pass", () => {
-  it("has exactly one LIMIT — no per-strategy subquery caps", () => {
-    // A text assertion, deliberately. The reverted version had five LIMITs: one
-    // per candidate subquery plus the outer one. One LIMIT means one pass over
-    // the match set, which is the property that kept this query at 222ms.
-    const sql = searchWorksSql("anything", { limit: 24, offset: 0 }).text;
-    const limits = sql.match(/\bLIMIT\b/gi) ?? [];
+  it.each([
+    ["full-text", searchWorksSql],
+    ["fuzzy", searchWorksFuzzySql],
+    ["exact-title", searchWorksExactTitleSql],
+  ] as const)(
+    "the %s arm has exactly one LIMIT — no per-strategy subquery caps",
+    (_name, build) => {
+      // A text assertion, deliberately. The reverted version had five LIMITs:
+      // one per candidate subquery plus the outer one. One LIMIT means one pass
+      // over the match set, which is the property that kept this query at
+      // 222ms.
+      const sql = build("anything", { limit: 24, offset: 0 }).text;
+      const limits = sql.match(/\bLIMIT\b/gi) ?? [];
 
-    // One LIMIT is the whole property: no per-strategy subquery caps, so one
-    // pass over the match set. A "no ORDER BY ... edition_count ... LIMIT" rule
-    // was tried and dropped — the correct query legitimately ends
-    // `ORDER BY rank DESC, w.edition_count DESC, w.ol_key` then `LIMIT`, so it
-    // matched the good query as readily as the bad one.
-    expect(limits).toHaveLength(1);
+      // One LIMIT is the whole property: no per-strategy subquery caps, so one
+      // pass over the match set. A "no ORDER BY ... edition_count ... LIMIT"
+      // rule was tried and dropped — the correct query legitimately ends
+      // `ORDER BY rank DESC, w.edition_count DESC, w.ol_key` then `LIMIT`, so
+      // it matched the good query as readily as the bad one.
+      //
+      // There are three arms now rather than one OR'd statement, and each is
+      // asserted separately: the R1 fix was to stop every query paying for the
+      // trigram arm, not to bound candidates, so "one pass per arm" is still
+      // exactly the property that matters.
+      expect(limits).toHaveLength(1);
+    }
+  );
+
+  it("keeps the trigram predicate out of the full-text arm", () => {
+    // The point of the split. If `title_norm %` reappears in the statement
+    // every query runs, common words go back to costing a second or more —
+    // "Fiction" 1,065ms, "the" 19,189ms, measured on the real catalog. A text
+    // assertion again, because the cost is invisible at fixture scale.
+    expect(searchWorksSql("anything", { limit: 24 }).text).not.toMatch(/title_norm\s*%/);
+    // And the fuzzy arm is the one that carries it.
+    expect(searchWorksFuzzySql("anything", { limit: 24 }).text).toMatch(/title_norm\s*%/);
   });
 
   it("reaches works through the text indexes at this scale", async () => {

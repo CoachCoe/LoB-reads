@@ -445,19 +445,33 @@ async function main() {
 
     // Search has to be indexed AND fast. An unindexed catalog still returns
     // results, just slowly, so correctness alone would pass.
-    const started = Date.now();
-    const search = await get("/search?q=dune");
-    const elapsed = Date.now() - started;
-    if (search) {
-      check("search responds", search.status === 200, `HTTP ${search.status}`);
-      check(
-        "search is under a second",
-        elapsed < 1000,
-        `${elapsed}ms`,
-        {
-          hint: "if this is seconds rather than milliseconds, the catalog restored without its indexes",
-        }
-      );
+    //
+    // SPEC-10: this used to time `?q=dune` alone, which was never the slow
+    // query — 90ms even while common words took over a second, so the check
+    // could not fail for the reason it existed. It could not be made
+    // representative while R1 was open, because `?q=fiction` was knowingly
+    // over budget. R1 is closed, so it is representative now: one query per
+    // arm, each of which was over a second before the split.
+    //
+    //   dune       full-text, selective
+    //   fiction    full-text, common word — was 1,065ms
+    //   the        empty tsquery, exact-title arm — was 19,189ms
+    //   mockingbrd no full-text match, fuzzy arm
+    //
+    // Each is timed warm, after one untimed request, because a cold first hit
+    // measures the container starting rather than the query.
+    for (const q of ["dune", "fiction", "the", "mockingbrd"]) {
+      const path = `/search?q=${encodeURIComponent(q)}`;
+      const warm = await get(path);
+      if (!warm) continue;
+      check(`search responds for "${q}"`, warm.status === 200, `HTTP ${warm.status}`);
+
+      const started = Date.now();
+      await get(path);
+      const elapsed = Date.now() - started;
+      check(`search is under a second for "${q}"`, elapsed < 1000, `${elapsed}ms`, {
+        hint: "seconds rather than milliseconds means either the catalog restored without its indexes, or the trigram arm is being run for every query again — see PRD R1 and searchWorks.",
+      });
     }
   }
 }

@@ -29,6 +29,7 @@
     "social:compute": "tsx scripts/social/compute-stats.ts",
     "db:reset": "prisma migrate reset",
     "storage:smoke": "tsx scripts/dev/azurite-smoke.ts",
+    "bench:search": "tsx scripts/dev/bench-search.ts",
     "deploy:verify": "tsx scripts/deploy/verify.ts"
   },
   "prisma": {
