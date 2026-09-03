@@ -57,6 +57,50 @@ describe("deciding whether to resume a download", () => {
     expect(decideResume(11_565, yesterday, remote)).toEqual({ action: "restart" });
   });
 
+  // The case above moves BOTH etag and lastModified, which is why it could not
+  // discriminate: with the conjunction in describesSameObject weakened to a
+  // disjunction, two mismatches are still two falses and the answer is
+  // unchanged. Provenance has to be unanimous, so each field is disagreed with
+  // on its own below — and one field at a time is what a real re-upload looks
+  // like, not both.
+
+  it("refuses to resume when only the etag disagrees", () => {
+    // A dump rebuilt from the same source within the same second: the content
+    // changed, the timestamp did not. Trusting the timestamp alone appends
+    // today's remainder to yesterday's prefix.
+    const sameMinuteRebuild: PartialMeta = {
+      ...matchingMeta,
+      etag: '"6a6f56ef-2e58eb9c"',
+    };
+    expect(decideResume(11_565, sameMinuteRebuild, remote)).toEqual({
+      action: "restart",
+    });
+  });
+
+  it("refuses to resume when only the last-modified date disagrees", () => {
+    // The mirror image: a weak or reused ETag across a republication. Either
+    // field disagreeing is enough to make the bytes on disk unattributable.
+    const republished: PartialMeta = {
+      ...matchingMeta,
+      lastModified: "Mon, 03 Aug 2026 14:40:47 GMT",
+    };
+    expect(decideResume(11_565, republished, remote)).toEqual({
+      action: "restart",
+    });
+  });
+
+  it("refuses to skip a complete file whose provenance is only half right", () => {
+    // Worse than a bad resume: `skip` means nothing ever reads the file again.
+    // A complete, verified-flagged partial whose etag belongs to a different
+    // publication must still be re-examined.
+    const halfRight: PartialMeta = {
+      ...matchingMeta,
+      etag: '"different-publication"',
+      verified: true,
+    };
+    expect(decideResume(TOTAL, halfRight, remote)).toEqual({ action: "verify" });
+  });
+
   it("refuses to resume when the recorded size disagrees", () => {
     const differentSize: PartialMeta = { ...matchingMeta, total: TOTAL - 1 };
     expect(decideResume(11_565, differentSize, remote)).toEqual({
