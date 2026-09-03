@@ -255,6 +255,90 @@ describe("resolving a queued row", () => {
   });
 });
 
+/**
+ * TEST-5: `findWorkKeyByTitleAuthor` escapes LIKE's own metacharacters, and
+ * nothing tested it.
+ *
+ * The author is bound as a parameter, which stops SQL injection and does
+ * nothing whatever about `%` and `_` — they are wildcards to LIKE regardless
+ * of how the string arrived. All thirteen existing import tests use ordinary
+ * names, so deleting the escape changed nothing in the suite.
+ *
+ * What makes it worth a test is which path it sits on. `imports.ts:153` feeds
+ * this straight into applyRow and marks the row `matched`/`title_author` with
+ * **no review step**, so a crafted row attaches itself to whichever work shares
+ * its title and has the most editions — silently, and to the reader's own
+ * shelves.
+ *
+ * `_` is the more interesting metacharacter of the two and the one a
+ * `%`-only test would miss: it matches exactly one character, so an author of
+ * "Frank Herber_" is a wildcard match for "Frank Herbert" while looking like
+ * an ordinary typo.
+ *
+ * The last case is a control. Without it, every assertion here would still
+ * pass if title-and-author matching stopped working altogether.
+ */
+describe("TEST-5: LIKE metacharacters in an imported author name", () => {
+  const row = (id: number, title: string, author: string) =>
+    [
+      HEADER,
+      `${id},${title},"${author}","","",5,Pub,300,1965,2024/03/15,2024/01/02,"",read,"",1`,
+    ].join("\n");
+
+  it("does not match every author when the name is a bare percent", async () => {
+    const { sessionId } = await importCsv(row(1, "Dune", "%"));
+
+    const summary = await getImportSession(userId, sessionId);
+    // Unescaped, the predicate became `LIKE '%%%'` — true for every row — so
+    // the author half of "exact title and author" was simply switched off.
+    expect(summary!.matched).toBe(0);
+    expect(summary!.needsReview).toBe(1);
+
+    // And nothing reached the reader's shelves, which is the harm.
+    expect(await prisma.shelfItem.count({ where: { userId } })).toBe(0);
+    expect(await prisma.readingSession.count({ where: { userId } })).toBe(0);
+  });
+
+  it("does not treat an underscore as a single-character wildcard", async () => {
+    const { sessionId } = await importCsv(row(2, "Dune", "Frank Herber_"));
+
+    const summary = await getImportSession(userId, sessionId);
+    expect(summary!.matched).toBe(0);
+    expect(summary!.needsReview).toBe(1);
+  });
+
+  it("matches an author whose name really contains a backslash", async () => {
+    // The backslash branch of the escape needs a case of its own, and the
+    // obvious one does not work: a crafted `\_` cannot produce a false match,
+    // because whatever the leftover backslash does to the character after it,
+    // the pattern still demands a literal backslash that no ordinary name has.
+    // Its actual effect is the opposite — a false NEGATIVE.
+    //
+    // Backslash is Postgres's default LIKE escape, so `\D` in a pattern means
+    // a literal `D`: unescaped, `%AC\DC%` collapses to `%ACDC%` and stops
+    // matching the very name it was built from. Escaped, `%AC\\DC%` matches.
+    // Verified directly in Postgres before relying on it.
+    await seedWork({
+      key: "OLIMP005W",
+      title: "Back In Black",
+      author: "AC\\DC",
+    });
+
+    const { sessionId } = await importCsv(row(3, "Back In Black", "AC\\DC"));
+
+    const summary = await getImportSession(userId, sessionId);
+    expect(summary!.matched).toBe(1);
+  });
+
+  it("still matches the author it is actually given", async () => {
+    const { sessionId } = await importCsv(row(4, "Dune", "Frank Herbert"));
+
+    const summary = await getImportSession(userId, sessionId);
+    expect(summary!.matched).toBe(1);
+    expect(await prisma.readingSession.count({ where: { userId } })).toBe(1);
+  });
+});
+
 describe("candidate scoring", () => {
   it("ranks the intended book first despite a typo", async () => {
     const candidates = await findCandidates("To Kill a Mockingbrd", "Harper Lee");
