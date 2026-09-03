@@ -1,4 +1,4 @@
-import { prisma } from "./setup";
+import { prisma, clearTestCatalogRows } from "./setup";
 import { makeWork } from "./factories";
 
 /**
@@ -18,6 +18,18 @@ import { makeWork } from "./factories";
 import { GET as liveness } from "@/app/api/health/route";
 import { GET as readiness } from "@/app/api/health/ready/route";
 
+/**
+ * Two tests here require an EMPTY catalog, and this file used to just assume
+ * one. The global beforeEach truncates `app.*` only, so the emptiness came
+ * from every alphabetically-earlier catalog-writing file happening to clean up
+ * after itself — seeding a single row under a prefix the cleanup helper did
+ * not recognise failed both of them. A precondition a test depends on is the
+ * test's own to establish.
+ */
+beforeEach(async () => {
+  await clearTestCatalogRows();
+});
+
 describe("liveness", () => {
   it("returns 200 and touches nothing", async () => {
     const response = await liveness();
@@ -26,9 +38,10 @@ describe("liveness", () => {
   });
 
   it("still returns 200 when the catalog is empty", async () => {
-    // setup truncates between tests, so the catalog is empty here. Liveness
-    // must not care — this is the check that keeps a database outage from
-    // becoming a restart loop.
+    // The beforeEach above empties the catalog, so this is a stated
+    // precondition rather than an inherited one. Liveness must not care —
+    // this is the check that keeps a database outage from becoming a restart
+    // loop.
     //
     // Catalog tables are reached by raw SQL, not Prisma models, because the
     // catalog is rebuilt wholesale outside Prisma's ownership.
