@@ -56,47 +56,73 @@ so shelves and ratings could only come from the Goodreads importer. Fixed and
 covered by `core-loop.test.ts`. Kept here because it outranked everything below
 and its absence made the rest academic.
 
-**R1. Search must answer in under a second for any query.**
-A common word took 4.2 s. Raising `work_mem` from the 4 MB default to 32 MB
-brought that to **1.23 s** — the default made the bitmap scan go lossy and
-recheck a million rows. Do that first; it is one setting.
+**R1. ~~Search must answer in under a second for any query.~~ Done.**
+Measured warm on the real 6.9M-work catalog, before and after:
 
-It does not finish the job. With the whole working set cached and zero disk reads
-the query is still 1.2 s, so the rest is CPU: rechecking 93,941 rows and ranking
-10,061.
+| query | before | after |
+|---|---|---|
+| `the` | 19,189ms | 1ms |
+| `the lord of the rings` | 2,013ms | 6ms |
+| `Fiction` | 1,065ms | 31ms |
+| `history` | 606ms | 296ms |
+| `dune` | 90ms | 7ms |
+| `the hobbitt` (typo) | 0 results | 20 results, 565ms |
 
-**Bounding the candidate set was attempted and reverted.** OQ-3 answered the
-question below — approximate results are acceptable — and the implementation
-capped what reached the ranking expression with four per-strategy subqueries,
-each `ORDER BY w.edition_count DESC LIMIT n`. Measured on the real catalog
-afterwards, `?q=dune` went from a 222 ms query to **71 seconds**, and the page
-from under a second to 116. It shipped before anyone measured it.
+Twenty-two queries, all under a second; the slowest is 854ms and that is an
+adversarial one that returns nothing. `npm run bench:search` is the gate and
+`npm run bench:search -- --gate` exits non-zero.
 
-The cause, because the next attempt will meet it too:
+**Bounding the candidate set was the wrong fix, and it was never needed.** The
+first attempt capped what reached the ranking expression and made `?q=dune` 500x
+slower; the trap is recorded below because it is still a trap. But the premise
+was wrong too: **ranking was never the cost.** Ranking all 10,120 matches for
+"Fiction" takes 57ms.
+
+The cost was the other arm of the `WHERE`. `title_norm % q.norm` is a trigram
+similarity match, and for a query whose trigrams are common the GIN index cannot
+be selective — `?q=the` returned **1,933,084 candidate rows**, every one fetched
+from the heap (373,236 blocks, ~2.9GB against a 128MB `shared_buffers`) so that
+`similarity()` could discard 1,926,798 and keep 2,111. That was 18.5 of the 19
+seconds, and raising `pg_trgm.similarity_threshold` does not touch it: 0.3, 0.5
+and 0.7 all return the same 1.9M candidates.
+
+So the two arms are now separate statements, chosen in order rather than `OR`ed:
+
+1. **full-text** — always tried first, and it answers almost everything.
+2. **exact title** — when the query is entirely stopwords, so the tsquery is
+   empty. This is not a micro-optimisation: "It", "Us" and "She" are real
+   titles, and searching "It" returned nothing until this arm existed.
+3. **fuzzy** — only when the full-text arm found nothing, which is what a typo
+   looks like. "mockingbrd" finds "Mockingbird" through this arm and no other.
+
+The fuzzy and exact arms are bounded by a 700ms `statement_timeout`, because
+their cost is a function of trigram frequency and cannot be known before
+running: the same statement is 58ms for "mockingbrd" and 5.5s for "thexx". It
+fails safe — the reader gets no results rather than a wait, and the queries it
+abandons were returning nothing anyway.
+
+**The trap from the reverted attempt, kept because it is still live:**
 `ORDER BY edition_count DESC LIMIT 200` invites the planner to walk
 `works_edition_count_ol_key_idx` in popularity order and filter as it goes,
 betting it will fill the LIMIT early. `title_norm LIKE 'dune%'` matches 113 rows
-in 6.9M, so it walked all 6,943,467 — 10.9 s in one subquery, and the same shape
-in a second. Every subquery was fast in isolation (7–335 ms); only the
-combination was slow.
+in 6.9M, so it walked all 6,943,467 — 10.9s in one subquery. Every subquery was
+fast in isolation (7-335ms); only the combination was slow.
 
 **And it was not catchable by any test in this repo.** At 3,000 fixture rows the
 planner correctly chooses bitmap scans; it only flips to the ordered walk when
-the table is big enough for that to look cheap. The reverted query was restored
-and every plan assertion still passed. The plan is scale-dependent, so an
-EXPLAIN over a fixture cannot see this class of regression. What is now asserted
-is the statement's SHAPE — exactly one `LIMIT`, meaning one pass over the match
-set — which is a text check and labelled as one.
+the table is big enough. The reverted query was restored and every plan
+assertion still passed. What is asserted instead is the statement's SHAPE — one
+`LIMIT` per arm, and no trigram predicate in the full-text arm — which is a text
+check and labelled as one. The clock lives in `bench:search`, against the real
+catalog, because nothing smaller can see this class of regression.
 
-So R1 is open again, and the next attempt needs a way to bound ranking that does
-not hand the planner an ordered walk. Candidates worth exploring: a materialised
-popularity-ranked subset, `LIMIT` inside a lateral join with a forced bitmap
-scan, or accepting the 1.2 s and spending the effort on caching instead.
-
-*Done when:* no query in a representative set exceeds 1 s warm **measured on the
-real catalog**, and the bound is held by something that fails when it breaks.
+*Done when:* ~~no query in a representative set exceeds 1 s warm measured on the
+real catalog, and the bound is held by something that fails when it breaks.~~
+Both hold: `bench:search --gate` is the clock, the shape assertions are in
+`read-path-plans.test.ts`, and `deploy:verify` now times one query per arm
+instead of `?q=dune` alone (SPEC-10).
 *~~Open question for you:~~ answered: approximate results for very common words
-are acceptable — but no implementation has yet earned its place.*
+are acceptable — and the fallback ordering is how that was spent.*
 
 ### P1 — the product works but under-delivers
 
@@ -126,8 +152,11 @@ and the CSP's CDN origin, plus eight more with a running app to point at. It
 exits non-zero, so it gates a release rather than being a checklist someone
 reads.
 *Needs from you:* an Azure subscription, and `GOOGLE_BOOKS_API_KEY`.
-*One thing to know:* the common-word search will still be slow on a burstable
-tier, because that is R1 and not a configuration problem.
+*One thing to know:* ~~the common-word search will still be slow on a burstable
+tier, because that is R1 and not a configuration problem.~~ R1 is closed, so
+this no longer applies — but `bench:search` should be re-run against the
+deployed catalog, because the 700ms fuzzy budget was calibrated on a machine
+with `shared_buffers` at 128MB and a burstable tier may need a different one.
 
 ### P2 — worth doing, nothing waits on it
 
