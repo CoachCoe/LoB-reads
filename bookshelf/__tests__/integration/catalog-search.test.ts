@@ -1,9 +1,11 @@
 import { prisma } from "./setup";
+import { Prisma } from "@prisma/client";
 import {
   COUNT_CEILING,
   getWorksBySubject,
   countWorksBySubject,
   searchWorks,
+  searchWorksPaged,
   countWorkMatches,
   getWorkByKey,
   getPopularWorks,
@@ -485,5 +487,189 @@ describe("DEAD-5: accent folding is case-independent", () => {
       const results = await searchWorks(q, { limit: 10 });
       expect(results.map((r) => r.olKey)).toContain(KEY);
     }
+  });
+});
+
+/**
+ * R1: the three arms, and which one answers.
+ *
+ * Search used to be one statement with `search_vector @@ tsq OR title_norm %
+ * norm`, so every query paid for the trigram arm. That arm's cost is a function
+ * of how common the query's trigrams are, which is why common words were slow —
+ * measured warm on the real 6.9M-work catalog, "Fiction" was 1,065ms and "the"
+ * was 19,189ms, against 57ms and 1ms for the full-text arm alone.
+ *
+ * The arms are now separate statements chosen in order, and these tests pin the
+ * ORDER, because getting it wrong is silent: the wrong arm still returns
+ * plausible results, just slowly or incompletely.
+ *
+ * What is NOT tested here is the latency, deliberately. A few thousand fixture
+ * rows are fast to scan badly — STATUS.md says so, and the reverted R1 attempt
+ * proved it by passing every plan assertion in this repo. `npm run bench:search`
+ * is the latency gate and it needs the real catalog.
+ */
+/** One catalog work, matching the inline pattern this file already uses. */
+async function seedArmWork(key: string, title: string, author: string) {
+  await prisma.$executeRaw`
+    INSERT INTO catalog.works (ol_key, title, author_names, subjects, edition_count)
+    VALUES (${key}, ${title}, ${author}, ARRAY['Fiction'], 2)
+    ON CONFLICT (ol_key) DO UPDATE SET title = EXCLUDED.title`;
+}
+
+describe("R1: which search arm answers", () => {
+  const KEYS = {
+    exactStopword: "OLARM001W",
+    typoTarget: "OLARM002W",
+    ftsMatch: "OLARM003W",
+  };
+
+  beforeAll(async () => {
+    // A title that is entirely an English stopword, so websearch_to_tsquery
+    // reduces it to nothing — Stephen King's "It" is the real case.
+    await seedArmWork(KEYS.exactStopword, "It", "Stephen King");
+    // A title only a fuzzy match can reach: "Mockingbird" for "mockingbrd".
+    await seedArmWork(KEYS.typoTarget, "Mockingbird", "Harper Lee");
+    await seedArmWork(KEYS.ftsMatch, "Interstellar Cartography", "A. Mapper");
+  }, 60_000);
+
+  afterAll(async () => {
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM catalog.works WHERE ol_key LIKE 'OLARM%'`
+    );
+  });
+
+  it("answers a stopword-only title through the exact-title arm", async () => {
+    // The full-text arm cannot match this at all: the tsquery is empty. Without
+    // the exact-title arm, searching "It" returns nothing — which is what the
+    // first version of this change did, and what the M2 acceptance test above
+    // caught.
+    const results = await searchWorks("It", { limit: 10 });
+
+    expect(results.map((r) => r.olKey)).toContain(KEYS.exactStopword);
+  });
+
+  it("does not answer a stopword-only query with fuzzy neighbours", async () => {
+    // Equality, not similarity — for cost as much as correctness. Titles merely
+    // *similar* to "it" must not appear, or "the" would drag in a million
+    // candidate rows to rank.
+    const results = await searchWorks("It", { limit: 50 });
+
+    expect(results.map((r) => r.title)).not.toContain("Interstellar Cartography");
+  });
+
+  it("rescues a typo through the fuzzy arm", async () => {
+    // "mockingbrd" is not a word, so the tsquery matches nothing and the
+    // full-text arm is empty. This is the only arm that can find it, and the
+    // whole reason the expensive arm is kept at all.
+    const results = await searchWorks("mockingbrd", { limit: 10 });
+
+    expect(results.map((r) => r.olKey)).toContain(KEYS.typoTarget);
+  });
+
+  it("does not reach for the fuzzy arm when the full-text arm answered", async () => {
+    // Fallback, not union. "Mockingbird" is a fuzzy neighbour of "mockingbird"
+    // and would be returned by a union; here the full-text arm has already
+    // answered, so the expensive arm never runs.
+    const results = await searchWorks("Interstellar", { limit: 50 });
+
+    expect(results.map((r) => r.olKey)).toContain(KEYS.ftsMatch);
+    expect(results.map((r) => r.olKey)).not.toContain(KEYS.typoTarget);
+  });
+
+  it("declines a fuzzy search too short to mean anything", async () => {
+    // Below MIN_FUZZY_LENGTH. At the 0.5 threshold a four-character query
+    // cannot reach any real title — similarity('dnue','dune') is 0.111 — so
+    // this costs recall nothing and skips the most expensive scans.
+    expect(await searchWorks("mokb", { limit: 10 })).toEqual([]);
+  });
+
+  it("counts what it returns, whichever arm answered", async () => {
+    // The pager is sized by the count. If the count used both arms while the
+    // results used one, a fuzzy search would advertise pages that render empty.
+    for (const q of ["It", "mockingbrd", "Interstellar"]) {
+      const total = await countWorkMatches(q);
+      const page = await searchWorks(q, { limit: COUNT_CEILING });
+      expect(total.count).toBe(page.length);
+    }
+  });
+
+  it("pages a fuzzy result set from one scan", async () => {
+    const first = await searchWorksPaged("mockingbrd", {
+      pageSize: 1,
+      requestedPage: "1",
+    });
+
+    expect(first.works).toHaveLength(1);
+    expect(first.page).toBe(1);
+    expect(first.count).toBeGreaterThan(0);
+  });
+
+  it("clamps a page past the end of a fuzzy result set", async () => {
+    // The fuzzy path slices in memory, so an out-of-range page has to be
+    // resolved against the real total rather than returning an empty array.
+    const far = await searchWorksPaged("mockingbrd", {
+      pageSize: 1,
+      requestedPage: "9999",
+    });
+
+    expect(far.page).toBe(far.totalPages);
+    expect(far.works).toHaveLength(1);
+  });
+});
+
+/**
+ * The bound on the expensive arms, which a clock cannot check.
+ *
+ * `bench:search` proves the arms are fast enough on the real catalog. It cannot
+ * prove what happens when one is not: the abandonment has to return results,
+ * not raise. Postgres cancels the statement with 57014 and Prisma surfaces that
+ * as a thrown error, so the catch is load-bearing — without it a slow fuzzy
+ * search is a 500 rather than an empty result.
+ *
+ * The timeout is read from SEARCH_FUZZY_TIMEOUT_MS so this can set it to 1ms
+ * and make the abandonment certain rather than hoping for a slow query.
+ */
+describe("R1: an arm that runs long is abandoned, not raised", () => {
+  const KEY = "OLBUDGET01W";
+
+  beforeAll(async () => {
+    await seedArmWork(KEY, "Mockingbird", "Harper Lee");
+  }, 60_000);
+
+  afterAll(async () => {
+    await prisma.$executeRawUnsafe(
+      `DELETE FROM catalog.works WHERE ol_key LIKE 'OLBUDGET%'`
+    );
+    delete process.env.SEARCH_FUZZY_TIMEOUT_MS;
+    jest.resetModules();
+  });
+
+  it("returns no results rather than throwing when the budget is exceeded", async () => {
+    // Driven directly rather than through searchWorks, because at fixture scale
+    // the arms cannot be made slow: the fuzzy query over this catalog runs in
+    // 0.045ms, so even a 1ms budget never fires. A first version of this test
+    // set the budget to 1ms and asserted through searchWorks; it passed the
+    // wrong way, returning 13 real results. pg_sleep makes the cancellation
+    // certain at any scale.
+    process.env.SEARCH_FUZZY_TIMEOUT_MS = "50";
+    jest.resetModules();
+    const { runSearchArmWithinBudget } = await import("@/server/catalog");
+
+    const cannotFinish = Prisma.sql`SELECT pg_sleep(1) AS "olKey"`;
+
+    await expect(runSearchArmWithinBudget(cannotFinish)).resolves.toEqual([]);
+  });
+
+  it("does not swallow a real error as an empty result", async () => {
+    // The catch is narrow on purpose. If it treated every failure as "no
+    // results", a broken statement or a dropped column would render as an
+    // empty search page for ever instead of failing loudly.
+    process.env.SEARCH_FUZZY_TIMEOUT_MS = "5000";
+    jest.resetModules();
+    const { runSearchArmWithinBudget } = await import("@/server/catalog");
+
+    const broken = Prisma.sql`SELECT no_such_function_at_all() AS "olKey"`;
+
+    await expect(runSearchArmWithinBudget(broken)).rejects.toThrow();
   });
 });
