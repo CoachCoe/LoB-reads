@@ -366,12 +366,18 @@ export async function getWrappedProjections(userId: string): Promise<WrappedProj
     : null;
 
   // Currently reading (calculate progress from currentPage / pageCount)
+  // Clamped to 0-100, the same way ProgressBar clamps, because this number is
+  // rendered as a width and a label without going through it. `updateProgress`
+  // refuses a page past the end, but it is not the only writer: the Goodreads
+  // importer creates sessions directly, and `pageCount` is a snapshot taken
+  // when the session started. A row where currentPage exceeds it is reachable
+  // and renders as "128%" and a bar past its own end. TEST-20.
   const currentlyReading = currentlyReadingProgress.map((p) => ({
     title: projWorks.get(p.workKey)?.title ?? "Unknown",
     author: projWorks.get(p.workKey)?.authorNames ?? "Unknown",
     progress:
       p.pageCount != null && p.pageCount > 0
-        ? Math.round((p.currentPage / p.pageCount) * 100)
+        ? Math.min(100, Math.max(0, Math.round((p.currentPage / p.pageCount) * 100)))
         : 0,
   }));
 

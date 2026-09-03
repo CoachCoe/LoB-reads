@@ -786,6 +786,57 @@ describe("getWrappedProjections", () => {
       });
     });
 
+    it("caps reported progress at 100%, however the row got there", async () => {
+      // TEST-20. `progress` is rendered as a width and a label without going
+      // through ProgressBar, so it has to arrive already clamped.
+      //
+      // `updateProgress` refuses a page past the end, but it is not the only
+      // writer — the Goodreads importer creates sessions directly, and
+      // `pageCount` is a snapshot taken when the session started. This row is
+      // reachable, and unclamped it renders as "128%" over a bar past its own
+      // end.
+      const user = await makeUser();
+      const work = await makeWork({ title: "Past Its Own End" });
+      freezeAt(new Date(2026, 6, 2, 12, 0, 0));
+
+      await prisma.readingSession.create({
+        data: {
+          userId: user.id,
+          workKey: work.olKey,
+          pageCount: 250,
+          currentPage: 320,
+          startedAt: new Date(2026, 5, 1, 12, 0, 0),
+          finishedAt: null,
+        },
+      });
+
+      const p = await getWrappedProjections(user.id);
+
+      expect(p.currentlyReading).toHaveLength(1);
+      expect(p.currentlyReading[0].progress).toBe(100);
+    });
+
+    it("does not report negative progress", async () => {
+      // The other end of the clamp. Nothing writes a negative currentPage
+      // today, and the column is not constrained against one either.
+      const user = await makeUser();
+      const work = await makeWork();
+      freezeAt(new Date(2026, 6, 2, 12, 0, 0));
+
+      await prisma.readingSession.create({
+        data: {
+          userId: user.id,
+          workKey: work.olKey,
+          pageCount: 250,
+          currentPage: -40,
+          startedAt: new Date(2026, 5, 1, 12, 0, 0),
+          finishedAt: null,
+        },
+      });
+
+      expect((await getWrappedProjections(user.id)).currentlyReading[0].progress).toBe(0);
+    });
+
     it("reports progress through the books still open", async () => {
       const user = await makeUser();
       const [half, unpaged] = await Promise.all([
