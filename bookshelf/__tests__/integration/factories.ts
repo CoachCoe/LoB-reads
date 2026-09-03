@@ -45,25 +45,55 @@ export async function makeUserWithShelves(
   });
 }
 
-/** A catalog work, so shelf and review tests have something real to point at. */
+/**
+ * A catalog work, so shelf and review tests have something real to point at.
+ *
+ * `author`, `subjects` and `coverId` exist for the tests that read them back —
+ * Wrapped ranks authors and genres, and renders a cover for a top-rated book.
+ *
+ * The conflict clauses UPDATE rather than DO NOTHING. `unique()` is only as
+ * unique as the low digits of `Date.now()` plus a counter that restarts per
+ * test FILE, so two files can generate the same key; under DO NOTHING the
+ * second caller silently inherited the first one's title, author and page
+ * count, and a test asserting on those would have been reading another
+ * suite's fixture. Cleanup is by the OLT prefix, which is unchanged.
+ */
 export async function makeWork(
-  overrides: { title?: string; pages?: number } = {}
+  overrides: {
+    title?: string;
+    pages?: number;
+    author?: string | null;
+    subjects?: string[];
+    coverId?: number;
+  } = {}
 ) {
   const n = unique();
   const olKey = `OLT${n.replace(/[^0-9]/g, "").slice(-10)}W`;
   const title = overrides.title ?? `Work ${n}`;
+  const editionKey = olKey + "E";
+  const author = overrides.author === undefined ? "Test Author" : overrides.author;
+  const subjects = overrides.subjects ?? ["Fiction"];
 
   await prisma.$executeRaw`
-    INSERT INTO catalog.works (ol_key, title, author_names, subjects, edition_count)
-    VALUES (${olKey}, ${title}, 'Test Author', ARRAY['Fiction'], 1)
-    ON CONFLICT (ol_key) DO NOTHING`;
+    INSERT INTO catalog.works (ol_key, title, author_names, subjects, edition_count, cover_edition_key)
+    VALUES (${olKey}, ${title}, ${author}, ${subjects}, 1,
+            ${overrides.coverId != null ? editionKey : null})
+    ON CONFLICT (ol_key) DO UPDATE SET
+      title = EXCLUDED.title,
+      author_names = EXCLUDED.author_names,
+      subjects = EXCLUDED.subjects,
+      cover_edition_key = EXCLUDED.cover_edition_key`;
 
   await prisma.$executeRaw`
-    INSERT INTO catalog.editions (ol_key, work_key, title, number_of_pages)
-    VALUES (${olKey + "E"}, ${olKey}, ${title}, ${overrides.pages ?? 300})
-    ON CONFLICT (ol_key) DO NOTHING`;
+    INSERT INTO catalog.editions (ol_key, work_key, title, number_of_pages, cover_id)
+    VALUES (${editionKey}, ${olKey}, ${title}, ${overrides.pages ?? 300},
+            ${overrides.coverId ?? null})
+    ON CONFLICT (ol_key) DO UPDATE SET
+      title = EXCLUDED.title,
+      number_of_pages = EXCLUDED.number_of_pages,
+      cover_id = EXCLUDED.cover_id`;
 
-  return { olKey, title };
+  return { olKey, editionKey, title };
 }
 
 export async function makeShelf(
