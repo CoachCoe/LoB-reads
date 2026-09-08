@@ -40,7 +40,12 @@ export default function WorkReviewSection({ workKey, existingReview }: Props) {
       const response = await fetch("/api/reviews", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ workKey, rating, content: content || undefined }),
+        // `|| null`, not `|| undefined`. An emptied textarea sent no `content`
+        // key at all, Prisma omits undefined fields from the SET clause, and
+        // the reader got "Review updated" with the old text still there on
+        // reload — so a review's text could be written and never cleared.
+        // optionalLongText already accepts null, so the server needs nothing.
+        body: JSON.stringify({ workKey, rating, content: content.trim() || null }),
       });
 
       if (!response.ok) {

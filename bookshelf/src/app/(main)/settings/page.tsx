@@ -1,14 +1,10 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth/session";
+import { requireUser } from "@/lib/auth/session";
 import { getOwnProfile } from "@/server/users";
 import SettingsForm from "./SettingsForm";
 
 export default async function SettingsPage() {
-  const sessionUser = await getCurrentUser();
-
-  if (!sessionUser) {
-    redirect("/login?callbackUrl=/settings");
-  }
+  const sessionUser = await requireUser("/settings");
 
   const user = await getOwnProfile(sessionUser.id);
 

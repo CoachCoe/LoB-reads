@@ -412,6 +412,57 @@ describe("public pages stay public", () => {
 
     expect(offenders).toEqual([]);
   });
+
+  /**
+   * JR-2: the guard shape on a private page, which the API-only check missed.
+   *
+   * `options.ts` blanks `token.id` for an account that no longer exists rather
+   * than throwing, and relies on every caller guarding on the id:
+   *
+   *   "every route guards on `!session?.user?.id` / `!user?.id`, so this
+   *    becomes a 401 instead of a 500 or a session that authenticates a
+   *    deleted user."
+   *
+   * True of all the API handlers, which the check above covers. False of five
+   * pages, which guarded on `!user` — and `session.user` survives the blanking
+   * because only the id is cleared, so the guard passed and the page queried
+   * with `userId: ""`. A deleted account saw "Your library is empty".
+   *
+   * This asserts the guard is centralised rather than pattern-matching each
+   * copy, because five copies of a one-line check is how one ends up different.
+   * A private page reaches its session through `requireUser`, which guards on
+   * the id once and narrows its return type so a caller cannot skip it.
+   */
+  it("every private page takes its session through requireUser", () => {
+    const pages = walk("src/app/(main)", (f) => f.endsWith("page.tsx"))
+      .map((f) => f.split(path.sep).join("/"))
+      .sort();
+
+    // Guards the walker: if this ever returned nothing, the check below would
+    // pass vacuously.
+    expect(pages.length).toBeGreaterThan(PUBLIC_PAGES.length);
+
+    const privatePages = pages.filter((f) => !PUBLIC_PAGES.includes(f));
+    expect(privatePages.length).toBeGreaterThan(0);
+
+    const offenders = privatePages.filter((file) => {
+      const source = withoutComments(read(file));
+      // A page that never asks for a session is not a private page; the
+      // PUBLIC_PAGES list above is what says which those are.
+      if (!/getCurrentUser|requireUser/.test(source)) return false;
+      return !/requireUser\(/.test(source);
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("rejects the guard shape it replaced", () => {
+    // Positive control. Without it this check cannot tell a correct guard from
+    // a file it failed to read.
+    const bad = 'const user = await getCurrentUser();\nif (!user) redirect("/login");';
+    expect(/getCurrentUser|requireUser/.test(bad)).toBe(true);
+    expect(/requireUser\(/.test(bad)).toBe(false);
+  });
 });
 
 /**
