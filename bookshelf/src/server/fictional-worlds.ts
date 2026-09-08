@@ -27,8 +27,27 @@ export interface FictionalWorldWithWorks {
   workCount: number;
 }
 
+/**
+ * Most maps to return per world in a list read.
+ *
+ * WORLD_LIST_LIMIT caps the number of WORLDS; this caps the maps inside each
+ * one, which was unbounded. `GET /api/fictional-worlds` is public and
+ * anonymous, LIMITS.upload allows 20 map rows per account per hour, and map
+ * deletion is uploader-or-moderator only — so the nested array grew without
+ * limit and every row of it was serialised to every caller.
+ *
+ * The convention test that was supposed to bound this asserted only that the
+ * function body contained the string "take:", which the world-level cap
+ * satisfied while this read stayed unbounded (see TEST-38).
+ */
+export const MAPS_PER_WORLD = 24;
+
 const fictionalWorldInclude = {
-  maps: { select: mapSelect, orderBy: { createdAt: "desc" as const } },
+  maps: {
+    select: mapSelect,
+    orderBy: { createdAt: "desc" as const },
+    take: MAPS_PER_WORLD,
+  },
 };
 
 type WorldRow = {

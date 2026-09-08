@@ -636,12 +636,43 @@ describe("grey text is never unpaired", () => {
  * be noise. These five are the ones whose input is other people's contributions.
  */
 describe("contributed read paths are bounded", () => {
-  const MUST_BE_BOUNDED: [file: string, fn: string][] = [
-    ["src/server/map.ts", "getMappedWorkLocations"],
-    ["src/server/map.ts", "getMappedAuthorLocations"],
-    ["src/server/fictional-worlds.ts", "getAllFictionalWorlds"],
-    ["src/server/work-locations.ts", "getWorkLocations"],
-    ["src/server/authors.ts", "getAuthorLocations"],
+  /**
+   * TEST-38: each entry now names the CONSTANT the bound must be, not just
+   * that the word "take:" appears somewhere in the function.
+   *
+   * `toContain("take:")` was satisfied by `take: 100_000`, and — the way it
+   * actually failed — by a `take:` on one `findMany` while a second read in the
+   * same function stayed unbounded. That is exactly how SEC-4 got through:
+   * getAllFictionalWorlds carried `take: WORLD_LIST_LIMIT` on the worlds while
+   * its nested `maps` select had no limit at all, so every map of every world
+   * was serialised to every anonymous caller.
+   *
+   * Naming the constant also makes widening a bound a visible edit rather than
+   * a number change no check can see.
+   */
+  const MUST_BE_BOUNDED: [file: string, fn: string, bound: string][] = [
+    ["src/server/map.ts", "getMappedWorkLocations", "take: MAP_PIN_LIMIT"],
+    ["src/server/map.ts", "getMappedAuthorLocations", "take: MAP_PIN_LIMIT"],
+    [
+      "src/server/fictional-worlds.ts",
+      "getAllFictionalWorlds",
+      "take: WORLD_LIST_LIMIT",
+    ],
+    [
+      "src/server/work-locations.ts",
+      "getWorkLocations",
+      "take: LOCATIONS_PER_ENTITY",
+    ],
+    ["src/server/authors.ts", "getAuthorLocations", "take: LOCATIONS_PER_ENTITY"],
+  ];
+
+  /**
+   * Nested reads, which live in a shared `include`/`select` at module scope
+   * rather than inside the function body — so bodyOf cannot see them, and the
+   * check above never could.
+   */
+  const NESTED_MUST_BE_BOUNDED: [file: string, bound: string][] = [
+    ["src/server/fictional-worlds.ts", "take: MAPS_PER_WORLD"],
   ];
 
   /** The body of an exported function, to its closing brace at column 0. */
@@ -659,8 +690,27 @@ describe("contributed read paths are bounded", () => {
     );
   });
 
-  it.each(MUST_BE_BOUNDED)("%s: %s caps what it reads", (file, fn) => {
-    expect(bodyOf(read(file), fn)).toContain("take:");
+  it.each(MUST_BE_BOUNDED)("%s: %s caps what it reads", (file, fn, bound) => {
+    expect(bodyOf(read(file), fn)).toContain(bound);
+  });
+
+  it.each(NESTED_MUST_BE_BOUNDED)("%s: its nested read is capped too", (file, bound) => {
+    // Module scope, not a function body — this is the read the old check could
+    // not see, and the one that was actually unbounded.
+    expect(read(file)).toContain(bound);
+  });
+
+  it("rejects a bound that is only the word take:", () => {
+    // Positive control for the tightening. The old assertion passed on both of
+    // these; the new one passes on neither.
+    const widened = "prisma.workLocation.findMany({ take: 100_000 })";
+    const nestedUnbounded =
+      "prisma.fictionalWorld.findMany({ take: WORLD_LIST_LIMIT, include: { maps: {} } })";
+
+    expect(widened).toContain("take:");
+    expect(widened).not.toContain("take: MAP_PIN_LIMIT");
+    expect(nestedUnbounded).toContain("take:");
+    expect(nestedUnbounded).not.toContain("take: MAPS_PER_WORLD");
   });
 });
 
