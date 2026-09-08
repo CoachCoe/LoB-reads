@@ -203,26 +203,50 @@ export const updateWorkLocationSchema = z.object({
   coordinates: coordinatesSchema.optional().nullable(),
 });
 
-export const updateAuthorLocationSchema = z.object({
-  name: shortText("Location name"),
-  type: z.enum(["birthplace", "residence", "worked", "death"]),
-  description: optionalLongText,
-  // Required, exactly as on create: an author location is always a real place,
-  // and there is no fictional exception here. An update must not be able to
-  // loosen what a create insists on.
-  coordinates: coordinatesSchema,
-  yearStart: z.int().min(-3000).max(3000).optional().nullable(),
-  yearEnd: z.int().min(-3000).max(3000).optional().nullable(),
-});
+/**
+ * The year range has to hold on both author-location paths.
+ *
+ * It was enforced inline in the POST handler and nowhere else, so PATCH wrote
+ * both years unchecked and an author location could be edited to read
+ * "1920-1890". That is exactly what the comment below forbids — "An update must
+ * not be able to loosen what a create insists on" — so the rule belongs in the
+ * schema both paths parse with, not in one of the two handlers.
+ */
+const withOrderedYears = <T extends z.ZodType<{ yearStart?: number | null; yearEnd?: number | null }>>(
+  schema: T
+) =>
+  schema.refine(
+    (data) =>
+      data.yearStart == null ||
+      data.yearEnd == null ||
+      data.yearEnd >= data.yearStart,
+    { message: "End year cannot be before start year", path: ["yearEnd"] }
+  );
 
-export const createAuthorLocationSchema = z.object({
-  name: shortText("Location name"),
-  type: z.enum(["birthplace", "residence", "worked", "death"]),
-  description: optionalLongText,
-  coordinates: coordinatesSchema,
-  yearStart: z.int().min(-3000).max(3000).optional().nullable(),
-  yearEnd: z.int().min(-3000).max(3000).optional().nullable(),
-});
+export const updateAuthorLocationSchema = withOrderedYears(
+  z.object({
+    name: shortText("Location name"),
+    type: z.enum(["birthplace", "residence", "worked", "death"]),
+    description: optionalLongText,
+    // Required, exactly as on create: an author location is always a real place,
+    // and there is no fictional exception here. An update must not be able to
+    // loosen what a create insists on.
+    coordinates: coordinatesSchema,
+    yearStart: z.int().min(-3000).max(3000).optional().nullable(),
+    yearEnd: z.int().min(-3000).max(3000).optional().nullable(),
+  })
+);
+
+export const createAuthorLocationSchema = withOrderedYears(
+  z.object({
+    name: shortText("Location name"),
+    type: z.enum(["birthplace", "residence", "worked", "death"]),
+    description: optionalLongText,
+    coordinates: coordinatesSchema,
+    yearStart: z.int().min(-3000).max(3000).optional().nullable(),
+    yearEnd: z.int().min(-3000).max(3000).optional().nullable(),
+  })
+);
 
 /** Confirming a fuzzy import match: the reader picked one of the candidates. */
 export const confirmImportRowSchema = z.object({ workKey });

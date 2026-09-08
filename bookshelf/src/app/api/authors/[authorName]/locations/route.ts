@@ -56,15 +56,8 @@ export async function POST(
     }
 
     const { authorName } = await params;
+    // The year-order rule lives in the schema now, so PATCH cannot skip it.
     const data = await parseBody(request, createAuthorLocationSchema);
-
-    if (
-      data.yearStart != null &&
-      data.yearEnd != null &&
-      data.yearEnd < data.yearStart
-    ) {
-      throw new ValidationError("End year cannot be before start year");
-    }
 
     const authorKey = await findAuthorKeyByName(decodeRouteParam(authorName));
     if (!authorKey) {
