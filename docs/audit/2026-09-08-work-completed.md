@@ -12,11 +12,11 @@ what still needs a person.
 | `npx eslint .` | pass | pass |
 | `npx tsc --noEmit` | pass | pass |
 | unit | 25 suites, 288 tests | **27 suites, 326 tests** |
-| integration | 24 suites, 422 tests | **25 suites, 447 tests** |
+| integration | 24 suites, 422 tests | **25 suites, 450 tests** |
 | `npx next build` | pass | pass |
-| `prisma migrate status` | up to date | up to date |
+| `prisma migrate status` | 25 migrations, up to date | **26**, up to date |
 
-710 tests to **773**. Phase 3 was run from a fresh `npm ci` with `.next` and
+710 tests to **776**. Phase 3 was run from a fresh `npm ci` with `.next` and
 `tsconfig.tsbuildinfo` deleted.
 
 The integration run no longer prints "Jest did not exit one second after the
@@ -181,6 +181,44 @@ either — with the three things the template does not do that will fail the gat
 And a "which document owns which fact" table in README.md, because the drift
 above is what happens without one.
 
+## What /bastion found
+
+Two defects, both introduced by me in this round, neither caught by the 776
+tests that were passing.
+
+**RUN-1's fix closed the sequential case and left the actual one open.**
+`finishedSessionOnDay` is a read followed by a create, and a double-click — the
+case the dedupe exists for — is concurrent. Measured: two simultaneous finishes
+produced two sessions. The rule moved to where the exclusive-shelf rule already
+lives, as a partial unique index on `("userId", work_key, UTC day)`, with a
+dedupe of existing rows first because the index cannot be created over the
+duplicates the defect has already written.
+
+That surfaced a second race in `moveToExclusiveShelf` — DEAD-17's duplicate of
+the shelf move, with the same delete-then-create shape and the same `addedAt`
+reset fixed in its sibling. It now deletes from the other shelves and upserts
+the target, and checks the end state on a unique violation rather than
+reporting a conflict the reader did not cause. That is JR-10's docstring
+finally being true.
+
+**The behavioural race test is only a probabilistic detector**, and this is
+recorded rather than glossed: with the index dropped it passed five times in a
+row, because three calls can serialise by luck. The deterministic assertion is
+in `schema-invariants.test.ts` against the index definition, and it fails the
+moment the index is gone.
+
+**Validating `SEARCH_FUZZY_TIMEOUT_MS` by throwing was worse than the NaN it
+replaced.** Throwing at module scope is the usual advice and is wrong here:
+this module is imported lazily by pages and routes while `health.ts` imports
+only `@/lib/prisma`. Measured, with a bad value: both probes 200, every page
+500 — verbatim the failure `ci.yml`'s container job exists for. A fail-fast the
+orchestrator cannot see is worse than the defect it replaced. It logs and uses
+the documented default now.
+
+Three `wrapped.test.ts` fixtures finished one work up to sixty times in a day
+for convenience — the RUN-1 defect as a fixture. They use distinct works; every
+assertion is unchanged.
+
 ## Two findings that were wrong
 
 Recorded because a findings file that is never wrong is not being checked.
@@ -271,6 +309,13 @@ under benchmark load, against a 900 ms budget — the failure is the defect
 recorded in RUN-2, not flaky tooling, and it should stay reported until the
 candidate-set cost is addressed rather than being silenced by relaxing the
 floor.
+
+One of nine consecutive integration runs failed on "Can't reach database
+server at localhost:5432", in a test this branch does not touch. That is a
+local Postgres blip from running the full suite repeatedly, not a code defect —
+Postgres was healthy at 8 of 100 connections afterwards and the two runs after
+it passed. Recorded because a run that failed should be reported, not averaged
+away.
 
 The journeys were re-walked over HTTP against the clean build: every public and
 private page 200s, a missing page 404s, registration and sign-in work through
