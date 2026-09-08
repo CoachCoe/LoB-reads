@@ -124,6 +124,28 @@ const W_POPULARITY = 0.5; // edition count, as a tiebreak only
  * rather than a union: see `searchWorks`. This statement is the full-text arm
  * alone, and it keeps its single LIMIT and single pass.
  */
+/**
+ * Escape LIKE's own metacharacters before a query becomes a prefix pattern.
+ *
+ * SEC-8: the W_PREFIX bonus is `w.title_norm LIKE q.norm || '%'`, and `norm`
+ * was the raw query. So a search containing `%` or `_` awarded the +20
+ * prefix bonus to titles that do not prefix-match it at all, distorting the
+ * order of results. Not a scan risk — the WHERE clause is independent, so the
+ * LIKE only ever evaluates against rows already matched — which is why this is
+ * a ranking defect rather than a performance one.
+ *
+ * The same escaping is already applied on the auto-apply author match in
+ * findWorkKeyByTitleAuthor, with the reasoning recorded there. Backslash is
+ * Postgres's default LIKE escape, so no ESCAPE clause is needed.
+ *
+ * It cannot simply be folded into `norm`: that value is also compared with `=`
+ * and passed to `similarity()`, and neither wants the backslashes. Hence a
+ * second column.
+ */
+function likePrefixPattern(query: string): string {
+  return query.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
 export function searchWorksSql(
   query: string,
   { limit = 20, offset = 0 }: { limit?: number; offset?: number } = {}
@@ -139,7 +161,10 @@ export function searchWorksSql(
         -- sides shared that fault, so same-casing queries matched and nothing
         -- looked wrong — a lowercase-accented query just silently lost the
         -- W_PREFIX bonus. DEAD-5.
-        lower(unaccent(${query}))                           AS norm
+        lower(unaccent(${query}))                           AS norm,
+        -- Separate from norm, which is also compared with = and fed to
+        -- similarity(); see likePrefixPattern.
+        lower(unaccent(${likePrefixPattern(query)}))        AS norm_like
     )
     SELECT
       w.ol_key                                   AS "olKey",
@@ -152,7 +177,7 @@ export function searchWorksSql(
       e.cover_id::int                            AS "coverId",
       (
           (CASE WHEN w.title_norm = q.norm THEN ${W_EXACT} ELSE 0 END)
-        + (CASE WHEN w.title_norm LIKE q.norm || '%' THEN ${W_PREFIX} ELSE 0 END)
+        + (CASE WHEN w.title_norm LIKE q.norm_like || '%' THEN ${W_PREFIX} ELSE 0 END)
         + ts_rank_cd(w.search_vector, q.tsq) * ${W_FTS}
         + similarity(w.title_norm, q.norm) * ${W_TRIGRAM}
         + ln(1 + w.edition_count) * ${W_POPULARITY}
@@ -191,7 +216,10 @@ export function searchWorksFuzzySql(
     WITH q AS (
       SELECT
         websearch_to_tsquery('english', unaccent(${query})) AS tsq,
-        lower(unaccent(${query}))                           AS norm
+        lower(unaccent(${query}))                           AS norm,
+        -- Separate from norm, which is also compared with = and fed to
+        -- similarity(); see likePrefixPattern.
+        lower(unaccent(${likePrefixPattern(query)}))        AS norm_like
     )
     SELECT
       w.ol_key                                   AS "olKey",
@@ -204,7 +232,7 @@ export function searchWorksFuzzySql(
       e.cover_id::int                            AS "coverId",
       (
           (CASE WHEN w.title_norm = q.norm THEN ${W_EXACT} ELSE 0 END)
-        + (CASE WHEN w.title_norm LIKE q.norm || '%' THEN ${W_PREFIX} ELSE 0 END)
+        + (CASE WHEN w.title_norm LIKE q.norm_like || '%' THEN ${W_PREFIX} ELSE 0 END)
         + ts_rank_cd(w.search_vector, q.tsq) * ${W_FTS}
         + similarity(w.title_norm, q.norm) * ${W_TRIGRAM}
         + ln(1 + w.edition_count) * ${W_POPULARITY}
