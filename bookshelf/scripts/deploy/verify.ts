@@ -107,6 +107,13 @@ async function main() {
     "placeholder",
     "secret",
     "secret-not-for-deployment",
+    // 36 characters, so it cleared the >=32 length floor below, and not equal
+    // to any of the six above, so it cleared this list too. It is the value in
+    // the repository's own .env, and it was published in bookshelf/README.md
+    // until commit c128cfe — so it is in the git history and forgeable by
+    // anyone who reads it. Exactly the case both these checks exist for, and
+    // both passed it.
+    "your-secret-key-change-in-production",
   ];
   check(
     "NEXTAUTH_SECRET is not a known placeholder",
