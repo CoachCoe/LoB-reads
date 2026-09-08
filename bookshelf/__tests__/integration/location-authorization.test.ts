@@ -1,5 +1,10 @@
 import { prisma } from "./setup";
-import { makeUser, makeWorkLocation, makeAuthorLocation } from "./factories";
+import {
+  makeUser,
+  makeWorkLocation,
+  makeAuthorLocation,
+  makeFictionalWorld,
+} from "./factories";
 import { checkLimit, LIMITS, __resetRateLimits } from "@/lib/rate-limit";
 
 /**
@@ -349,9 +354,18 @@ describe("POST /api/works/[workKey]/locations — coordinates", () => {
   });
 
   it("accepts a fictional location without coordinates", async () => {
-    // A fictional place is pinned to its world, so the rule must not fire here.
+    // A fictional place is pinned to its world, so the coordinates rule must
+    // not fire here. The world is supplied because that is what "pinned to its
+    // world" means and the route now requires it (JC-7) — the subject of this
+    // test is the coordinates exception, and it still is.
+    const world = await makeFictionalWorld();
     const response = await postWorkLocation(
-      postRequest({ name: "Roke", type: "setting", isFictional: true }),
+      postRequest({
+        name: "Roke",
+        type: "setting",
+        isFictional: true,
+        fictionalWorldId: world.id,
+      }),
       workParams
     );
 
@@ -609,5 +623,46 @@ describe("PATCH /api/works/[workKey]/locations", () => {
     expect(
       (await patchWorkLocation(patchRequest(location.id, validEdit))).status
     ).toBe(429);
+  });
+});
+
+describe("JC-7: a fictional location needs its world", () => {
+  it("rejects one with no world, and stores nothing", async () => {
+    const user = await makeUser();
+    mockGetCurrentUser.mockResolvedValue({ id: user.id, isModerator: false });
+
+    const response = await postWorkLocation(
+      postRequest({ name: "Arrakis", type: "setting", isFictional: true }),
+      { params: Promise.resolve({ workKey: WORK_KEY }) } as never
+    );
+
+    expect(response.status).toBe(400);
+    // State as well as status: the row is the thing that was being created.
+    expect(
+      await prisma.workLocation.count({ where: { workKey: WORK_KEY } })
+    ).toBe(0);
+  });
+
+  it("accepts one that names its world", async () => {
+    // The control. Without it, rejecting every fictional location would pass
+    // the case above.
+    const user = await makeUser();
+    const world = await makeFictionalWorld();
+    mockGetCurrentUser.mockResolvedValue({ id: user.id, isModerator: false });
+
+    const response = await postWorkLocation(
+      postRequest({
+        name: "Arrakis",
+        type: "setting",
+        isFictional: true,
+        fictionalWorldId: world.id,
+      }),
+      { params: Promise.resolve({ workKey: WORK_KEY }) } as never
+    );
+
+    expect(response.status).toBe(201);
+    expect(
+      await prisma.workLocation.count({ where: { workKey: WORK_KEY } })
+    ).toBe(1);
   });
 });

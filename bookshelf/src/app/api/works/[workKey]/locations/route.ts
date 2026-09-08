@@ -61,6 +61,19 @@ export async function POST(
       );
     }
 
+    // The other half of the same rule, and it was client-side only.
+    // WorkLocationsSection blocks it with its own comment saying why:
+    // "Accepted by the route, then filtered out of the map by
+    // getMappedWorkLocations — stored and visible nowhere." So a direct call
+    // created an inert orphan row in a contributed table with no surface that
+    // could reach it. Same shape as the coordinates rule above, which was
+    // moved server-side and tested; this one was left behind.
+    if (data.isFictional && !data.fictionalWorldId) {
+      throw new ValidationError(
+        "A fictional location needs the world it belongs to"
+      );
+    }
+
     const location = await addWorkLocation(workKey, user.id, {
       name: data.name,
       type: data.type,

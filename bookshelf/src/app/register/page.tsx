@@ -2,15 +2,19 @@
 
 import { useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import Card, { CardContent, CardHeader } from "@/components/ui/Card";
+import { getSafeCallbackUrl } from "@/lib/http/callback-url";
 
 export default function RegisterPage() {
   const router = useRouter();
+  // Honoured here as well as on /login, so the navbar's Sign Up can carry the
+  // page the reader was on. It pushed "/" unconditionally before.
+  const callbackUrl = getSafeCallbackUrl(useSearchParams().get("callbackUrl"));
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -66,9 +70,9 @@ export default function RegisterPage() {
 
       if (result?.error) {
         setError("Account created but login failed. Please sign in.");
-        router.push("/login");
+        router.push(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`);
       } else {
-        router.push("/");
+        router.push(callbackUrl);
         router.refresh();
       }
     } catch {

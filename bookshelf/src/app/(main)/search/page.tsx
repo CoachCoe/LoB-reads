@@ -152,7 +152,7 @@ function EmptyState({ query }: { query: string }) {
       <p className="text-gray-600 dark:text-gray-400">
         {query
           ? `Nothing matched “${query}”.`
-          : "The catalog is empty — run the ingest to populate it."}
+          : "No books to show yet — please check back shortly."}
       </p>
       {query && (
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-500">

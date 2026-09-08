@@ -14,7 +14,7 @@ interface Props {
   addedByName?: string | null;
   /** Extra badges beside the type — years for an author, a world for a work. */
   meta?: ReactNode;
-  /** Only the contributor may remove their own entry. */
+  /** Shown to the contributor or a moderator; the server enforces both. */
   onDelete?: () => void;
   /**
    * Tints the row. Work locations use it to mark a fictional place, so an

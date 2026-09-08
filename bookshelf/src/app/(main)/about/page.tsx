@@ -33,7 +33,7 @@ const features = [
     icon: Search,
     title: "Book Search",
     description:
-      "Search millions of titles through the Open Library API. Find books by title, author, or ISBN. View detailed book information including descriptions, page counts, and cover images.",
+      "Search 6.9 million works from Open Library's open data, held locally. Find books by title, author, or ISBN. View detailed book information including descriptions, page counts, and cover images.",
   },
   {
     icon: Star,
@@ -162,7 +162,7 @@ export default function AboutPage() {
             "PostgreSQL",
             "NextAuth.js",
             "Tailwind CSS",
-            "Open Library API",
+            "Open Library data",
             "Leaflet Maps",
             "Azure Blob Storage",
           ].map((tech) => (

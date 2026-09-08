@@ -400,6 +400,24 @@ describe("public pages stay public", () => {
     "src/app/(main)/user/[userId]/page.tsx",
   ];
 
+  /**
+   * JB-2: both live INSIDE the (main) group, which is the whole point.
+   *
+   * Next's built-in 404 and error pages render in the ROOT layout, so without
+   * these a reader hitting notFound() lost the navbar, the footer and the
+   * search box — on four public read paths, and most often because the monthly
+   * ingest narrowed the catalog slice rather than because the link was bad.
+   * AGENTS.md's missing-work invariant leans on that 404 being a reasonable
+   * destination.
+   */
+  it("has a 404 and an error boundary inside the main layout", () => {
+    expect(existsSync("src/app/(main)/not-found.tsx")).toBe(true);
+    expect(existsSync("src/app/(main)/error.tsx")).toBe(true);
+
+    // Not at the root, where they would lose the layout they exist to keep.
+    expect(read("src/app/(main)/error.tsx")).toContain('"use client"');
+  });
+
   it("every listed page exists", () => {
     const missing = PUBLIC_PAGES.filter((file) => !existsSync(file));
     expect(missing).toEqual([]);

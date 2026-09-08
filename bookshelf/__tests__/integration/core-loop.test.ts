@@ -33,7 +33,8 @@ import {
   POST as progressPost,
 } from "@/app/api/progress/route";
 import { startReading } from "@/server/progress";
-import { getReadingStats, finishReading } from "@/server/progress";
+import { getReadingStats, finishReading, updateProgress } from "@/server/progress";
+import { addWorkToShelf } from "@/server/shelves";
 
 const json = (body: unknown, method = "POST") =>
   new Request("http://localhost/api", {
@@ -452,6 +453,83 @@ describe("TEST-9: getReadingStats", () => {
   });
 });
 
+describe("JR-11 and RUN-5: pages read, and re-adding a work", () => {
+  it("counts the pages logged when the edition states no length", async () => {
+    const user = await makeUserWithShelves();
+    const stated = await makeWork({ pages: 100 });
+
+    // Built by hand rather than through makeWork, which defaults
+    // number_of_pages to 300 — and the whole point of this case is an edition
+    // that states nothing. Open Library has plenty; ReadingProgressSection has
+    // a branch for it ("no page count for this edition").
+    const unstated = await makeWork({ pages: 1 });
+    await prisma.$executeRaw`
+      UPDATE catalog.editions SET number_of_pages = NULL
+      WHERE work_key = ${unstated.olKey}`;
+
+    await startReading(user.id, stated.olKey);
+    await finishReading(user.id, stated.olKey);
+
+    // The session snapshots null, so the reader logs pages by hand and the
+    // finish leaves currentPage where they left it.
+    await startReading(user.id, unstated.olKey);
+    await updateProgress(user.id, unstated.olKey, 250);
+    expect(
+      (
+        await prisma.readingSession.findFirstOrThrow({
+          where: { userId: user.id, workKey: unstated.olKey },
+        })
+      ).pageCount
+    ).toBeNull();
+
+    // 100 from the stated edition. The 250 does NOT count yet, because that
+    // session is still open — only finished sessions count as read, which is
+    // TEST-9's rule and is deliberately unchanged.
+    expect((await getReadingStats(user.id)).pagesRead).toBe(100);
+
+    await finishReading(user.id, unstated.olKey);
+    const after = await getReadingStats(user.id);
+
+    // Now it counts, and it counts the 250 the reader logged rather than 0.
+    // Summing page_count alone gave 100 here.
+    expect(after.booksRead).toBe(2);
+    expect(after.pagesRead).toBe(350);
+  });
+
+  it("leaves addedAt alone when a work is re-added to the shelf it is on", async () => {
+    const user = await makeUserWithShelves();
+    const work = await makeWork({});
+    const want = shelfNamed(user, "Want to Read");
+
+    const first = await addWorkToShelf(want, work.olKey, user.id);
+    const again = await addWorkToShelf(want, work.olKey, user.id);
+
+    // Same row, not a delete and a recreate: the original shelving date is
+    // what a reader's library is ordered by.
+    expect(again.id).toBe(first.id);
+    expect(again.addedAt.getTime()).toBe(first.addedAt.getTime());
+    expect(
+      await prisma.shelfItem.count({ where: { userId: user.id, workKey: work.olKey } })
+    ).toBe(1);
+  });
+
+  it("still moves a work off the other exclusive shelves", async () => {
+    // The control: the no-op above must not stop the move it sits in front of.
+    const user = await makeUserWithShelves();
+    const work = await makeWork({});
+
+    await addWorkToShelf(shelfNamed(user, "Want to Read"), work.olKey, user.id);
+    await addWorkToShelf(shelfNamed(user, "Read"), work.olKey, user.id);
+
+    const items = await prisma.shelfItem.findMany({
+      where: { userId: user.id, workKey: work.olKey },
+      include: { shelf: true },
+    });
+    expect(items).toHaveLength(1);
+    expect(items[0].shelf.name).toBe("Read");
+  });
+});
+
 describe("RUN-1: finishing is idempotent", () => {
   /**
    * The defect: with no OPEN session, finishReading created a new
@@ -550,4 +628,14 @@ describe("RUN-1: finishing is idempotent", () => {
 async function startAndFinishFor(userId: string, workKey: string) {
   await startReading(userId, workKey);
   await finishReading(userId, workKey);
+}
+
+/** The id of one of a user's three default shelves, by name. */
+function shelfNamed(
+  user: Awaited<ReturnType<typeof makeUserWithShelves>>,
+  name: string
+): string {
+  const shelf = user.shelves.find((s) => s.name === name);
+  if (!shelf) throw new Error(`no shelf named ${name}`);
+  return shelf.id;
 }

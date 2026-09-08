@@ -331,15 +331,28 @@ export async function getReadingStats(userId: string) {
       where: { userId, finishedAt: { not: null } },
     }),
     prisma.readingSession.count({ where: { userId, finishedAt: null } }),
-    prisma.readingSession.aggregate({
-      where: { userId, finishedAt: { not: null } },
-      _sum: { pageCount: true },
-    }),
+    // Raw, because Prisma's aggregate cannot COALESCE and summing page_count
+    // alone counted 0 for a finished session on an edition that states no
+    // length — even though finishReading sets currentPage from whatever the
+    // reader logged. /wrapped had the same defect and is fixed alongside.
+    //
+    // Two things to note if this is ever edited, both of them recorded lessons
+    // in this repo. The identifiers here are mixed case:
+    // app.reading_sessions has "userId" and "currentPage" camel-cased and
+    // page_count and finished_at snake-cased, so the quotes are load-bearing
+    // and an unquoted "userId" is a runtime 500 that tsc cannot see. And SUM()
+    // returns bigint, which JSON.stringify refuses, so the ::int cast is not
+    // decoration.
+    prisma.$queryRaw<{ pages: number }[]>`
+      SELECT COALESCE(SUM(COALESCE(page_count, "currentPage")), 0)::int AS pages
+      FROM app.reading_sessions
+      WHERE "userId" = ${userId} AND finished_at IS NOT NULL
+    `,
   ]);
 
   return {
     booksRead,
     currentlyReading,
-    pagesRead: pages._sum.pageCount ?? 0,
+    pagesRead: pages[0]?.pages ?? 0,
   };
 }
