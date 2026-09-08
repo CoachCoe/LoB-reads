@@ -378,18 +378,34 @@ export const FUZZY_TIMEOUT_MS = fuzzyTimeoutFromEnv();
  * fails at request time rather than at startup: `Number("fast")` is `NaN`,
  * Postgres answers `invalid value for parameter "statement_timeout": "nan"`,
  * and `isStatementTimeout` does not swallow that — so a typo in this variable
- * turns both fallback arms into 500s on /search, and only for the queries that
+ * turned both fallback arms into 500s on /search, and only for the queries that
  * reach them.
+ *
+ * It warns and falls back rather than throwing, and that is deliberate. The
+ * first version of this threw at module scope, which is the usual advice for a
+ * bad config value and is wrong here: this module is imported lazily by page
+ * and route modules, while `health.ts` imports only `@/lib/prisma`. So the
+ * throw produced a container that answered 200 on BOTH probes and 500 on every
+ * page — measured. That is precisely the failure the container job in `ci.yml`
+ * was added for: "The image built, started, served static pages, and returned
+ * 500 on every request that touched the database."
+ *
+ * A fail-fast the orchestrator cannot see is worse than the defect it replaced:
+ * the NaN broke two search arms, this broke everything and hid it. The value
+ * has a sane documented default, so using it and saying so loudly is the
+ * correct behaviour.
  */
 function fuzzyTimeoutFromEnv(): number {
+  const DEFAULT_MS = 900;
   const raw = process.env.SEARCH_FUZZY_TIMEOUT_MS;
-  if (raw === undefined) return 900;
+  if (raw === undefined) return DEFAULT_MS;
 
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new Error(
-      `SEARCH_FUZZY_TIMEOUT_MS must be a positive number of milliseconds, got ${JSON.stringify(raw)}`
+    console.error(
+      `SEARCH_FUZZY_TIMEOUT_MS must be a positive number of milliseconds, got ${JSON.stringify(raw)} — using ${DEFAULT_MS}`
     );
+    return DEFAULT_MS;
   }
   return parsed;
 }

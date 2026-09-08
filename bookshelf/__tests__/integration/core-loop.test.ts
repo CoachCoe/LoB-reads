@@ -560,6 +560,41 @@ describe("RUN-1: finishing is idempotent", () => {
     expect(stats.pagesRead).toBe(176);
   });
 
+  it("records one session when two finishes race", async () => {
+    /**
+     * The case the dedupe exists for, and the one the first version of the fix
+     * did not close: a double-click is CONCURRENT, and a read followed by a
+     * create is not atomic. Two simultaneous finishes produced two sessions
+     * until `reading_sessions_one_finish_per_day` existed.
+     *
+     * /bastion asked for this test and it failed when written, which is the
+     * only reason to trust it now.
+     */
+    const user = await makeUserWithShelves();
+    const work = await makeWork({ pages: 100 });
+
+    const results = await Promise.allSettled([
+      finishReading(user.id, work.olKey),
+      finishReading(user.id, work.olKey),
+      finishReading(user.id, work.olKey),
+    ]);
+
+    // Neither caller sees an error: the loser of the race gets the winner's
+    // row back, because it is the same finish.
+    expect(results.map((r) => r.status)).toEqual([
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+    ]);
+
+    expect(
+      await prisma.readingSession.count({
+        where: { userId: user.id, workKey: work.olKey },
+      })
+    ).toBe(1);
+    expect((await getReadingStats(user.id)).booksRead).toBe(1);
+  });
+
   it("does not add a session when a finished book is re-imported on the same date", async () => {
     const user = await makeUserWithShelves();
     const work = await makeWork({ pages: 300 });

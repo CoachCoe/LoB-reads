@@ -220,8 +220,7 @@ export async function finishReading(
     : // Finishing something never started is a legitimate action: a reader
       // logging a book they read before joining. Doing it twice in one day is
       // not — see finishedSessionOnDay.
-      ((await finishedSessionOnDay(userId, workKey, when)) ??
-        (await startAndFinish(userId, workKey, when)));
+      await finishWithoutOpenSession(userId, workKey, when);
 
   await moveToExclusiveShelf(userId, workKey, "Read");
   return finished;
@@ -254,6 +253,48 @@ export async function finishReading(
  * `getLatestSessionForWork`'s docstring is explicit that "Re-reading a book is
  * legitimate, so the server still allows a new session."
  */
+/**
+ * Finish a work with no open session, at most once per day.
+ *
+ * The lookup alone is not enough, and that is the whole point: a read followed
+ * by a create is not atomic, and a double-click — the case this exists for — is
+ * concurrent. Measured before the index existed: two simultaneous finishes
+ * produced two sessions, so the first version of this fix closed the sequential
+ * case and left the actual one open.
+ *
+ * `reading_sessions_one_finish_per_day` is what decides it now. The lookup is
+ * kept because it is the common path and returns the row without a failed
+ * insert; the P2002 branch is what makes the rule hold. Same shape as the
+ * exclusive-shelf rule, which ARCHITECTURE.md describes as "kept honest by a
+ * partial unique index and a trigger rather than by application code".
+ */
+async function finishWithoutOpenSession(
+  userId: string,
+  workKey: string,
+  when: Date
+) {
+  const existing = await finishedSessionOnDay(userId, workKey, when);
+  if (existing) return existing;
+
+  try {
+    return await startAndFinish(userId, workKey, when);
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
+
+    // Another request inserted between the lookup and the insert. Its row is
+    // the same finish, so return it rather than reporting a conflict the
+    // reader did not cause.
+    const raced = await finishedSessionOnDay(userId, workKey, when);
+    if (raced) return raced;
+    throw error;
+  }
+}
+
+/** Postgres 23505 via Prisma: a unique constraint rejected the insert. */
+function isUniqueViolation(error: unknown): boolean {
+  return (error as { code?: string } | null)?.code === "P2002";
+}
+
 async function finishedSessionOnDay(
   userId: string,
   workKey: string,
@@ -315,14 +356,58 @@ async function moveToExclusiveShelf(
     select: { id: true },
   });
 
-  await prisma.$transaction([
-    prisma.shelfItem.deleteMany({
-      where: { workKey, shelfId: { in: exclusive.map((s) => s.id) } },
-    }),
-    prisma.shelfItem.create({
-      data: { shelfId: target.id, workKey, userId },
-    }),
-  ]);
+  // Delete from the OTHER exclusive shelves and upsert the target, rather than
+  // deleting from all of them and creating. Two properties, both of which this
+  // copy was missing and its sibling in shelves.ts has:
+  //
+  // - Excluding the target means a work already on it keeps its `addedAt` and
+  //   its row id, instead of being silently re-shelved (RUN-5).
+  // - The upsert makes the move idempotent under concurrency. It was a delete
+  //   followed by a create, so two simultaneous finishes both deleted and both
+  //   inserted, and one got a P2002 from `shelf_items_one_exclusive_per_work`.
+  //   Measured: a third of three racing finishReading calls rejected, after the
+  //   session half of that race had already been fixed.
+  //
+  // Order matters inside the transaction: the delete has to precede the upsert,
+  // because the partial unique index allows only one exclusive shelf per work.
+  const others = exclusive
+    .map((shelf) => shelf.id)
+    .filter((id) => id !== target.id);
+
+  try {
+    await prisma.$transaction([
+      prisma.shelfItem.deleteMany({ where: { workKey, shelfId: { in: others } } }),
+      prisma.shelfItem.upsert({
+        where: { shelfId_workKey: { shelfId: target.id, workKey } },
+        create: { shelfId: target.id, workKey, userId },
+        update: {},
+      }),
+    ]);
+  } catch (error) {
+    // A unique violation here means another writer put the work on an
+    // exclusive shelf while this transaction was running. The upsert cannot
+    // absorb it, because the index that rejects is the PARTIAL one — one
+    // exclusive shelf per work — and not the (shelfId, workKey) key the
+    // ON CONFLICT targets.
+    //
+    // So the end state is checked rather than assumed. If the work is on the
+    // shelf this call wanted, the other writer did this call's work and there
+    // is nothing to report; the reading session is the record of truth and it
+    // is already correct. If it is somewhere else, that is a real failure and
+    // it is rethrown.
+    //
+    // This is the docstring above finally being true: "this path must not fail
+    // the reading action if the shelf is missing" (JR-10). It was catching a
+    // missing shelf and letting everything else escape, so a racing
+    // double-click answered 500 for a book that was already finished.
+    if (!isUniqueViolation(error)) throw error;
+
+    const onTarget = await prisma.shelfItem.findUnique({
+      where: { shelfId_workKey: { shelfId: target.id, workKey } },
+      select: { id: true },
+    });
+    if (!onTarget) throw error;
+  }
 }
 
 export async function getReadingStats(userId: string) {

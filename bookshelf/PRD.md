@@ -286,7 +286,7 @@ See `../docs/audit/2026-08-31-work-completed.md` for what was deferred and why,
 and `../docs/audit/2026-09-08-findings.md` for the round that found the above. `.env.local`
 is deleted and `npm run dev` works; `work_mem` now travels in a migration
 instead of being set by hand; the test database is built from the migration
-chain rather than `db push`; and all 25 migrations apply cleanly to Postgres 16,
+chain rather than `db push`; and all 26 migrations apply cleanly to Postgres 16,
 which local development still does not run.
 
 ---

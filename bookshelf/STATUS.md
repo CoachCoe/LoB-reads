@@ -80,7 +80,7 @@ The catalog is the English-language, ISBN-bearing, cover-bearing slice from
 `/shelf/[shelfId]` `/user/[userId]` `/feed` `/map` `/settings` `/wrapped`
 `/wrapped/projections` `/import/[sessionId]` `/about` `/login` `/register`
 
-23 API routes (including liveness and readiness probes). 25 migrations.
+23 API routes (including liveness and readiness probes). 26 migrations.
 
 ### Measured latency, against the real 6.9M-work catalog
 
