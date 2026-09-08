@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { findAuthorKeyByName, getAuthorByKey } from "@/server/authors";
 import WorkCard from "@/components/catalog/WorkCard";
 import AuthorLocationsSection from "@/components/authors/AuthorLocationsSection";
+import { decodeRouteParam } from "@/lib/http/route-params";
 
 interface Props {
   params: Promise<{ authorName: string }>;
@@ -11,7 +12,7 @@ interface Props {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { authorName } = await params;
-  return { title: decodeURIComponent(authorName) };
+  return { title: decodeRouteParam(authorName) };
 }
 
 /**
@@ -23,7 +24,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
  */
 export default async function AuthorPage({ params }: Props) {
   const { authorName } = await params;
-  const name = decodeURIComponent(authorName);
+  const name = decodeRouteParam(authorName);
 
   const [authorKey, user] = await Promise.all([
     findAuthorKeyByName(name),

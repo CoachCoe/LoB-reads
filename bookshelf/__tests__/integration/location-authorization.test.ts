@@ -43,7 +43,10 @@ import {
   POST as postWorkLocation,
   PATCH as patchWorkLocation,
 } from "@/app/api/works/[workKey]/locations/route";
-import { DELETE as deleteAuthorLocationRoute } from "@/app/api/authors/[authorName]/locations/route";
+import {
+  DELETE as deleteAuthorLocationRoute,
+  GET as getAuthorLocationsRoute,
+} from "@/app/api/authors/[authorName]/locations/route";
 
 const WORK_KEY = "OLLOC001W";
 
@@ -233,6 +236,84 @@ describe("DELETE /api/authors/[authorName]/locations", () => {
  * `getMappedWorkLocations` filters it out, and the contribution is accepted with
  * a 201 and then appears on no map — silent, and permanent.
  */
+/**
+ * RUN-6: an author whose name contains a literal `%`.
+ *
+ * The route decoded `params.authorName`, and a route handler in Next 16
+ * receives it already decoded — so `decodeURIComponent("100% Jesus Books")`
+ * threw URIError and the handler answered 500. Fifteen authors in the catalog
+ * have `%` in their name and eight of them have works, so they are linked from
+ * work pages: for those eight the locations panel could not load and no
+ * location could be contributed, on one of the product's two stated
+ * differentiators. The 500 needed no session.
+ *
+ * Exercised through the ROUTE and not through getAuthorLocations, because the
+ * defect was entirely in the route's parameter handling — the server function
+ * was never reached. A test that called the server function directly passed
+ * throughout, which is the shape this file exists to avoid.
+ *
+ * The name is encoded here exactly as AuthorLocationsSection builds it, with
+ * encodeURIComponent, so the test carries the same value the client sends.
+ */
+describe("RUN-6: GET /api/authors/[authorName]/locations with a % in the name", () => {
+  const AWKWARD = "100% Jesus Books";
+  const AUTHOR_KEY = "OLTPCTAUTH1A";
+
+  beforeEach(async () => {
+    await prisma.$executeRaw`
+      INSERT INTO catalog.authors (ol_key, name) VALUES (${AUTHOR_KEY}, ${AWKWARD})
+      ON CONFLICT (ol_key) DO NOTHING`;
+  });
+
+  const get = (name: string) =>
+    getAuthorLocationsRoute(
+      new Request(
+        `http://localhost/api/authors/${encodeURIComponent(name)}/locations`
+      ) as never,
+      { params: Promise.resolve({ authorName: name }) } as never
+    );
+
+  it("answers 200 and finds the author rather than throwing URIError", async () => {
+    const response = await get(AWKWARD);
+
+    expect(response.status).toBe(200);
+    // The author resolved: a name that failed to decode never reached the
+    // lookup at all, so asserting the status alone would not separate "found
+    // the author, no locations" from "threw before looking".
+    await expect(response.json()).resolves.toEqual({ locations: [] });
+  });
+
+  it("returns a contributed location for that author", async () => {
+    const contributor = await makeUser();
+    await prisma.authorLocation.create({
+      data: {
+        authorKey: AUTHOR_KEY,
+        addedById: contributor.id,
+        name: "Oxford",
+        type: "residence",
+        lat: 51.752,
+        lng: -1.2577,
+      },
+    });
+
+    const body = (await (await get(AWKWARD)).json()) as {
+      locations: { name: string }[];
+    };
+    expect(body.locations).toHaveLength(1);
+    expect(body.locations[0].name).toBe("Oxford");
+  });
+
+  it("still works for a name that needs no decoding", async () => {
+    await prisma.$executeRaw`
+      INSERT INTO catalog.authors (ol_key, name) VALUES ('OLTPCTAUTH2A', 'Frank Herbert')
+      ON CONFLICT (ol_key) DO NOTHING`;
+
+    const response = await get("Frank Herbert");
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ locations: [] });
+  });
+});
+
 describe("POST /api/works/[workKey]/locations — coordinates", () => {
   beforeEach(async () => {
     const contributor = await makeUser();
