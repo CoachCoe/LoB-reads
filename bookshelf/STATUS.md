@@ -1,6 +1,6 @@
 # Status — Life on Books
 
-Where the project actually is, as of 2026-08-31. Written to be read by someone
+Where the project actually is, as of 2026-09-08. Written to be read by someone
 deciding what to do next, so it leans on measurements rather than intentions.
 Every number here was taken from the running system, not estimated.
 
@@ -46,8 +46,20 @@ vanishing. This is the single most load-bearing decision in the schema.
 | M2 | Search and work pages over `catalog.works` | 20 known books each in top 3 |
 | M3 | Shelves, ratings, reviews on `work_key`; `app.books` retired | Server migrated; **client was not** — see below |
 | M4 | Enrichment worker, cover storage | Worker runs; **no covers stored yet** |
-| M5 | Social layer and rating graph | 100% coverage of top 1,000 works |
+| M5 | Social layer and rating graph | 55.3% coverage of the top 1,000 works by `edition_count` — see below |
 | M6 | Goodreads import with a review queue | Real export imports; unmatched queued |
+
+**M5's acceptance figure, re-measured 2026-09-08.** It read "100% coverage of
+top 1,000 works" and the 2026-08-31 audit recorded it as unverifiable without
+the live system. It is verifiable now, and by the app's own definition of
+popularity — `edition_count DESC, ol_key`, the ordering `popularWorksSql` uses
+and `works_edition_count_ol_key_idx` serves — it is **553 of 1,000**, both for
+`work_rating_stats` rows and for `work_similarity` neighbours.
+
+The deeper problem is that nothing records what "top 1,000" was supposed to
+mean. Under `rating_count` order *within the corpus* the claim is trivially
+100%. Until the criterion is written down the claim cannot be called true or
+false, and that ambiguity is the thing to fix rather than the number.
 
 ### Live data
 
@@ -55,7 +67,7 @@ vanishing. This is the single most load-bearing decision in the schema.
 catalog   works 6,943,467   editions 8,885,863   authors 3,244,953
 social    rated works 8,663   ratings 5,518,739   similarity pairs 173,156
 derived   subject counts 875,472
-database  11 GB
+database  12 GB  (catalog 11 GB, seed 853 MB, app <1 MB)
 ```
 
 The catalog is the English-language, ISBN-bearing, cover-bearing slice from
@@ -80,7 +92,21 @@ The catalog is the English-language, ISBN-bearing, cover-bearing slice from
 | `/search?subject=Fiction` | 0.031 s | 0.10 s |
 | `/search?q=dune` | 0.091 s | 0.17 s |
 | `/search?q=Fiction` | ~~**1.23 s**~~ **0.031 s** | 4.2 s → 0.03 s |
-| `/search?q=the` | ~~19.2 s~~ **0.001 s** | — |
+| `/search?q=the` | ~~19.2 s~~ ~~**0.001 s**~~ **~0.38 s, 0 results** | — |
+
+> The `?q=the` row was published as **0.001 s** and that was wrong: 1ms is the
+> full-text arm measured in isolation, and a stopword-only query does not use
+> the full-text arm. It uses the exact-title arm, which needs 1.8-2.1 s on the
+> real catalog and is therefore abandoned at its 300 ms timeout — so the reader
+> waits ~380 ms and gets nothing, for a word six works are actually titled.
+>
+> The cause is structural, not a tuning matter: `title_norm` carries a GIN
+> trigram index and no btree, so `title_norm = 'the'` cannot be an equality
+> lookup and pays for the commonest trigrams in 6.9M titles. A btree on
+> `title_norm` would make it an index lookup and return those six works. That is
+> a migration and an index over 6.9M rows rebuilt monthly, so it is a cost
+> decision — recorded as an open question in
+> `../docs/audit/2026-09-08-findings.md` rather than made by an audit.
 
 A production build is five to ten times faster everywhere except the common-word
 search, which barely moved (4.2 s to 3.5 s). That asymmetry is what ruled out
@@ -96,7 +122,7 @@ what the previous two diagnoses said.
 
 ## Quality posture
 
-665 tests: 273 unit, 392 integration. Integration runs against real Postgres
+773 tests: 326 unit, 447 integration. Integration runs against real Postgres
 and must run serially — they share a database and truncate between tests.
 
 The 2026-08-31 audit added 127 of those, and the reason is worth stating plainly:
@@ -203,7 +229,7 @@ page granularity, rechecking every row on every candidate page:
 That part holds: 32 MB is the knee and it travels in a migration. The
 conclusion drawn from it did not. "Whatever remains is CPU: rechecking 93,941
 rows and ranking 10,061 of them" named the wrong half. **Ranking is cheap** —
-all 10,120 full-text matches for "Fiction", fully ranked with the real
+all 10,061 full-text matches for "Fiction", fully ranked with the real
 expression, take 57 ms. Which also means bounding the candidate set, the thing
 R1 was open for, was never the fix.
 
@@ -218,7 +244,9 @@ throws away.
 
 The arms are now separate statements tried in order — full text, then exact
 title for a stopword-only query, then fuzzy only when full text found nothing —
-with a 700 ms `statement_timeout` bounding the two trigram arms. Measured warm
+with a `statement_timeout` on each of the two fallback arms — 900 ms for fuzzy,
+300 ms for exact-title, which is an equality and not a trigram predicate at all.
+Measured warm
 on the real catalog:
 
 | page | before | after |
@@ -376,7 +404,7 @@ those differs from `npm run dev` in a way that has hidden a real failure.
 | catalog dump | **103 s**, 1.7 GB compressed from 10 GB |
 | storage | 11/11 checks against a real blob endpoint, both private and public postures |
 | probes | liveness stays 200 with the database stopped; readiness returns 503 in 2.0 s |
-| release check | `npm run deploy:verify` — every config and schema assertion that applies to the environment given, plus eight more against a running app; exits non-zero if any fail |
+| release check | `npm run deploy:verify` — every config and schema assertion that applies to the environment given, plus the probes, the CSP assertions and one timed query per search arm when `BASE_URL` is set; prints its own totals; exits non-zero if any fail |
 
 The pooled-versus-direct connection split had never been exercised — local
 development points both variables at the same string. Under PgBouncer in

@@ -230,9 +230,18 @@ src/
   Library dumps (`-- --fixture` for a small one)
 - `npm run storage:smoke` - Verify object storage against a real blob endpoint
 - `npm run deploy:verify` - Assert a deployment's invariants and exit non-zero
-  if any fail, so it can gate a release. Checks over configuration and
-  schema (23 when the pooled and direct URLs differ), plus eight more against
-  the running app when `BASE_URL` is set
+  if any fail, so it can gate a release. It prints its own totals; the counts
+  this line used to give were wrong in both halves. Set `BASE_URL` to include
+  the checks against a running app — the probes, the CSP assertions and one
+  timed query per search arm — which are otherwise skipped
+- `npm run bench:search` - Time the search arms against whatever catalog
+  `DATABASE_URL` points at; `-- --gate` exits non-zero. Run by hand, against
+  the real catalog: it proves nothing on a fixture, because the regressions it
+  guards are scale-dependent. `-- --explain <query>` prints the plan
+- `npm run enrich:backfill` / `enrich:worker` / `enrich:covers` - Queue and run
+  third-party metadata enrichment; see ARCHITECTURE.md
+- `npm run social:load` / `social:compute` - Load the rating corpus and compute
+  the aggregates behind ratings and recommendations; see ARCHITECTURE.md
 
 ## API Routes
 

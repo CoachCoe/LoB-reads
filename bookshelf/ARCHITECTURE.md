@@ -115,7 +115,7 @@ cannot match at all.
 R1 fix and the ordering is the whole of it:
 
 1. **Full text** (`search_vector @@ tsq`). Answers almost everything, and
-   ranking is cheap: all 10,120 matches for "Fiction" cost 57 ms.
+   ranking is cheap: all 10,061 matches for "Fiction" cost 57 ms.
 2. **Exact title** (`title_norm = norm`), when the query is entirely English
    stopwords so the tsquery is empty. "It", "Us" and "She" are real titles and
    the full-text arm cannot see them at all.
@@ -123,10 +123,19 @@ R1 fix and the ordering is the whole of it:
    is what a typo looks like. "mockingbrd" reaches "Mockingbird" here and
    nowhere else.
 
-The two trigram arms are the expensive ones and are bounded by a 700 ms
-`statement_timeout`, because their cost depends on how common the query's
-trigrams are and that cannot be known before running: the same statement is
-58 ms for "mockingbrd" and 5.5 s for "thexx". Union rather than fallback is what
+The two FALLBACK arms are the expensive ones and each carries its own
+`statement_timeout` — 900 ms for fuzzy, 300 ms for exact-title. They were
+described here as "the two trigram arms", which is wrong about one of them and
+undermines the distinction this section exists to teach: the exact-title arm is
+`title_norm = norm`, an equality, with no trigram predicate in it at all. Its
+cost comes from `title_norm` having a GIN trigram index and no btree, so the
+equality cannot be an index lookup for a short common string.
+
+The budgets are separate because the arms have nothing in common but a
+`SET LOCAL`, and their costs are an order of magnitude apart: every query the
+exact-title arm exists to rescue answers inside 131 ms, while the fuzzy arm's
+cost depends on how common the query's trigrams are and cannot be known before
+running — the same statement is 35 ms for "mockingbrd" and 6 s for "thexx". Union rather than fallback is what
 made common words slow — `?q=the` pulled 1,933,084 candidate rows through the
 heap to keep 2,111 of them, 18.5 seconds of the 19.
 
@@ -216,8 +225,16 @@ one the worker backs off immediately and makes no progress.
 
 ### Covers
 
-Fetched once and stored in our own object storage rather than hotlinked. Two
-traps, both verified live:
+**Designed** to be fetched once and stored in our own object storage rather
+than hotlinked — and **not wired up**. Every cover is hotlinked today: all
+8,885,863 editions carry a `cover_id`, `catalog.enrichment` is empty, and
+`coverUrl`'s `storedUrl` argument has no caller, so `enrich:covers` stores
+objects nothing reads. The milestone table at the end of this file says as much;
+this section said the opposite, in a heading, which is the one thing STATUS and
+ARCHITECTURE are not for. See PRD R4.
+
+The two traps below are real and were verified live; they apply to the
+hotlinked path as it stands:
 
 - **A missing cover does not 404.** It answers HTTP 200 with a 43-byte 1×1
   transparent GIF, so `response.ok` is true and naive code stores it as a book
@@ -288,7 +305,8 @@ name.
 
 It does **not** remove the bloat — deleting from `works_new` leaves the dead
 tuples in `works_new`, and renaming a table does not compact it, so the dead
-space simply arrives under the new name. That is tracked as R2b in `PRD.md`; see
+space simply arrives under the new name. That is tracked as R2b in `PRD.md`, a
+requirement that did not exist until the 2026-09-08 audit added it; see
 `STATUS.md` for the measurements.
 
 ## Ingest performance, and what the first full run cost
@@ -313,7 +331,12 @@ turn:
    every statement planned against the catalog as it was before the TRUNCATE —
    `catalog.authors` estimated at 1,269 rows when it held 15,380,614. The
    `work_authors` insert ran over four hours; with `ANALYZE` after each bulk
-   insert it takes 38 minutes.
+   insert it took 38 minutes. **38 minutes is the intermediate figure, not the
+   current one** — `STATUS.md` records the per-statement table, and it has
+   `work_authors` at ~3 minutes after the later changes. This paragraph and
+   `DEPLOYMENT.md` both presented 38 minutes as the result, an order of
+   magnitude out, with no way for a reader to tell which was current.
+   `STATUS.md` owns those figures.
 4. **Building rows only to delete them.** The slice keeps 10.1% of editions, so
    inserting all 56.6 million and letting `04-slice.sql` remove 51 million
    meant writing ten rows for every one kept. The edition predicates now run
@@ -384,8 +407,13 @@ own chips linked straight into the worst case:
 
 A title or author search — what people actually type — barely moves. Subjects
 are indexed for containment instead, so a chip is a browse:
-`/search?subject=Fiction` answers in 0.031s with an exact count from
-`subject_counts`, against 110 seconds before.
+`/search?subject=Fiction` answers in 0.031s with a precomputed count from
+`subject_counts`, against 110 seconds before. Precomputed, not exact: the table
+is rebuilt only by `05-index.sql` at the end of an ingest, so it drifts from
+`catalog.works` in between — measured 2026-09-08, it says Fiction 410,614 and
+History 406,429 against live containment of 410,583 and 406,386. The
+distinction matters because `COUNT_CEILING` exists precisely so the UI never
+presents a capped figure as exact.
 
 This diagnosis was wrong and is kept only because it was acted on: the
 paragraph here used to blame `shared_buffers` at 128MB for a 4.2s `Fiction`
