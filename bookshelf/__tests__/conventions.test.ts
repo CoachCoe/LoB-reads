@@ -411,10 +411,16 @@ describe("public pages stay public", () => {
    * destination.
    */
   it("has a 404 and an error boundary inside the main layout", () => {
-    expect(existsSync("src/app/(main)/not-found.tsx")).toBe(true);
-    expect(existsSync("src/app/(main)/error.tsx")).toBe(true);
+    // The 404 is at the ROOT, and renders the chrome itself. Next's reference
+    // for this file says it "renders inside your root layout", so a
+    // group-level copy silently loses the navbar — measured, not assumed.
+    expect(existsSync("src/app/not-found.tsx")).toBe(true);
+    expect(read("src/app/not-found.tsx")).toContain("<Navbar />");
+    expect(read("src/app/not-found.tsx")).toContain("<Footer />");
 
-    // Not at the root, where they would lose the layout they exist to keep.
+    // The error boundary DOES compose with the group layout, so it stays in
+    // the group and does not repeat the chrome.
+    expect(existsSync("src/app/(main)/error.tsx")).toBe(true);
     expect(read("src/app/(main)/error.tsx")).toContain('"use client"');
   });
 
