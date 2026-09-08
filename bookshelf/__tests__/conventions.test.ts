@@ -456,6 +456,53 @@ describe("public pages stay public", () => {
     expect(offenders).toEqual([]);
   });
 
+  /**
+   * JR-3: AGENTS.md says a missing work renders "and are not linked", and that
+   * "Each of these has a test that fails if it is broken." That clause had no
+   * test, and four surfaces broke it — ShelfSection wrapped a card whose own
+   * title read "Not in the current catalog" in a Link.
+   *
+   * A mechanical check, and labelled as one: it asserts that no component
+   * builds a /work/ link out of a title expression that already carries a
+   * missing-work fallback. That is the exact shape that kept recurring, and it
+   * is text-checkable where the behaviour is not — rendering every surface
+   * with an absent work would mean mounting five components with five
+   * different prop shapes.
+   */
+  it("never links a work title that has a missing-work fallback beside it", () => {
+    const components = walk("src/components", (f) => f.endsWith(".tsx"))
+      .concat(walk("src/app/(main)", (f) => f.endsWith(".tsx")))
+      .map((f) => f.split(path.sep).join("/"));
+
+    expect(components.length).toBeGreaterThan(10);
+
+    // A `<Link href={`/work/...`}>` or `<a href={`/work/...`}>` whose element
+    // body reaches a `?? "` fallback before the tag closes.
+    const offenders = components.filter((file) => {
+      const source = withoutComments(read(file));
+      return /<(?:Link|a)\s[^>]*href=\{`\/work\/[^`]*`\}[^>]*>(?:(?!<\/(?:Link|a)>)[\s\S]){0,600}\?\?\s*"/.test(
+        source
+      );
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("catches the shape it is looking for", () => {
+    // Positive control, taken from ShelfSection as it was.
+    const bad = [
+      '<Link href={`/work/${item.workKey}`}>',
+      '  <h3>{item.work?.title ?? "Not in the current catalog"}</h3>',
+      "</Link>",
+    ].join("\n");
+
+    expect(
+      /<(?:Link|a)\s[^>]*href=\{`\/work\/[^`]*`\}[^>]*>(?:(?!<\/(?:Link|a)>)[\s\S]){0,600}\?\?\s*"/.test(
+        bad
+      )
+    ).toBe(true);
+  });
+
   it("rejects the guard shape it replaced", () => {
     // Positive control. Without it this check cannot tell a correct guard from
     // a file it failed to read.

@@ -1,6 +1,7 @@
 "use client";
 
 import CoverImage from "@/components/catalog/CoverImage";
+import WorkLinkOrPlaceholder from "@/components/catalog/WorkLinkOrPlaceholder";
 import { useState } from "react";
 import Link from "next/link";
 import { ChevronRight, X } from "lucide-react";
@@ -82,7 +83,10 @@ export default function ShelfSection({ shelf }: ShelfSectionProps) {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
           {displayBooks.map((item) => (
             <div key={item.id} className="group relative">
-              <Link href={`/work/${item.workKey}`}>
+              <WorkLinkOrPlaceholder
+                workKey={item.workKey}
+                inCatalog={Boolean(item.work)}
+              >
                 <div className="bg-[var(--card-bg)] rounded-lg shadow-sm border border-[var(--card-border)] overflow-hidden hover:shadow-md transition-shadow">
                   <CoverImage
                     title={item.work?.title ?? "Not in the current catalog"}
@@ -101,7 +105,7 @@ export default function ShelfSection({ shelf }: ShelfSectionProps) {
                     </p>
                   </div>
                 </div>
-              </Link>
+              </WorkLinkOrPlaceholder>
 
               {/* Remove button */}
               <button

@@ -76,7 +76,11 @@ function FeedRow({ item }: { item: FeedItem }) {
           {item.type === "shelf_add" && (
             <>
               added{" "}
-              <WorkLink workKey={item.workKey} title={title} /> to{" "}
+              <WorkLink
+                workKey={item.workKey}
+                title={title}
+                inCatalog={Boolean(item.work)}
+              /> to{" "}
               <span className="text-gray-600 dark:text-gray-400">
                 {item.shelfName}
               </span>
@@ -84,12 +88,20 @@ function FeedRow({ item }: { item: FeedItem }) {
           )}
           {item.type === "review" && (
             <>
-              rated <WorkLink workKey={item.workKey} title={title} />
+              rated <WorkLink
+                workKey={item.workKey}
+                title={title}
+                inCatalog={Boolean(item.work)}
+              />
             </>
           )}
           {item.type === "finished" && (
             <>
-              finished <WorkLink workKey={item.workKey} title={title} />
+              finished <WorkLink
+                workKey={item.workKey}
+                title={title}
+                inCatalog={Boolean(item.work)}
+              />
             </>
           )}
         </p>
@@ -130,7 +142,31 @@ function FeedRow({ item }: { item: FeedItem }) {
   );
 }
 
-function WorkLink({ workKey, title }: { workKey: string; title: string }) {
+/**
+ * The feed's work reference. Not linked when the work has left the catalog
+ * slice — AGENTS.md: those "render as 'not in the current catalog' and are not
+ * linked, because the work page 404s on a key the current slice lacks."
+ *
+ * The cover thumbnail beside it was already guarded; the title three lines up
+ * was not.
+ */
+function WorkLink({
+  workKey,
+  title,
+  inCatalog,
+}: {
+  workKey: string;
+  title: string;
+  inCatalog: boolean;
+}) {
+  if (!inCatalog) {
+    return (
+      <span className="font-medium italic text-gray-600 dark:text-gray-400">
+        {title}
+      </span>
+    );
+  }
+
   return (
     <Link
       href={`/work/${workKey}`}
