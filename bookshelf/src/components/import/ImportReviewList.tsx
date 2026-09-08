@@ -4,6 +4,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Star } from "lucide-react";
 import type { MatchCandidate } from "@/server/imports";
+import {
+  SHELF_NAME_BY_GOODREADS_SHELF,
+  type GoodreadsShelf,
+} from "@/lib/shelves";
 
 interface ReviewRow {
   id: string;
@@ -167,15 +171,17 @@ export default function ImportReviewList({ rows }: { rows: ReviewRow[] }) {
   );
 }
 
+/**
+ * The label for a Goodreads shelf, from the same map the importer uses.
+ *
+ * This had its own copy and it had already drifted — "Currently reading" and
+ * "Want to read" against the importer's "Currently Reading" and "Want to
+ * Read". Cosmetic on its own; the reason it matters is that the importer's copy
+ * is a join key (DEAD-2), so two vocabularies for one thing is how the wrong
+ * one ends up in the lookup.
+ */
 function shelfLabel(shelf: string): string {
-  switch (shelf) {
-    case "read":
-      return "Read";
-    case "currently-reading":
-      return "Currently reading";
-    case "to-read":
-      return "Want to read";
-    default:
-      return shelf;
-  }
+  return (
+    SHELF_NAME_BY_GOODREADS_SHELF[shelf as GoodreadsShelf] ?? shelf
+  );
 }

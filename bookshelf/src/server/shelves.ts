@@ -12,12 +12,10 @@ import { getWorksByKeys, workExists, type WorkSummary } from "./catalog";
  * no join across the two schemas.
  */
 
-/** The three shelves every account starts with. Order is the display order. */
-export const DEFAULT_SHELF_NAMES = [
-  "Want to Read",
-  "Currently Reading",
-  "Read",
-] as const;
+// The names themselves live in src/lib/shelves.ts, where a client component
+// may also import them — see DEAD-2 in that file for why the string is
+// load-bearing. Re-exported here because this is where callers look for it.
+export { DEFAULT_SHELF_NAMES } from "@/lib/shelves";
 
 /**
  * How many items to load per shelf for an overview. The true total still comes
