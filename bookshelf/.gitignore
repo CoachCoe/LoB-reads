@@ -59,3 +59,7 @@ next-env.d.ts
 # and for corpus-derived data that is a licensing question, not just a large
 # file. ORG-19.
 /data/
+
+# Fictional-world map images. Published artwork, kept local rather than
+# committed; `npm run demo:map` seeds the world without a map when absent.
+public/fictional-worlds/
