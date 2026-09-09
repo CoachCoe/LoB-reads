@@ -279,25 +279,38 @@ export default function FictionalWorldsPanel({
                     <Map className="h-4 w-4" />
                     Maps ({selectedWorld.maps.length})
                   </h3>
-                  <button
-                    onClick={() => setShowUploadForm(true)}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition-colors"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Add Map
-                  </button>
+                  {/* Gated, like "New world" and the edit button in this
+                      same file. A signed-out visitor could complete the whole
+                      upload modal and only learn at submit, when the route
+                      answers 401 and the toast reads "Unauthorized". */}
+                  {currentUserId && (
+                    <button
+                      onClick={() => setShowUploadForm(true)}
+                      className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition-colors"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add Map
+                    </button>
+                  )}
                 </div>
 
                 {selectedWorld.maps.length === 0 ? (
                   <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-8 text-center">
                     <Map className="h-12 w-12 mx-auto mb-2 text-gray-400 dark:text-gray-500" />
                     <p className="text-sm text-gray-500 dark:text-gray-400">No maps uploaded yet</p>
-                    <button
-                      onClick={() => setShowUploadForm(true)}
-                      className="mt-3 text-sm text-purple-600 hover:text-purple-700"
-                    >
-                      Upload your first map
-                    </button>
+                    {currentUserId ? (
+                      <button
+                        onClick={() => setShowUploadForm(true)}
+                        className="mt-3 text-sm text-purple-600 hover:text-purple-700"
+                      >
+                        Upload your first map
+                      </button>
+                    ) : (
+                      // Matches the wording this file already uses for worlds.
+                      <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">
+                        Sign in to add a map.
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-3">

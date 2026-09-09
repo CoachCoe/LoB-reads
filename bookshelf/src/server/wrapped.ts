@@ -85,7 +85,14 @@ export async function getWrappedStats(userId: string, year: number = new Date().
 
   // Calculate basic stats
   const booksRead = finishedBooks.length;
-  const pagesRead = finishedBooks.reduce((sum, p) => sum + (p.pageCount || 0), 0);
+  // COALESCE, not pageCount alone: a finished session on an edition that
+  // states no page count contributed 0, even though finishReading sets
+  // currentPage from whatever the reader logged. Both this and /my-books read
+  // low for anyone whose editions lack a stated length.
+  const pagesRead = finishedBooks.reduce(
+    (sum, p) => sum + (p.pageCount ?? p.currentPage ?? 0),
+    0
+  );
   const reviewsWritten = reviews.length;
   const averageRating = reviews.length > 0
     ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length

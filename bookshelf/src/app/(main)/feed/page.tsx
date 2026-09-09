@@ -1,18 +1,13 @@
-import { redirect } from "next/navigation";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { getCurrentUser } from "@/lib/auth/session";
+import { requireUser } from "@/lib/auth/session";
 import { getActivityFeed, getFollowingCount } from "@/server/users";
 import ActivityFeed from "@/components/social/ActivityFeed";
 
 export const metadata: Metadata = { title: "Your feed" };
 
 export default async function FeedPage() {
-  const user = await getCurrentUser();
-
-  if (!user) {
-    redirect("/login?callbackUrl=/feed");
-  }
+  const user = await requireUser("/feed");
 
   const [items, following] = await Promise.all([
     getActivityFeed(user.id, 40),

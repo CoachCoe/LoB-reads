@@ -5,24 +5,7 @@ import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
-
-// Validate callback URL to prevent open redirect attacks
-function getSafeCallbackUrl(url: string | null): string {
-  if (!url) return "/";
-
-  // Only allow relative paths (starting with /)
-  // Reject absolute URLs, protocol-relative URLs, and javascript: URLs
-  if (
-    url.startsWith("/") &&
-    !url.startsWith("//") &&
-    !url.toLowerCase().startsWith("/\\") &&
-    !url.includes(":")
-  ) {
-    return url;
-  }
-
-  return "/";
-}
+import { getSafeCallbackUrl } from "@/lib/http/callback-url";
 
 export default function LoginForm() {
   const router = useRouter();

@@ -1,14 +1,9 @@
-import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth/session";
+import { requireUser } from "@/lib/auth/session";
 import { getWrappedProjections } from "@/server/wrapped";
 import ProjectionsView from "./ProjectionsView";
 
 export default async function ProjectionsPage() {
-  const user = await getCurrentUser();
-
-  if (!user) {
-    redirect("/login?callbackUrl=/wrapped/projections");
-  }
+  const user = await requireUser("/wrapped/projections");
 
   const projections = await getWrappedProjections(user.id);
 

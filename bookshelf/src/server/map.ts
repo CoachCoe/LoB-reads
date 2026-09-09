@@ -15,7 +15,16 @@ export interface MappedWorkLocation {
   type: string;
   coordinates: { lat: number; lng: number };
   workKey: string;
-  workTitle: string;
+  /**
+   * Null when the work has left the current catalog slice.
+   *
+   * This used to be a display string ("Unknown work"), which meant the map
+   * could not tell a present work from an absent one and linked both —
+   * AGENTS.md requires a missing work to render "and are not linked", because
+   * the work page 404s on a key the slice lacks. The placeholder now lives in
+   * the component that renders it, not in the read.
+   */
+  workTitle: string | null;
   workAuthor: string | null;
   coverId: number | null;
   fictionalWorldName: string | null;
@@ -28,7 +37,14 @@ export interface MappedAuthorLocation {
   type: string;
   coordinates: { lat: number; lng: number };
   authorKey: string;
-  authorName: string;
+  /**
+   * Null when the author has left the catalog slice.
+   *
+   * Worse than the work case before this: the popup linked
+   * `/author/<authorName>`, so the substituted "Unknown author" resolved
+   * through findAuthorKeyByName to null and the link went to a 404.
+   */
+  authorName: string | null;
   yearStart: number | null;
   yearEnd: number | null;
   addedBy: string | null;
@@ -76,7 +92,7 @@ export async function getMappedWorkLocations(): Promise<MappedWorkLocation[]> {
       workKey: loc.workKey,
       // A location can outlive its work leaving the catalog slice; showing the
       // pin with a placeholder beats dropping a contribution off the map.
-      workTitle: work?.title ?? "Unknown work",
+      workTitle: work?.title ?? null,
       workAuthor: work?.authorNames ?? null,
       coverId: work?.coverId ?? null,
       fictionalWorldName: loc.fictionalWorld?.name ?? null,
@@ -108,7 +124,7 @@ export async function getMappedAuthorLocations(): Promise<
     type: loc.type,
     coordinates: { lat: loc.lat, lng: loc.lng },
     authorKey: loc.authorKey,
-    authorName: nameByKey.get(loc.authorKey) ?? "Unknown author",
+    authorName: nameByKey.get(loc.authorKey) ?? null,
     yearStart: loc.yearStart,
     yearEnd: loc.yearEnd,
     addedBy: loc.addedBy?.name ?? null,

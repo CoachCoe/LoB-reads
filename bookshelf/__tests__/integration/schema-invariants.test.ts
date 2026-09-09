@@ -104,3 +104,58 @@ describe("schema invariants", () => {
     expect(named).toContain("reading_sessions.work_key");
   });
 });
+
+/**
+ * RUN-1's guard is the index, not the application code.
+ *
+ * `finishReading` looks for an existing finish before inserting, but a read
+ * followed by a create is not atomic and a double-click is concurrent. The
+ * behavioural test for that race is in core-loop.test.ts and it is only a
+ * PROBABILISTIC detector: measured, it passed five times in a row with this
+ * index dropped, because three calls can serialise by luck. Once it caught the
+ * defect with three rows where one was expected.
+ *
+ * So the deterministic assertion is here, on the schema. This is the same
+ * argument the exclusive-shelf rule already rests on — ARCHITECTURE.md:
+ * "kept honest by a partial unique index and a trigger rather than by
+ * application code".
+ */
+describe("one finished reading session per work per day", () => {
+  it("is enforced by a partial unique index, not by application code", async () => {
+    const rows = await prisma.$queryRaw<{ indexdef: string }[]>`
+      SELECT indexdef FROM pg_indexes
+      WHERE schemaname = 'app'
+        AND tablename = 'reading_sessions'
+        AND indexname = 'reading_sessions_one_finish_per_day'
+    `;
+
+    expect(rows).toHaveLength(1);
+    const def = rows[0].indexdef;
+
+    // Unique, or it constrains nothing.
+    expect(def).toMatch(/CREATE UNIQUE INDEX/);
+    // Partial, or an in-progress session could not exist at all.
+    expect(def).toMatch(/WHERE \(finished_at IS NOT NULL\)/);
+    // Per day in UTC, which is the window finishedSessionOnDay uses. A
+    // mismatch between the two would make the code and the constraint disagree
+    // about what a duplicate is.
+    expect(def).toMatch(/finished_at AT TIME ZONE/);
+    expect(def).toMatch(/date/);
+    // Scoped to the reader and the work.
+    expect(def).toMatch(/"userId"/);
+    expect(def).toMatch(/work_key/);
+  });
+
+  it("still allows one open session alongside a finished one", async () => {
+    // The control: the index must not forbid a re-read being started after a
+    // finish, which is what `reading_sessions_one_open_per_work` governs and
+    // what getLatestSessionForWork's docstring says is legitimate.
+    const open = await prisma.$queryRaw<{ indexdef: string }[]>`
+      SELECT indexdef FROM pg_indexes
+      WHERE schemaname = 'app'
+        AND indexname = 'reading_sessions_one_open_per_work'
+    `;
+    expect(open).toHaveLength(1);
+    expect(open[0].indexdef).toMatch(/WHERE \(finished_at IS NULL\)/);
+  });
+});

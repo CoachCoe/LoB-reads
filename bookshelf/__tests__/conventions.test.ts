@@ -400,6 +400,30 @@ describe("public pages stay public", () => {
     "src/app/(main)/user/[userId]/page.tsx",
   ];
 
+  /**
+   * JB-2: both live INSIDE the (main) group, which is the whole point.
+   *
+   * Next's built-in 404 and error pages render in the ROOT layout, so without
+   * these a reader hitting notFound() lost the navbar, the footer and the
+   * search box — on four public read paths, and most often because the monthly
+   * ingest narrowed the catalog slice rather than because the link was bad.
+   * AGENTS.md's missing-work invariant leans on that 404 being a reasonable
+   * destination.
+   */
+  it("has a 404 and an error boundary inside the main layout", () => {
+    // The 404 is at the ROOT, and renders the chrome itself. Next's reference
+    // for this file says it "renders inside your root layout", so a
+    // group-level copy silently loses the navbar — measured, not assumed.
+    expect(existsSync("src/app/not-found.tsx")).toBe(true);
+    expect(read("src/app/not-found.tsx")).toContain("<Navbar />");
+    expect(read("src/app/not-found.tsx")).toContain("<Footer />");
+
+    // The error boundary DOES compose with the group layout, so it stays in
+    // the group and does not repeat the chrome.
+    expect(existsSync("src/app/(main)/error.tsx")).toBe(true);
+    expect(read("src/app/(main)/error.tsx")).toContain('"use client"');
+  });
+
   it("every listed page exists", () => {
     const missing = PUBLIC_PAGES.filter((file) => !existsSync(file));
     expect(missing).toEqual([]);
@@ -411,6 +435,104 @@ describe("public pages stay public", () => {
     );
 
     expect(offenders).toEqual([]);
+  });
+
+  /**
+   * JR-2: the guard shape on a private page, which the API-only check missed.
+   *
+   * `options.ts` blanks `token.id` for an account that no longer exists rather
+   * than throwing, and relies on every caller guarding on the id:
+   *
+   *   "every route guards on `!session?.user?.id` / `!user?.id`, so this
+   *    becomes a 401 instead of a 500 or a session that authenticates a
+   *    deleted user."
+   *
+   * True of all the API handlers, which the check above covers. False of five
+   * pages, which guarded on `!user` — and `session.user` survives the blanking
+   * because only the id is cleared, so the guard passed and the page queried
+   * with `userId: ""`. A deleted account saw "Your library is empty".
+   *
+   * This asserts the guard is centralised rather than pattern-matching each
+   * copy, because five copies of a one-line check is how one ends up different.
+   * A private page reaches its session through `requireUser`, which guards on
+   * the id once and narrows its return type so a caller cannot skip it.
+   */
+  it("every private page takes its session through requireUser", () => {
+    const pages = walk("src/app/(main)", (f) => f.endsWith("page.tsx"))
+      .map((f) => f.split(path.sep).join("/"))
+      .sort();
+
+    // Guards the walker: if this ever returned nothing, the check below would
+    // pass vacuously.
+    expect(pages.length).toBeGreaterThan(PUBLIC_PAGES.length);
+
+    const privatePages = pages.filter((f) => !PUBLIC_PAGES.includes(f));
+    expect(privatePages.length).toBeGreaterThan(0);
+
+    const offenders = privatePages.filter((file) => {
+      const source = withoutComments(read(file));
+      // A page that never asks for a session is not a private page; the
+      // PUBLIC_PAGES list above is what says which those are.
+      if (!/getCurrentUser|requireUser/.test(source)) return false;
+      return !/requireUser\(/.test(source);
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  /**
+   * JR-3: AGENTS.md says a missing work renders "and are not linked", and that
+   * "Each of these has a test that fails if it is broken." That clause had no
+   * test, and four surfaces broke it — ShelfSection wrapped a card whose own
+   * title read "Not in the current catalog" in a Link.
+   *
+   * A mechanical check, and labelled as one: it asserts that no component
+   * builds a /work/ link out of a title expression that already carries a
+   * missing-work fallback. That is the exact shape that kept recurring, and it
+   * is text-checkable where the behaviour is not — rendering every surface
+   * with an absent work would mean mounting five components with five
+   * different prop shapes.
+   */
+  it("never links a work title that has a missing-work fallback beside it", () => {
+    const components = walk("src/components", (f) => f.endsWith(".tsx"))
+      .concat(walk("src/app/(main)", (f) => f.endsWith(".tsx")))
+      .map((f) => f.split(path.sep).join("/"));
+
+    expect(components.length).toBeGreaterThan(10);
+
+    // A `<Link href={`/work/...`}>` or `<a href={`/work/...`}>` whose element
+    // body reaches a `?? "` fallback before the tag closes.
+    const offenders = components.filter((file) => {
+      const source = withoutComments(read(file));
+      return /<(?:Link|a)\s[^>]*href=\{`\/work\/[^`]*`\}[^>]*>(?:(?!<\/(?:Link|a)>)[\s\S]){0,600}\?\?\s*"/.test(
+        source
+      );
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("catches the shape it is looking for", () => {
+    // Positive control, taken from ShelfSection as it was.
+    const bad = [
+      '<Link href={`/work/${item.workKey}`}>',
+      '  <h3>{item.work?.title ?? "Not in the current catalog"}</h3>',
+      "</Link>",
+    ].join("\n");
+
+    expect(
+      /<(?:Link|a)\s[^>]*href=\{`\/work\/[^`]*`\}[^>]*>(?:(?!<\/(?:Link|a)>)[\s\S]){0,600}\?\?\s*"/.test(
+        bad
+      )
+    ).toBe(true);
+  });
+
+  it("rejects the guard shape it replaced", () => {
+    // Positive control. Without it this check cannot tell a correct guard from
+    // a file it failed to read.
+    const bad = 'const user = await getCurrentUser();\nif (!user) redirect("/login");';
+    expect(/getCurrentUser|requireUser/.test(bad)).toBe(true);
+    expect(/requireUser\(/.test(bad)).toBe(false);
   });
 });
 
@@ -538,12 +660,43 @@ describe("grey text is never unpaired", () => {
  * be noise. These five are the ones whose input is other people's contributions.
  */
 describe("contributed read paths are bounded", () => {
-  const MUST_BE_BOUNDED: [file: string, fn: string][] = [
-    ["src/server/map.ts", "getMappedWorkLocations"],
-    ["src/server/map.ts", "getMappedAuthorLocations"],
-    ["src/server/fictional-worlds.ts", "getAllFictionalWorlds"],
-    ["src/server/work-locations.ts", "getWorkLocations"],
-    ["src/server/authors.ts", "getAuthorLocations"],
+  /**
+   * TEST-38: each entry now names the CONSTANT the bound must be, not just
+   * that the word "take:" appears somewhere in the function.
+   *
+   * `toContain("take:")` was satisfied by `take: 100_000`, and — the way it
+   * actually failed — by a `take:` on one `findMany` while a second read in the
+   * same function stayed unbounded. That is exactly how SEC-4 got through:
+   * getAllFictionalWorlds carried `take: WORLD_LIST_LIMIT` on the worlds while
+   * its nested `maps` select had no limit at all, so every map of every world
+   * was serialised to every anonymous caller.
+   *
+   * Naming the constant also makes widening a bound a visible edit rather than
+   * a number change no check can see.
+   */
+  const MUST_BE_BOUNDED: [file: string, fn: string, bound: string][] = [
+    ["src/server/map.ts", "getMappedWorkLocations", "take: MAP_PIN_LIMIT"],
+    ["src/server/map.ts", "getMappedAuthorLocations", "take: MAP_PIN_LIMIT"],
+    [
+      "src/server/fictional-worlds.ts",
+      "getAllFictionalWorlds",
+      "take: WORLD_LIST_LIMIT",
+    ],
+    [
+      "src/server/work-locations.ts",
+      "getWorkLocations",
+      "take: LOCATIONS_PER_ENTITY",
+    ],
+    ["src/server/authors.ts", "getAuthorLocations", "take: LOCATIONS_PER_ENTITY"],
+  ];
+
+  /**
+   * Nested reads, which live in a shared `include`/`select` at module scope
+   * rather than inside the function body — so bodyOf cannot see them, and the
+   * check above never could.
+   */
+  const NESTED_MUST_BE_BOUNDED: [file: string, bound: string][] = [
+    ["src/server/fictional-worlds.ts", "take: MAPS_PER_WORLD"],
   ];
 
   /** The body of an exported function, to its closing brace at column 0. */
@@ -561,8 +714,27 @@ describe("contributed read paths are bounded", () => {
     );
   });
 
-  it.each(MUST_BE_BOUNDED)("%s: %s caps what it reads", (file, fn) => {
-    expect(bodyOf(read(file), fn)).toContain("take:");
+  it.each(MUST_BE_BOUNDED)("%s: %s caps what it reads", (file, fn, bound) => {
+    expect(bodyOf(read(file), fn)).toContain(bound);
+  });
+
+  it.each(NESTED_MUST_BE_BOUNDED)("%s: its nested read is capped too", (file, bound) => {
+    // Module scope, not a function body — this is the read the old check could
+    // not see, and the one that was actually unbounded.
+    expect(read(file)).toContain(bound);
+  });
+
+  it("rejects a bound that is only the word take:", () => {
+    // Positive control for the tightening. The old assertion passed on both of
+    // these; the new one passes on neither.
+    const widened = "prisma.workLocation.findMany({ take: 100_000 })";
+    const nestedUnbounded =
+      "prisma.fictionalWorld.findMany({ take: WORLD_LIST_LIMIT, include: { maps: {} } })";
+
+    expect(widened).toContain("take:");
+    expect(widened).not.toContain("take: MAP_PIN_LIMIT");
+    expect(nestedUnbounded).toContain("take:");
+    expect(nestedUnbounded).not.toContain("take: MAPS_PER_WORLD");
   });
 });
 

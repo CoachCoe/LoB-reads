@@ -1,7 +1,7 @@
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, CheckCircle2 } from "lucide-react";
-import { getCurrentUser } from "@/lib/auth/session";
+import { requireUser } from "@/lib/auth/session";
 import { getImportSession, getRowsForReview } from "@/server/imports";
 import ImportReviewList from "@/components/import/ImportReviewList";
 
@@ -17,10 +17,7 @@ interface Props {
  */
 export default async function ImportReviewPage({ params }: Props) {
   const { sessionId } = await params;
-  const user = await getCurrentUser();
-  if (!user?.id) {
-    redirect("/login");
-  }
+  const user = await requireUser();
 
   const summary = await getImportSession(user.id, sessionId);
   if (!summary) {

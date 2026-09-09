@@ -19,13 +19,29 @@ const PROBE_TIMEOUT_MS = 2_000;
 
 export type CatalogHealth = "populated" | "empty" | "unreachable";
 
-const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T> =>
-  Promise.race([
+/**
+ * Race a probe against a timeout, and clear the timer either way.
+ *
+ * Promise.race settles on the first result and abandons the loser, but the
+ * loser's setTimeout stays armed for its full duration. When the probe won —
+ * the normal case — the timer sat live for PROBE_TIMEOUT_MS with nothing
+ * waiting on it. That is why every integration run printed "Jest did not exit
+ * one second after the test run has completed": --detectOpenHandles traced
+ * exactly two Timeout handles here. It also leaks one live timer per readiness
+ * probe in production, which an orchestrator polls continuously.
+ *
+ * clearTimeout in a finally, rather than --forceExit in the test runner or
+ * fake timers in the test, because the leak is real outside the tests too.
+ */
+const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout>;
+  return Promise.race([
     promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`probe exceeded ${ms}ms`)), ms)
-    ),
-  ]);
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`probe exceeded ${ms}ms`)), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+};
 
 /**
  * Whether this replica can actually serve a request.

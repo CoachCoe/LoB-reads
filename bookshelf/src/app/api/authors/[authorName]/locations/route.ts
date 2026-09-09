@@ -5,6 +5,7 @@ import { errorResponse, parseBody, unauthorized } from "@/lib/http/api";
 import { createAuthorLocationSchema, updateAuthorLocationSchema } from "@/lib/http/schemas";
 import { NotFoundError, ValidationError } from "@/lib/http/errors";
 import { checkLimit, LIMITS, refundHit } from "@/lib/rate-limit";
+import { decodeRouteParam } from "@/lib/http/route-params";
 
 export async function GET(
   request: NextRequest,
@@ -12,7 +13,7 @@ export async function GET(
 ) {
   try {
     const { authorName } = await params;
-    const authorKey = await findAuthorKeyByName(decodeURIComponent(authorName));
+    const authorKey = await findAuthorKeyByName(decodeRouteParam(authorName));
 
     // An author absent from the catalog simply has no locations.
     return NextResponse.json({
@@ -55,17 +56,10 @@ export async function POST(
     }
 
     const { authorName } = await params;
+    // The year-order rule lives in the schema now, so PATCH cannot skip it.
     const data = await parseBody(request, createAuthorLocationSchema);
 
-    if (
-      data.yearStart != null &&
-      data.yearEnd != null &&
-      data.yearEnd < data.yearStart
-    ) {
-      throw new ValidationError("End year cannot be before start year");
-    }
-
-    const authorKey = await findAuthorKeyByName(decodeURIComponent(authorName));
+    const authorKey = await findAuthorKeyByName(decodeRouteParam(authorName));
     if (!authorKey) {
       throw new NotFoundError("That author is not in the catalog");
     }

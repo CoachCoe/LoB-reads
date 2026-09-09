@@ -1,6 +1,6 @@
-import Link from "next/link";
 import ProgressBar from "@/components/ui/ProgressBar";
 import CoverImage from "@/components/catalog/CoverImage";
+import WorkLinkOrPlaceholder from "@/components/catalog/WorkLinkOrPlaceholder";
 import type { SessionWithWork } from "@/server/progress";
 
 /** An open reading session, shown on the home page. */
@@ -12,8 +12,9 @@ export default function CurrentlyReadingCard({
   const title = session.work?.title ?? "Unknown work";
 
   return (
-    <Link
-      href={`/work/${session.workKey}`}
+    <WorkLinkOrPlaceholder
+      workKey={session.workKey}
+      inCatalog={Boolean(session.work)}
       className="flex gap-3 rounded-lg border border-gray-200 p-3 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-800"
     >
       <CoverImage
@@ -61,6 +62,6 @@ export default function CurrentlyReadingCard({
           )}
         </div>
       </div>
-    </Link>
+    </WorkLinkOrPlaceholder>
   );
 }

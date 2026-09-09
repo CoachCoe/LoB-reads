@@ -286,14 +286,62 @@ describe("search stays a single pass", () => {
     }
   );
 
-  it("keeps the trigram predicate out of the full-text arm", () => {
-    // The point of the split. If `title_norm %` reappears in the statement
-    // every query runs, common words go back to costing a second or more —
-    // "Fiction" 1,065ms, "the" 19,189ms, measured on the real catalog. A text
-    // assertion again, because the cost is invisible at fixture scale.
-    expect(searchWorksSql("anything", { limit: 24 }).text).not.toMatch(/title_norm\s*%/);
-    // And the fuzzy arm is the one that carries it.
-    expect(searchWorksFuzzySql("anything", { limit: 24 }).text).toMatch(/title_norm\s*%/);
+  /**
+   * SPEC-15: the assertion is on the WHERE clause and on any trigram
+   * operator, not on one spelling of one operator anywhere in the statement.
+   *
+   * It used to be `.not.toMatch(/title_norm\s*%/)` against the whole SQL text.
+   * That pins `%` and nothing else, so
+   * `WHERE similarity(w.title_norm, q.norm) > 0.5` — a trigram predicate that
+   * cannot use the GIN index and reintroduces exactly the cost R1 removed —
+   * passed unchanged, as did `%>` and `<%`.
+   *
+   * Splitting on WHERE is what makes it possible to reject `similarity(` as a
+   * predicate: the ranking expression legitimately calls similarity() on every
+   * matched row, so a whole-statement check cannot forbid it.
+   */
+  const whereClauseOf = (sql: string) => {
+    const from = sql.lastIndexOf("WHERE");
+    expect(from).toBeGreaterThan(-1);
+    const rest = sql.slice(from);
+    const end = rest.search(/\bORDER BY\b/);
+    return end === -1 ? rest : rest.slice(0, end);
+  };
+
+  const TRIGRAM_PREDICATE = /%>|<%|\s%\s|similarity\s*\(/;
+
+  it("keeps the trigram predicate out of the full-text arm's WHERE", () => {
+    // The point of the split. If a trigram predicate reappears in the
+    // statement every query runs, common words go back to costing a second or
+    // more — "Fiction" 1,065ms, "the" 19,189ms, measured on the real catalog. A
+    // text assertion, because the cost is invisible at fixture scale.
+    const fullText = whereClauseOf(searchWorksSql("anything", { limit: 24 }).text);
+    expect(fullText).not.toMatch(TRIGRAM_PREDICATE);
+    // It does still rank with similarity(), which is why the check has to look
+    // at the WHERE rather than the whole statement.
+    expect(searchWorksSql("anything", { limit: 24 }).text).toMatch(/similarity\s*\(/);
+
+    // And the fuzzy arm is the one that carries the predicate.
+    expect(
+      whereClauseOf(searchWorksFuzzySql("anything", { limit: 24 }).text)
+    ).toMatch(TRIGRAM_PREDICATE);
+  });
+
+  it("rejects the trigram spellings the old assertion allowed", () => {
+    // Positive control. Each of these is a trigram predicate the previous
+    // regex passed, and each reintroduces the R1 cost.
+    for (const clause of [
+      "WHERE similarity(w.title_norm, q.norm) > 0.5",
+      "WHERE w.title_norm %> q.norm",
+      "WHERE w.title_norm <% q.norm",
+      "WHERE w.title_norm % q.norm",
+    ]) {
+      expect(clause).toMatch(TRIGRAM_PREDICATE);
+      // ...and the old one only caught the last of the four.
+      expect(/title_norm\s*%/.test(clause)).toBe(
+        clause.includes("title_norm %")
+      );
+    }
   });
 
   it("reaches works through the text indexes at this scale", async () => {

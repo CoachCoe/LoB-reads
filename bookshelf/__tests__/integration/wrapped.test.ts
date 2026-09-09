@@ -77,6 +77,28 @@ async function finish(
   });
 }
 
+/**
+ * Finish `count` distinct works on one date.
+ *
+ * Distinct works, not one work finished repeatedly. Several fixtures here used
+ * to loop `finish(user, sameWork, sameDate)` for convenience, and
+ * `reading_sessions_one_finish_per_day` now forbids that state — correctly, it
+ * is the RUN-1 defect: one book finished sixty times in a day is not sixty
+ * books read. The assertions those tests make are about counts and dates and
+ * are unchanged; only the fixture now describes something that can happen.
+ */
+async function finishDistinctWorks(
+  userId: string,
+  count: number,
+  finishedAt: Date,
+  pageCount: number | null = 300
+) {
+  for (let i = 0; i < count; i++) {
+    const work = await makeWork();
+    await finish(userId, work.olKey, finishedAt, pageCount);
+  }
+}
+
 async function review(
   userId: string,
   workKey: string,
@@ -496,11 +518,12 @@ describe("getWrappedStats", () => {
   describe("derived rates", () => {
     it("counts distinct reading days, not books", async () => {
       const user = await makeUser();
-      const work = await makeWork();
+      const [a, b, c] = [await makeWork(), await makeWork(), await makeWork()];
 
-      await finish(user.id, work.olKey, new Date(YEAR, 5, 1, 12, 0, 0));
-      await finish(user.id, work.olKey, new Date(YEAR, 5, 1, 18, 0, 0));
-      await finish(user.id, work.olKey, new Date(YEAR, 5, 2, 12, 0, 0));
+      // Three books, two days: two finished on the 1st and one on the 2nd.
+      await finish(user.id, a.olKey, new Date(YEAR, 5, 1, 12, 0, 0));
+      await finish(user.id, b.olKey, new Date(YEAR, 5, 1, 18, 0, 0));
+      await finish(user.id, c.olKey, new Date(YEAR, 5, 2, 12, 0, 0));
 
       const stats = await getWrappedStats(user.id, YEAR);
 
@@ -677,12 +700,9 @@ describe("getWrappedProjections", () => {
 
     it("turns a goal off once it is already met", async () => {
       const user = await makeUser();
-      const work = await makeWork();
       freezeAt(new Date(2026, 6, 2, 12, 0, 0));
 
-      for (let i = 0; i < 60; i++) {
-        await finish(user.id, work.olKey, new Date(2026, 1, 1, 12, 0, 0), 100);
-      }
+      await finishDistinctWorks(user.id, 60, new Date(2026, 1, 1, 12, 0, 0), 100);
 
       const p = await getWrappedProjections(user.id);
 
@@ -696,12 +716,9 @@ describe("getWrappedProjections", () => {
 
     it("is on track for fifty without being on track for a hundred", async () => {
       const user = await makeUser();
-      const work = await makeWork();
       freezeAt(new Date(2026, 6, 2, 12, 0, 0));
 
-      for (let i = 0; i < 30; i++) {
-        await finish(user.id, work.olKey, new Date(2026, 1, 1, 12, 0, 0), 61);
-      }
+      await finishDistinctWorks(user.id, 30, new Date(2026, 1, 1, 12, 0, 0), 61);
 
       const p = await getWrappedProjections(user.id);
 

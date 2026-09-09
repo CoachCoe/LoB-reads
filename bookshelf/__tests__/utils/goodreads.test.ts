@@ -1,4 +1,5 @@
 import { parseGoodreadsCSV, getShelfDisplayName } from "@/lib/sources/goodreads";
+import { DEFAULT_SHELF_NAMES } from "@/lib/shelves";
 
 describe("Goodreads utility functions", () => {
   describe("parseGoodreadsCSV", () => {
@@ -113,6 +114,38 @@ describe("Goodreads utility functions", () => {
       expect(getShelfDisplayName("read")).toBe("Read");
       expect(getShelfDisplayName("currently-reading")).toBe("Currently Reading");
       expect(getShelfDisplayName("to-read")).toBe("Want to Read");
+    });
+
+    /**
+     * DEAD-2: this value is a JOIN KEY, not a label.
+     *
+     * `applyRow` looks the shelf up by the string this returns, against the
+     * names an account was created with from DEFAULT_SHELF_NAMES. The two used
+     * to be unrelated literals in different files, each pinned by its own test
+     * — so renaming a shelf in shelves.ts updated one list and its own test
+     * and stayed green, while every `to-read` row of every import silently
+     * became `status: "failed"`.
+     *
+     * The literals above are still asserted, because the exact strings matter
+     * to a reader looking at a Goodreads export. What this adds is that they
+     * AGREE with the shelves the account actually has, which is the property
+     * the import depends on and the one nothing checked.
+     */
+    it("returns names that an account actually has a shelf for", () => {
+      const accountShelves: readonly string[] = DEFAULT_SHELF_NAMES;
+
+      for (const shelf of ["read", "currently-reading", "to-read"] as const) {
+        expect(accountShelves).toContain(getShelfDisplayName(shelf));
+      }
+    });
+
+    it("covers every shelf an account starts with", () => {
+      // The other direction, so a fourth default shelf with no Goodreads
+      // equivalent is a visible decision rather than a silent gap.
+      const mapped = (["read", "currently-reading", "to-read"] as const).map(
+        getShelfDisplayName
+      );
+      expect([...mapped].sort()).toEqual([...DEFAULT_SHELF_NAMES].sort());
     });
   });
 });

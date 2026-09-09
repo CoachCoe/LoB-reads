@@ -94,12 +94,21 @@ export default function LeafletMap({
                 <p className="mt-0.5 text-xs capitalize text-gray-500 dark:text-gray-400">
                   {location.type.replace("_", " ")}
                 </p>
-                <a
-                  href={`/work/${location.workKey}`}
-                  className="mt-2 block text-sm text-blue-600 hover:underline"
-                >
-                  {location.workTitle}
-                </a>
+                {location.workTitle ? (
+                  <a
+                    href={`/work/${location.workKey}`}
+                    className="mt-2 block text-sm text-blue-600 hover:underline"
+                  >
+                    {location.workTitle}
+                  </a>
+                ) : (
+                  // Not a link: the work page 404s on a key the current ingest
+                  // dropped. The pin stays, because a contribution outliving
+                  // its work is the normal case, not an error.
+                  <span className="mt-2 block text-sm italic text-gray-500 dark:text-gray-400">
+                    a book no longer in the catalog
+                  </span>
+                )}
                 {location.workAuthor && (
                   <p className="text-xs text-gray-500 dark:text-gray-400">{location.workAuthor}</p>
                 )}
@@ -132,12 +141,18 @@ export default function LeafletMap({
                     ? ` · ${location.yearStart}${location.yearEnd ? `–${location.yearEnd}` : ""}`
                     : ""}
                 </p>
-                <a
-                  href={`/author/${encodeURIComponent(location.authorName)}`}
-                  className="mt-2 block text-sm text-green-700 hover:underline"
-                >
-                  {location.authorName}
-                </a>
+                {location.authorName ? (
+                  <a
+                    href={`/author/${encodeURIComponent(location.authorName)}`}
+                    className="mt-2 block text-sm text-green-700 hover:underline"
+                  >
+                    {location.authorName}
+                  </a>
+                ) : (
+                  <span className="mt-2 block text-sm italic text-gray-500 dark:text-gray-400">
+                    an author no longer in the catalog
+                  </span>
+                )}
                 {location.addedBy && (
                   <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
                     Added by {location.addedBy}
