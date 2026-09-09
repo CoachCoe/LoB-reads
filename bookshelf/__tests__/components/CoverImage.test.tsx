@@ -23,6 +23,12 @@ describe("coverUrl", () => {
     expect(coverUrl(0)).toBeNull();
   });
 
+  it("treats Open Library's -1 sentinel as no cover", () => {
+    // -1 is truthy, so it built a URL that always 404s — a request made only to
+    // reach the same fallback. 5,915 editions in the catalog carry it.
+    expect(coverUrl(-1)).toBeNull();
+  });
+
   it("prefers a stored URL, untouched", () => {
     const stored = "https://cdn.example.invalid/covers/M/1.jpg";
     expect(coverUrl(12345, "M", stored)).toBe(stored);

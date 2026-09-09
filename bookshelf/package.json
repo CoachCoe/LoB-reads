@@ -30,6 +30,7 @@
     "db:reset": "prisma migrate reset",
     "storage:smoke": "tsx scripts/dev/azurite-smoke.ts",
     "bench:search": "tsx scripts/dev/bench-search.ts",
+    "demo:map": "tsx scripts/dev/seed-map-demo.ts",
     "deploy:verify": "tsx scripts/deploy/verify.ts"
   },
   "prisma": {

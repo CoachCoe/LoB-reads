@@ -23,7 +23,12 @@ export function coverUrl(
   storedUrl?: string | null
 ): string | null {
   if (storedUrl) return storedUrl;
-  if (!coverId) return null;
+  // `-1` is Open Library's own "no cover" sentinel, and it appears on 5,915
+  // editions in the current catalog. It is truthy, so it used to build a URL
+  // that always 404s: the request was made, the browser reported the failure,
+  // and CoverImage's onError produced the same fallback it would have shown for
+  // free. Treated as absent, which is what it means.
+  if (!coverId || coverId < 0) return null;
 
   // `default=false` matters. Without it, a cover id Open Library has no image
   // for is answered with 200 and a 43-byte blank placeholder — so the browser
