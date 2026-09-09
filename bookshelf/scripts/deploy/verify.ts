@@ -107,6 +107,13 @@ async function main() {
     "placeholder",
     "secret",
     "secret-not-for-deployment",
+    // 36 characters, so it cleared the >=32 length floor below, and not equal
+    // to any of the six above, so it cleared this list too. It is the value in
+    // the repository's own .env, and it was published in bookshelf/README.md
+    // until commit c128cfe — so it is in the git history and forgeable by
+    // anyone who reads it. Exactly the case both these checks exist for, and
+    // both passed it.
+    "your-secret-key-change-in-production",
   ];
   check(
     "NEXTAUTH_SECRET is not a known placeholder",
@@ -390,8 +397,28 @@ async function main() {
   // --- the running app -----------------------------------------------------
 
   if (!baseUrl) {
-    check("HTTP checks", true, "skipped — set BASE_URL to check the running app", {
-      fatal: false,
+    // A warning, not a pass. This was `ok: true`, so the fourteen checks below
+    // — both probes, the three CSP assertions, HSTS, and one timed query per
+    // search arm — were skipped AND counted toward the "N/N passed" line. That
+    // is how a run with fourteen inert checks printed as fully green, and it is
+    // the state every automated invocation is in: neither ci.yml nor
+    // deploy.yml sets BASE_URL. PRD R1 closes its "Done when" by citing the
+    // per-arm timing here, and PRD R5 says this gate "exits non-zero, so it
+    // gates a release rather than being a checklist someone reads."
+    //
+    // STATUS.md records the lesson: "A check that passes because there is no
+    // data is not a pass."
+    //
+    // Fatal when a deployment target is configured, because then there is an
+    // app to point at and its absence is a mistake rather than a local run.
+    const deploying = Boolean(
+      process.env.CONTAINER_APP_NAME ?? process.env.AZURE_RESOURCE_GROUP
+    );
+    check("the running app was checked", false, "skipped — BASE_URL is unset", {
+      fatal: deploying,
+      hint: deploying
+        ? "a deployment target is configured, so there is an app to check: set BASE_URL to its public URL. Fourteen checks are inert without it, including both probes and the per-arm search timings."
+        : "set BASE_URL to check a running app; fourteen checks are inert without it.",
     });
   } else {
     const get = async (p: string) => {
@@ -460,18 +487,50 @@ async function main() {
     //
     // Each is timed warm, after one untimed request, because a cold first hit
     // measures the container starting rather than the query.
-    for (const q of ["dune", "fiction", "the", "mockingbrd"]) {
+    // `mustAnswer` is the half a clock cannot check, and it is here for the
+    // same reason it is in bench:search. Both fallback arms are bounded by a
+    // statement_timeout, and an abandoned arm returns nothing FASTER than a
+    // working one — so a regression that stops a query answering makes both of
+    // these checks greener. Measured: /search?q=the+hobbitt returned zero
+    // results on 3 of 12 consecutive warm requests while every timing check
+    // passed.
+    //
+    // "the" is deliberately not required to answer: on the real catalog the
+    // exact-title arm needs 1.7-2.3s and is cancelled at 700ms, so it returns
+    // nothing today. Whether that is acceptable is an open product question
+    // (OQ-2 in docs/audit/2026-09-08-findings.md) and this gate must not
+    // decide it. It is still timed, because the cost is real either way.
+    const searchChecks = [
+      { q: "dune", mustAnswer: true },
+      { q: "fiction", mustAnswer: true },
+      { q: "the", mustAnswer: false },
+      { q: "mockingbrd", mustAnswer: true },
+    ];
+
+    for (const { q, mustAnswer } of searchChecks) {
       const path = `/search?q=${encodeURIComponent(q)}`;
       const warm = await get(path);
       if (!warm) continue;
       check(`search responds for "${q}"`, warm.status === 200, `HTTP ${warm.status}`);
 
       const started = Date.now();
-      await get(path);
+      const timed = await get(path);
       const elapsed = Date.now() - started;
       check(`search is under a second for "${q}"`, elapsed < 1000, `${elapsed}ms`, {
         hint: "seconds rather than milliseconds means either the catalog restored without its indexes, or the trigram arm is being run for every query again — see PRD R1 and searchWorks.",
       });
+
+      if (mustAnswer && timed) {
+        // Counting result links rather than parsing: every result is a
+        // /work/<key> anchor, and a page that rendered the empty state has
+        // none. Crude on purpose — the property is "did it answer at all",
+        // which is exactly what a timed-out arm gets wrong.
+        const body = await timed.text().catch(() => "");
+        const hits = body.match(/href="\/work\/OL/g)?.length ?? 0;
+        check(`search returns results for "${q}"`, hits > 0, `${hits} results`, {
+          hint: "zero results from a query that should match means a search arm is being abandoned, not that the catalog is empty — a timed-out arm fails safe to an empty page, so the timing check above passes. See FUZZY_TIMEOUT_MS in src/server/catalog.ts.",
+        });
+      }
     }
   }
 }

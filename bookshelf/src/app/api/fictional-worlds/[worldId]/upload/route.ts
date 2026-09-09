@@ -6,6 +6,7 @@ import {
   sanitizeFilename,
   MAX_FILE_SIZE,
 } from "@/lib/storage/file-validation";
+import { updateMapSchema } from "@/lib/http/schemas";
 import {
   declaredBodyTooLarge,
   errorResponse,
@@ -63,9 +64,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       );
     }
 
-    if (!title || title.trim().length === 0) {
+    // Parsed with the schema the EDIT path uses, rather than a hand-rolled
+    // emptiness check. These fields arrive as multipart, so they never went
+    // through parseBody and never met SHORT_TEXT/LONG_TEXT — while
+    // updateMapSchema applied both. A map could therefore be created with a
+    // title no edit could ever save, and the columns are unbounded `text`, so
+    // ~5MB of title could be stored and then serialised to every anonymous
+    // caller of GET /api/fictional-worlds.
+    const parsed = updateMapSchema.safeParse({
+      title,
+      description: description ?? null,
+    });
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "Title is required" },
+        { error: parsed.error.issues[0]?.message ?? "Invalid map details" },
         { status: 400 }
       );
     }
@@ -92,8 +104,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Create the map entry in the database
     const map = await addMapToWorld(worldId, user.id, {
       imageUrl: url,
-      title: title.trim(),
-      description: description?.trim() || null,
+      title: parsed.data.title,
+      description: parsed.data.description?.trim() || null,
     });
 
     return NextResponse.json({ map });

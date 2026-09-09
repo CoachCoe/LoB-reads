@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { usePathname } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { useSession, signOut } from "next-auth/react";
@@ -52,6 +53,16 @@ export default function Navbar() {
 
   const isLoading = status === "loading";
   const isAuthenticated = status === "authenticated";
+
+  // Where to send the reader back to after signing in. `/login` and
+  // `/register` are excluded so a bounce through the form cannot make the form
+  // its own destination.
+  const pathname = usePathname();
+  const returnTo =
+    pathname && !pathname.startsWith("/login") && !pathname.startsWith("/register")
+      ? pathname
+      : "/";
+  const signInHref = `/login?callbackUrl=${encodeURIComponent(returnTo)}`;
 
   return (
     <nav className="bg-[var(--card-bg)]/80 backdrop-blur-nav border-b border-[var(--border)] sticky top-0 z-50">
@@ -202,12 +213,16 @@ export default function Navbar() {
               </>
             ) : (
               <div className="flex items-center gap-2">
-                <Link href="/login">
+                {/* Carry where the reader was. Without this a browser reading
+                    a work page who signs in lands on `/` and has to find the
+                    book again. The auth-gated pages already pass a
+                    callbackUrl, and getSafeCallbackUrl already validates it. */}
+                <Link href={signInHref}>
                   <Button variant="ghost" size="sm">
                     Sign In
                   </Button>
                 </Link>
-                <Link href="/register">
+                <Link href={`/register?callbackUrl=${encodeURIComponent(returnTo)}`}>
                   <Button size="sm">Sign Up</Button>
                 </Link>
               </div>

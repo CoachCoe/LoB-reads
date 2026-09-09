@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth/options";
 import { getWorkShelfStatus } from "@/server/shelves";
+import { errorResponse, unauthorized } from "@/lib/http/api";
 
 export async function GET(
   request: Request,
@@ -10,7 +11,7 @@ export async function GET(
   const session = await getServerSession(authOptions);
 
   if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return unauthorized();
   }
 
   try {
@@ -18,10 +19,10 @@ export async function GET(
     const status = await getWorkShelfStatus(session.user.id, workKey);
     return NextResponse.json(status);
   } catch (error) {
-    console.error("Get work shelf status error:", error);
-    return NextResponse.json(
-      { error: "Failed to get shelf status" },
-      { status: 500 }
-    );
+    // errorResponse, not a hand-rolled 500. This was the one route in the
+    // shelving path that rolled its own, so a P2025 here answered 500 where
+    // every sibling answers 404 — in a path whose single error mapper calls
+    // itself "the single place where a thrown error becomes a response".
+    return errorResponse("Get work shelf status error", error);
   }
 }

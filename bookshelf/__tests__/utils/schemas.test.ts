@@ -2,6 +2,7 @@ import {
   createReviewSchema,
   updateProgressSchema,
   createAuthorLocationSchema,
+  updateAuthorLocationSchema,
   createWorkLocationSchema,
   createShelfSchema,
   updateProfileSchema,
@@ -12,6 +13,54 @@ import {
  * schemas replaced — each `it` here is a case that previously reached the
  * database.
  */
+
+/**
+ * JC-3: the year range was enforced in the POST handler and nowhere else, so
+ * PATCH wrote both years unchecked and a location could be edited to read
+ * "1920-1890". The rule is in the schema now, so both paths carry it and
+ * neither can be corrected without the other.
+ *
+ * Both schemas are asserted, deliberately: the point of moving the rule was
+ * that one route could not have it while the other did, and testing only one
+ * would leave exactly that possible again.
+ */
+describe("JC-3: author location year order", () => {
+  const base = {
+    name: "Oxford, UK",
+    type: "residence" as const,
+    coordinates: { lat: 51.752, lng: -1.2577 },
+  };
+
+  for (const [label, schema] of [
+    ["createAuthorLocationSchema", createAuthorLocationSchema],
+    ["updateAuthorLocationSchema", updateAuthorLocationSchema],
+  ] as const) {
+    it(`${label} rejects an end year before the start year`, () => {
+      expect(() =>
+        schema.parse({ ...base, yearStart: 1920, yearEnd: 1890 })
+      ).toThrow(/End year cannot be before start year/);
+    });
+
+    it(`${label} accepts a range that runs forwards`, () => {
+      expect(
+        schema.parse({ ...base, yearStart: 1890, yearEnd: 1920 }).yearEnd
+      ).toBe(1920);
+    });
+
+    it(`${label} accepts a single year, where both ends are equal`, () => {
+      // The boundary: `>=`, not `>`. A residence recorded for one year is
+      // legitimate and a strict comparison would reject it.
+      expect(
+        schema.parse({ ...base, yearStart: 1912, yearEnd: 1912 }).yearEnd
+      ).toBe(1912);
+    });
+
+    it(`${label} accepts one end left open`, () => {
+      expect(schema.parse({ ...base, yearStart: 1890 }).yearEnd).toBeUndefined();
+      expect(schema.parse({ ...base, yearEnd: 1920 }).yearStart).toBeUndefined();
+    });
+  }
+});
 
 describe("createReviewSchema", () => {
   it("accepts a whole-number rating in range", () => {

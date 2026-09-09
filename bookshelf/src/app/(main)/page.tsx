@@ -75,7 +75,10 @@ export default async function HomePage() {
         </div>
         {popular.length === 0 ? (
           <p className="text-gray-500 dark:text-gray-400">
-            The catalog is empty — run <code>npm run ingest</code> to populate it.
+            {/* Reader-facing copy. This told a signed-out visitor on the
+                landing page to "run npm run ingest"; an empty catalog is an
+                operator problem and the readiness probe already reports it. */}
+            No books to show yet — please check back shortly.
           </p>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">

@@ -15,7 +15,6 @@ interface ReviewCardProps {
   };
   /** Show which book the review is of — off on a work page, on in a feed. */
   showWork?: boolean;
-  onDelete?: () => void;
 }
 
 export default function ReviewCard({ review, showWork = false }: ReviewCardProps) {

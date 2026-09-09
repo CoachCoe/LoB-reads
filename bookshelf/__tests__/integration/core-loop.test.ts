@@ -33,7 +33,8 @@ import {
   POST as progressPost,
 } from "@/app/api/progress/route";
 import { startReading } from "@/server/progress";
-import { getReadingStats, finishReading } from "@/server/progress";
+import { getReadingStats, finishReading, updateProgress } from "@/server/progress";
+import { addWorkToShelf } from "@/server/shelves";
 
 const json = (body: unknown, method = "POST") =>
   new Request("http://localhost/api", {
@@ -452,8 +453,224 @@ describe("TEST-9: getReadingStats", () => {
   });
 });
 
+describe("JR-11 and RUN-5: pages read, and re-adding a work", () => {
+  it("counts the pages logged when the edition states no length", async () => {
+    const user = await makeUserWithShelves();
+    const stated = await makeWork({ pages: 100 });
+
+    // Built by hand rather than through makeWork, which defaults
+    // number_of_pages to 300 — and the whole point of this case is an edition
+    // that states nothing. Open Library has plenty; ReadingProgressSection has
+    // a branch for it ("no page count for this edition").
+    const unstated = await makeWork({ pages: 1 });
+    await prisma.$executeRaw`
+      UPDATE catalog.editions SET number_of_pages = NULL
+      WHERE work_key = ${unstated.olKey}`;
+
+    await startReading(user.id, stated.olKey);
+    await finishReading(user.id, stated.olKey);
+
+    // The session snapshots null, so the reader logs pages by hand and the
+    // finish leaves currentPage where they left it.
+    await startReading(user.id, unstated.olKey);
+    await updateProgress(user.id, unstated.olKey, 250);
+    expect(
+      (
+        await prisma.readingSession.findFirstOrThrow({
+          where: { userId: user.id, workKey: unstated.olKey },
+        })
+      ).pageCount
+    ).toBeNull();
+
+    // 100 from the stated edition. The 250 does NOT count yet, because that
+    // session is still open — only finished sessions count as read, which is
+    // TEST-9's rule and is deliberately unchanged.
+    expect((await getReadingStats(user.id)).pagesRead).toBe(100);
+
+    await finishReading(user.id, unstated.olKey);
+    const after = await getReadingStats(user.id);
+
+    // Now it counts, and it counts the 250 the reader logged rather than 0.
+    // Summing page_count alone gave 100 here.
+    expect(after.booksRead).toBe(2);
+    expect(after.pagesRead).toBe(350);
+  });
+
+  it("leaves addedAt alone when a work is re-added to the shelf it is on", async () => {
+    const user = await makeUserWithShelves();
+    const work = await makeWork({});
+    const want = shelfNamed(user, "Want to Read");
+
+    const first = await addWorkToShelf(want, work.olKey, user.id);
+    const again = await addWorkToShelf(want, work.olKey, user.id);
+
+    // Same row, not a delete and a recreate: the original shelving date is
+    // what a reader's library is ordered by.
+    expect(again.id).toBe(first.id);
+    expect(again.addedAt.getTime()).toBe(first.addedAt.getTime());
+    expect(
+      await prisma.shelfItem.count({ where: { userId: user.id, workKey: work.olKey } })
+    ).toBe(1);
+  });
+
+  it("still moves a work off the other exclusive shelves", async () => {
+    // The control: the no-op above must not stop the move it sits in front of.
+    const user = await makeUserWithShelves();
+    const work = await makeWork({});
+
+    await addWorkToShelf(shelfNamed(user, "Want to Read"), work.olKey, user.id);
+    await addWorkToShelf(shelfNamed(user, "Read"), work.olKey, user.id);
+
+    const items = await prisma.shelfItem.findMany({
+      where: { userId: user.id, workKey: work.olKey },
+      include: { shelf: true },
+    });
+    expect(items).toHaveLength(1);
+    expect(items[0].shelf.name).toBe("Read");
+  });
+});
+
+describe("RUN-1: finishing is idempotent", () => {
+  /**
+   * The defect: with no OPEN session, finishReading created a new
+   * already-finished one, and the partial unique index only constrains open
+   * sessions. Five clicks of Finish were five finished sessions, and
+   * getWrappedStats counts sessions rather than distinct works — "5 Books
+   * Read, 880 Pages Read" for one 176-page book.
+   *
+   * These assert the session COUNT, not the response status. A status-only
+   * check passed throughout, which is why nothing caught it.
+   */
+  it("records one session however many times Finish is pressed", async () => {
+    const user = await makeUserWithShelves();
+    const work = await makeWork({ pages: 176 });
+
+    for (let i = 0; i < 5; i++) await finishReading(user.id, work.olKey);
+
+    const sessions = await prisma.readingSession.findMany({
+      where: { userId: user.id, workKey: work.olKey },
+    });
+
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].finishedAt).not.toBeNull();
+
+    // The number the reader actually sees, and the one that was wrong.
+    const stats = await getReadingStats(user.id);
+    expect(stats.booksRead).toBe(1);
+    expect(stats.pagesRead).toBe(176);
+  });
+
+  it("records one session when two finishes race", async () => {
+    /**
+     * The case the dedupe exists for, and the one the first version of the fix
+     * did not close: a double-click is CONCURRENT, and a read followed by a
+     * create is not atomic. Two simultaneous finishes produced two sessions
+     * until `reading_sessions_one_finish_per_day` existed.
+     *
+     * /bastion asked for this test and it failed when written, which is the
+     * only reason to trust it now.
+     */
+    const user = await makeUserWithShelves();
+    const work = await makeWork({ pages: 100 });
+
+    const results = await Promise.allSettled([
+      finishReading(user.id, work.olKey),
+      finishReading(user.id, work.olKey),
+      finishReading(user.id, work.olKey),
+    ]);
+
+    // Neither caller sees an error: the loser of the race gets the winner's
+    // row back, because it is the same finish.
+    expect(results.map((r) => r.status)).toEqual([
+      "fulfilled",
+      "fulfilled",
+      "fulfilled",
+    ]);
+
+    expect(
+      await prisma.readingSession.count({
+        where: { userId: user.id, workKey: work.olKey },
+      })
+    ).toBe(1);
+    expect((await getReadingStats(user.id)).booksRead).toBe(1);
+  });
+
+  it("does not add a session when a finished book is re-imported on the same date", async () => {
+    const user = await makeUserWithShelves();
+    const work = await makeWork({ pages: 300 });
+    // Midday, per the timezone rule in the testing skill.
+    const dateRead = new Date("2014-03-05T12:00:00.000Z");
+
+    await finishReading(user.id, work.olKey, dateRead);
+    await finishReading(user.id, work.olKey, dateRead);
+
+    expect(
+      await prisma.readingSession.count({
+        where: { userId: user.id, workKey: work.olKey },
+      })
+    ).toBe(1);
+    expect((await getReadingStats(user.id)).booksRead).toBe(1);
+  });
+
+  it("still closes an open session rather than opening a second one", async () => {
+    const user = await makeUserWithShelves();
+    const work = await makeWork({ pages: 120 });
+
+    await startReading(user.id, work.olKey);
+    await finishReading(user.id, work.olKey);
+    await finishReading(user.id, work.olKey);
+
+    const sessions = await prisma.readingSession.findMany({
+      where: { userId: user.id, workKey: work.olKey },
+    });
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].currentPage).toBe(120);
+  });
+
+  it("still records a genuine re-read finished on a different day", async () => {
+    const user = await makeUserWithShelves();
+    const work = await makeWork({ pages: 200 });
+
+    await finishReading(user.id, work.olKey, new Date("2024-06-01T12:00:00.000Z"));
+    await finishReading(user.id, work.olKey, new Date("2025-06-01T12:00:00.000Z"));
+
+    // Two readings, deliberately: the dedupe is a same-day window, not a
+    // one-session-per-work rule. getLatestSessionForWork's docstring is
+    // explicit that re-reading is legitimate.
+    expect(
+      await prisma.readingSession.count({
+        where: { userId: user.id, workKey: work.olKey },
+      })
+    ).toBe(2);
+    expect((await getReadingStats(user.id)).booksRead).toBe(2);
+  });
+
+  it("does not merge two readers' finishes of the same work", async () => {
+    const mine = await makeUserWithShelves();
+    const theirs = await makeUserWithShelves();
+    const work = await makeWork({ pages: 150 });
+    const when = new Date("2026-02-10T12:00:00.000Z");
+
+    await finishReading(mine.id, work.olKey, when);
+    await finishReading(theirs.id, work.olKey, when);
+
+    expect((await getReadingStats(mine.id)).booksRead).toBe(1);
+    expect((await getReadingStats(theirs.id)).booksRead).toBe(1);
+  });
+});
+
 /** Start and finish in one step, the way the importer does. */
 async function startAndFinishFor(userId: string, workKey: string) {
   await startReading(userId, workKey);
   await finishReading(userId, workKey);
+}
+
+/** The id of one of a user's three default shelves, by name. */
+function shelfNamed(
+  user: Awaited<ReturnType<typeof makeUserWithShelves>>,
+  name: string
+): string {
+  const shelf = user.shelves.find((s) => s.name === name);
+  if (!shelf) throw new Error(`no shelf named ${name}`);
+  return shelf.id;
 }

@@ -12,12 +12,10 @@ import { getWorksByKeys, workExists, type WorkSummary } from "./catalog";
  * no join across the two schemas.
  */
 
-/** The three shelves every account starts with. Order is the display order. */
-export const DEFAULT_SHELF_NAMES = [
-  "Want to Read",
-  "Currently Reading",
-  "Read",
-] as const;
+// The names themselves live in src/lib/shelves.ts, where a client component
+// may also import them — see DEAD-2 in that file for why the string is
+// load-bearing. Re-exported here because this is where callers look for it.
+export { DEFAULT_SHELF_NAMES } from "@/lib/shelves";
 
 /**
  * How many items to load per shelf for an overview. The true total still comes
@@ -194,6 +192,20 @@ export async function addWorkToShelf(
   }
 
   if (shelf.isDefault) {
+    // Already on the target shelf: nothing to move. Without this, the
+    // delete-then-create below removed the item from the shelf it is on —
+    // including the target — and recreated it, so a double-click changed
+    // `addedAt` and the row id and emitted a fresh feed event. Measured: two
+    // POSTs of the same workKey returned 201 twice with different ids, 84ms
+    // apart. @@unique([shelfId, workKey]) prevents a duplicate ROW and cannot
+    // prevent a delete followed by a create; the custom-shelf branch below is
+    // an upsert and was always idempotent.
+    const alreadyHere = await prisma.shelfItem.findUnique({
+      where: { shelfId_workKey: { shelfId, workKey } },
+      include: { shelf: true },
+    });
+    if (alreadyHere) return alreadyHere;
+
     const exclusiveShelves = await prisma.shelf.findMany({
       where: { userId, isDefault: true },
       select: { id: true },

@@ -124,6 +124,28 @@ const W_POPULARITY = 0.5; // edition count, as a tiebreak only
  * rather than a union: see `searchWorks`. This statement is the full-text arm
  * alone, and it keeps its single LIMIT and single pass.
  */
+/**
+ * Escape LIKE's own metacharacters before a query becomes a prefix pattern.
+ *
+ * SEC-8: the W_PREFIX bonus is `w.title_norm LIKE q.norm || '%'`, and `norm`
+ * was the raw query. So a search containing `%` or `_` awarded the +20
+ * prefix bonus to titles that do not prefix-match it at all, distorting the
+ * order of results. Not a scan risk — the WHERE clause is independent, so the
+ * LIKE only ever evaluates against rows already matched — which is why this is
+ * a ranking defect rather than a performance one.
+ *
+ * The same escaping is already applied on the auto-apply author match in
+ * findWorkKeyByTitleAuthor, with the reasoning recorded there. Backslash is
+ * Postgres's default LIKE escape, so no ESCAPE clause is needed.
+ *
+ * It cannot simply be folded into `norm`: that value is also compared with `=`
+ * and passed to `similarity()`, and neither wants the backslashes. Hence a
+ * second column.
+ */
+function likePrefixPattern(query: string): string {
+  return query.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
 export function searchWorksSql(
   query: string,
   { limit = 20, offset = 0 }: { limit?: number; offset?: number } = {}
@@ -139,7 +161,10 @@ export function searchWorksSql(
         -- sides shared that fault, so same-casing queries matched and nothing
         -- looked wrong — a lowercase-accented query just silently lost the
         -- W_PREFIX bonus. DEAD-5.
-        lower(unaccent(${query}))                           AS norm
+        lower(unaccent(${query}))                           AS norm,
+        -- Separate from norm, which is also compared with = and fed to
+        -- similarity(); see likePrefixPattern.
+        lower(unaccent(${likePrefixPattern(query)}))        AS norm_like
     )
     SELECT
       w.ol_key                                   AS "olKey",
@@ -152,7 +177,7 @@ export function searchWorksSql(
       e.cover_id::int                            AS "coverId",
       (
           (CASE WHEN w.title_norm = q.norm THEN ${W_EXACT} ELSE 0 END)
-        + (CASE WHEN w.title_norm LIKE q.norm || '%' THEN ${W_PREFIX} ELSE 0 END)
+        + (CASE WHEN w.title_norm LIKE q.norm_like || '%' THEN ${W_PREFIX} ELSE 0 END)
         + ts_rank_cd(w.search_vector, q.tsq) * ${W_FTS}
         + similarity(w.title_norm, q.norm) * ${W_TRIGRAM}
         + ln(1 + w.edition_count) * ${W_POPULARITY}
@@ -191,7 +216,10 @@ export function searchWorksFuzzySql(
     WITH q AS (
       SELECT
         websearch_to_tsquery('english', unaccent(${query})) AS tsq,
-        lower(unaccent(${query}))                           AS norm
+        lower(unaccent(${query}))                           AS norm,
+        -- Separate from norm, which is also compared with = and fed to
+        -- similarity(); see likePrefixPattern.
+        lower(unaccent(${likePrefixPattern(query)}))        AS norm_like
     )
     SELECT
       w.ol_key                                   AS "olKey",
@@ -204,7 +232,7 @@ export function searchWorksFuzzySql(
       e.cover_id::int                            AS "coverId",
       (
           (CASE WHEN w.title_norm = q.norm THEN ${W_EXACT} ELSE 0 END)
-        + (CASE WHEN w.title_norm LIKE q.norm || '%' THEN ${W_PREFIX} ELSE 0 END)
+        + (CASE WHEN w.title_norm LIKE q.norm_like || '%' THEN ${W_PREFIX} ELSE 0 END)
         + ts_rank_cd(w.search_vector, q.tsq) * ${W_FTS}
         + similarity(w.title_norm, q.norm) * ${W_TRIGRAM}
         + ln(1 + w.edition_count) * ${W_POPULARITY}
@@ -280,13 +308,61 @@ export function searchWorksExactTitleSql(
  * path returns results rather than throwing, which is the half of this that a
  * clock cannot check.
  *
- * 700ms is chosen from measurement, not taste. The slowest legitimate typo in
- * the benchmark is "the hobbitt" — 76,457 index candidates for 20 matches,
- * about 590ms for the whole page — so the budget has to clear that. The
- * adversarial cases sit an order of magnitude away ("thexx" and "andzz" would
- * run 4-5.5s unbounded), so anything between roughly 600ms and 900ms separates
- * them; 700ms keeps ~150ms of headroom under R1's one-second budget for the
- * rest of the request.
+ * 900ms rather than 700ms, and the honest summary is that no value here fixes
+ * the underlying problem — it only changes how often the problem shows.
+ *
+ * The reasoning behind 700ms was right in shape and wrong in the number. It was
+ * set to clear "the hobbitt", the slowest legitimate typo in the benchmark, on a
+ * measurement of about 590ms. But 590ms is the p50 and a cutoff has to clear
+ * the tail. Re-measured warm on the real 6.9M-work catalog, n=15:
+ *
+ *   the hobbitt      min 602  p50 629  p90 792  max 801   (20 rows)
+ *   the great gatsy  min 367  p50 385  p90 420  max 422  (429 rows)
+ *   mockingbrd       min  35  p50  35  p90  39  max  41   (17 rows)
+ *
+ * So 700ms sat inside this query's distribution: /search?q=the+hobbitt returned
+ * 20 results or "Nothing matched" depending on the run — zero on 3 of 12
+ * consecutive warm requests. PRD R1's table advertises it as "20 results,
+ * 565ms". Inside the full benchmark, where 21 other queries have disturbed the
+ * page cache first, it has been seen at 989ms.
+ *
+ * Why the spread is irreducible, from EXPLAIN (ANALYZE, BUFFERS):
+ *
+ *   Bitmap Index Scan on works_title_norm_idx   76,457 candidate rows, 121ms
+ *   Bitmap Heap Scan on works                   Heap Blocks: exact=67,965
+ *                                               Rows Removed by Index Recheck: 76,325
+ *                                               shared hit=1,412 read=69,931
+ *
+ * Every candidate is fetched from the heap so `similarity()` can discard 76,325
+ * of them, and ~70,000 blocks is roughly 550MB against a 128MB
+ * `shared_buffers` — so it can never be resident, and its latency tracks the OS
+ * page cache rather than the query. This is the same pathology PRD R1 describes
+ * for `?q=the` at 1.9M candidates, two orders of magnitude smaller. The
+ * editions join is not the cost: 20 loops at 0.017ms.
+ *
+ * Raising the threshold does not help, and the plan says why: the GIN index
+ * cannot apply it, so 0.3, 0.5 and 0.7 all produce the same 76,457 candidates
+ * and differ only in how many the recheck throws away. Dropping the stopword
+ * does not help either — measured, `hobbitt` alone runs in 24ms and finds
+ * **1 row instead of 20**, because `similarity()` compares against the whole
+ * title. That was worth measuring before believing.
+ *
+ * 900ms is therefore chosen as the top of the band this comment already
+ * sanctioned: it clears the p90 with headroom and still holds R1's one-second
+ * page budget, because the full-text count arm that runs first is 5-25ms. It
+ * reduces the empty-result rate rather than removing it.
+ *
+ * The real fix is to stop fetching 76,457 heap rows — a partial GIN index over
+ * popular works (considered and declined below), more `shared_buffers`, or a
+ * different match strategy. All three are cost decisions rather than an
+ * audit's call, and they are recorded with these numbers in
+ * docs/audit/2026-09-08-findings.md.
+ *
+ * What did change is that the gap is now visible: bench:search gates on a
+ * minimum row count per query as well as the clock, so this query failing to
+ * answer is reported instead of being read as a speed improvement. Expect it to
+ * fail that gate occasionally. That failure is the defect above, not flaky
+ * tooling, and it should stay reported until the cost is addressed.
  *
  * The alternative considered was a partial GIN index over popular works only,
  * which would shrink the candidate set rather than cap the clock. It was not
@@ -295,9 +371,44 @@ export function searchWorksExactTitleSql(
  * case — only move it. Recorded here so the next person does not have to
  * rediscover the trade-off.
  */
-export const FUZZY_TIMEOUT_MS = Number(
-  process.env.SEARCH_FUZZY_TIMEOUT_MS ?? 700
-);
+export const FUZZY_TIMEOUT_MS = fuzzyTimeoutFromEnv();
+
+/**
+ * Validated, because the value is interpolated into a `SET LOCAL` and a bad one
+ * fails at request time rather than at startup: `Number("fast")` is `NaN`,
+ * Postgres answers `invalid value for parameter "statement_timeout": "nan"`,
+ * and `isStatementTimeout` does not swallow that — so a typo in this variable
+ * turned both fallback arms into 500s on /search, and only for the queries that
+ * reach them.
+ *
+ * It warns and falls back rather than throwing, and that is deliberate. The
+ * first version of this threw at module scope, which is the usual advice for a
+ * bad config value and is wrong here: this module is imported lazily by page
+ * and route modules, while `health.ts` imports only `@/lib/prisma`. So the
+ * throw produced a container that answered 200 on BOTH probes and 500 on every
+ * page — measured. That is precisely the failure the container job in `ci.yml`
+ * was added for: "The image built, started, served static pages, and returned
+ * 500 on every request that touched the database."
+ *
+ * A fail-fast the orchestrator cannot see is worse than the defect it replaced:
+ * the NaN broke two search arms, this broke everything and hid it. The value
+ * has a sane documented default, so using it and saying so loudly is the
+ * correct behaviour.
+ */
+function fuzzyTimeoutFromEnv(): number {
+  const DEFAULT_MS = 900;
+  const raw = process.env.SEARCH_FUZZY_TIMEOUT_MS;
+  if (raw === undefined) return DEFAULT_MS;
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    console.error(
+      `SEARCH_FUZZY_TIMEOUT_MS must be a positive number of milliseconds, got ${JSON.stringify(raw)} — using ${DEFAULT_MS}`
+    );
+    return DEFAULT_MS;
+  }
+  return parsed;
+}
 
 /**
  * Shortest query the fuzzy arm will run for.
@@ -316,6 +427,41 @@ export const FUZZY_TIMEOUT_MS = Number(
  * and `title_norm % 'dnue'` matches zero of 6.9M works. The shortest typo that
  * this arm genuinely rescues is five characters ('hobit').
  */
+/**
+ * The exact-title arm's own budget, deliberately much smaller than the fuzzy
+ * one.
+ *
+ * These two arms were sharing FUZZY_TIMEOUT_MS, and they have nothing in common
+ * but a `SET LOCAL`. Measured warm on the real catalog, this arm's whole cost
+ * by query shape:
+ *
+ *   us          18ms  (24 rows)      the       1,832ms  (6 rows)
+ *   she         36ms  (40 rows)      of the    1,186ms  (1 row)
+ *   and then    85ms   (8 rows)
+ *   it         124ms  (18 rows)
+ *
+ * Every query it exists to rescue — "It", "Us", "She" are real titles, and
+ * that is why the arm was built — answers inside 131ms. The two that do not are
+ * the two shortest English stopwords, and the reason is structural:
+ * `title_norm` carries a GIN trigram index and no btree, so `title_norm = 'the'`
+ * cannot be an equality lookup and pays for the most common trigrams in
+ * 6.9M titles.
+ *
+ * 300ms clears the legitimate cases with more than twice their measured worst
+ * case, and abandons "the" at 300ms rather than 900ms. Those queries return
+ * nothing either way, so the whole of that budget was waste — and it grew when
+ * the fuzzy budget went from 700ms to 900ms, taking the stopword path from
+ * ~780ms to ~990ms against R1's one-second budget. Splitting the two takes it
+ * to ~310ms and gives the fuzzy arm its headroom back.
+ *
+ * The root-cause fix for the stopword case is a btree on `title_norm`, which
+ * would make it an index lookup and return the six works actually titled "the".
+ * That is a migration and an index over 6.9M rows rebuilt monthly, so it is a
+ * cost decision rather than an audit's call — recorded as OQ-2 with
+ * measurements in docs/audit/2026-09-08-findings.md.
+ */
+export const EXACT_TITLE_TIMEOUT_MS = 300;
+
 export const MIN_FUZZY_LENGTH = 5;
 
 /**
@@ -359,11 +505,12 @@ async function tsqueryIsEmpty(query: string): Promise<boolean> {
  * fuzzy search is a 500 on /search rather than an empty result.
  */
 export async function runSearchArmWithinBudget(
-  sql: Prisma.Sql
+  sql: Prisma.Sql,
+  budgetMs: number = FUZZY_TIMEOUT_MS
 ): Promise<WorkSearchResult[]> {
   try {
     return await prisma.$transaction(async (tx) => {
-      await tx.$executeRawUnsafe(`SET LOCAL statement_timeout = ${FUZZY_TIMEOUT_MS}`);
+      await tx.$executeRawUnsafe(`SET LOCAL statement_timeout = ${budgetMs}`);
       return tx.$queryRaw<WorkSearchResult[]>(sql);
     });
   } catch (error) {
@@ -416,7 +563,10 @@ export async function searchWorks(
 
   // No full-text content at all: the only sensible match is an exact title.
   if (await tsqueryIsEmpty(trimmed)) {
-    return runSearchArmWithinBudget(searchWorksExactTitleSql(trimmed, { limit, offset }));
+    return runSearchArmWithinBudget(
+      searchWorksExactTitleSql(trimmed, { limit, offset }),
+      EXACT_TITLE_TIMEOUT_MS
+    );
   }
 
   if (trimmed.length < MIN_FUZZY_LENGTH) return [];
@@ -562,7 +712,8 @@ export async function countWorkMatches(
   const fallback = await runSearchArmWithinBudget(
     stopwordsOnly
       ? searchWorksExactTitleSql(trimmed, { limit: COUNT_CEILING, offset: 0 })
-      : searchWorksFuzzySql(trimmed, { limit: COUNT_CEILING, offset: 0 })
+      : searchWorksFuzzySql(trimmed, { limit: COUNT_CEILING, offset: 0 }),
+    stopwordsOnly ? EXACT_TITLE_TIMEOUT_MS : FUZZY_TIMEOUT_MS
   );
   return { count: fallback.length, atCeiling: fallback.length >= COUNT_CEILING };
 }
@@ -625,14 +776,18 @@ export async function searchWorksPaged(
     };
   }
 
-  const fallbackArm = (await tsqueryIsEmpty(trimmed))
+  const stopwordsOnly = await tsqueryIsEmpty(trimmed);
+  const fallbackArm = stopwordsOnly
     ? searchWorksExactTitleSql(trimmed, { limit: COUNT_CEILING, offset: 0 })
     : trimmed.length >= MIN_FUZZY_LENGTH
       ? searchWorksFuzzySql(trimmed, { limit: COUNT_CEILING, offset: 0 })
       : null;
   if (!fallbackArm) return empty;
 
-  const matches = await runSearchArmWithinBudget(fallbackArm);
+  const matches = await runSearchArmWithinBudget(
+    fallbackArm,
+    stopwordsOnly ? EXACT_TITLE_TIMEOUT_MS : FUZZY_TIMEOUT_MS
+  );
   if (matches.length === 0) return empty;
 
   const totalPages = lastPageFor(matches.length, pageSize);

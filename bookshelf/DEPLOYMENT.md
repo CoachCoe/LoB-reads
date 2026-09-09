@@ -8,6 +8,51 @@ catalog, not an estimate. Where something has *not* been verified it says so.
 Companion documents: `ARCHITECTURE.md` for how it works, `STATUS.md` for where
 the project stands, `PRD.md` for what to build next.
 
+## Provisioning
+
+There is a Bicep template — [`infra/main.bicep`](../infra/main.bicep) — and this
+document did not mention it, which was the largest gap in the doc set: an entire
+provisioning path invisible from the deployment guide, linked only one way (the
+template's own header points here).
+
+```bash
+# From the repository root. Requires AZURE_RESOURCE_GROUP, AZURE_LOCATION,
+# ACR_NAME, CONTAINER_APP_NAME, POSTGRES_SERVER_NAME and STORAGE_ACCOUNT_NAME.
+bookshelf/scripts/deploy/azure.sh provision --what-if   # preview
+bookshelf/scripts/deploy/azure.sh provision             # apply
+```
+
+It declares the registry, storage account and container, the Flexible Server
+with `work_mem` and `azure.extensions` set as server parameters, the log
+workspace, the container environment, the container app with both probes, and
+two role assignments.
+
+**It has never been deployed, and three things it does not do will fail the
+release gate or weaken the app.** They are listed here rather than in the
+template because this is where someone deploying will look.
+
+1. **No `CDN_URL`, and no Front Door or CDN resource at all.** `deploy:verify`'s
+   `storage can serve what it stores` check is fatal and requires either
+   `CDN_URL` or a public container, so a freshly provisioned stack fails its own
+   gate — and every avatar and map upload returns 503, which is the failure mode
+   the object-storage section below describes.
+2. **`DATABASE_URL` and `DIRECT_URL` point at the same secret**, on 5432, with
+   no `pgbouncer=true` and no `pgbouncer.enabled` server parameter. The
+   pooled-versus-direct split that the next section calls "two, not one" is not
+   provisioned, and the gate reports the two being identical as a warning on
+   every deploy.
+3. **The ingress is `external: true` with no restriction**, while the container
+   app is given `TRUSTED_CLIENT_IP_HEADER=x-azure-clientip`. The template's own
+   header says both halves are needed — "the header is only unforgeable while
+   the container app cannot be reached directly" — and declares neither. As it
+   stands a client reaching the ingress FQDN directly can forge the header and
+   take a fresh rate-limit bucket per request.
+
+Its defaults are also General Purpose `Standard_D2ds_v4` with 64 GB rather than
+the burstable tier the Sizing section below reasons about. That is a sane
+choice, not a defect — but the burstable caveats in this document apply only if
+you override it.
+
 ## Service mapping
 
 | Piece | Azure service | Notes |
@@ -143,13 +188,20 @@ az postgres flexible-server parameter set \
 `npm run deploy:verify` asserts the effective value, so a skipped migration is
 caught rather than assumed.
 
-**More memory will not finish the job.** With `shared_buffers` at 3 GB the query
-reports `shared hit=202478, read=0` — everything resident, no disk reads at all
-— and still takes 1.2 s. The remainder is CPU, and getting under a second needs
-the candidate set bounded so ranking never touches more than N rows. That is a
-decision about result quality, not a setting; tracked as R1.
+**More memory will not finish the job** — and the conclusion this section used
+to draw from that was wrong. With `shared_buffers` at 3 GB the query reported
+`shared hit=202478, read=0` — everything resident, no disk reads — and still
+took 1.2 s, so the remainder looked like CPU spent ranking, and the fix looked
+like bounding the candidate set.
 
-Everything else is fast. Measured in production mode against the full catalog:
+**Ranking was never the cost, and bounding the candidate set was never needed.**
+Ranking all ~10,061 full-text matches for "Fiction" takes 57 ms. The cost was
+the other arm of the `WHERE`: a trigram predicate whose candidate set the GIN
+index cannot narrow for a common word. R1 is closed by splitting the arms and
+choosing between them, not by bounding anything — see PRD R1 and `STATUS.md`,
+which own that story.
+
+Measured in production mode against the full catalog:
 
 | page | production | dev |
 | --- | --- | --- |
@@ -158,11 +210,20 @@ Everything else is fast. Measured in production mode against the full catalog:
 | `/search?q=dune` | 0.091 s | 0.17 s |
 | `/search?subject=Fiction` | 0.031 s | 0.10 s |
 | `/work/[olKey]` | 0.009 s | 0.07 s |
-| `/search?q=Fiction` | **1.23 s** | 4.2 s |
+| `/search?q=Fiction` | ~~**1.23 s**~~ **0.031 s** | 4.2 s |
 
-The last row is after the `work_mem` change; it was 3.5 s before. That it barely
-improved between dev and production is what ruled out rendering overhead and
-sent the investigation to the query plan.
+The struck figure is what this document reported for four milestones, and it is
+kept struck rather than deleted because the reasoning above was built on it.
+`STATUS.md` owns the current numbers; this table should be read as a record of
+the tier, not of the query.
+
+**One thing to re-measure here rather than assume.** The two fallback search
+arms are bounded by a `statement_timeout` — 900 ms for fuzzy, 300 ms for
+exact-title — and both were calibrated on a machine with `shared_buffers` at
+128 MB. The fuzzy arm's cost is dominated by ~70,000 heap block reads it cannot
+keep resident at that setting, so a different tier will move it. Re-run
+`npm run bench:search -- --gate` against the deployed catalog before trusting
+either number.
 
 ## Connection strings: two, not one
 
@@ -356,9 +417,13 @@ than failing — with Postgres stopped, Prisma blocked on connect for well over
 
 There are none, by design. The baseline migration is the starting point for
 every environment, and `prisma migrate deploy` takes an empty database to
-current in one step — verified against a fresh Postgres 16. That run covered 19 migrations; two
-have been added since (`import_row_error`, `enrichment_claimed_at`) and the
-claim has not been re-established against 21.
+current in one step — verified against a fresh Postgres 16.
+
+That claim is re-established continuously rather than counted by hand, which is
+why no number appears here any more: `ci.yml` applies the whole chain to an
+empty `postgres:16` service with `prisma migrate deploy` and then asserts
+`prisma migrate status`, on every run. The count had drifted twice — this
+paragraph said 19 and then 21 while the repository held 25.
 
 An earlier revision carried a hand-written upgrade script for a database
 holding the pre-baseline schema. It was removed once no such database existed:
@@ -454,17 +519,31 @@ NEXTAUTH_URL="https://…" NEXTAUTH_SECRET="…" CDN_URL="https://…" \
 BASE_URL="https://…" npm run deploy:verify
 ```
 
-It runs every check over configuration and schema that applies to the
-environment it is given (the exact number varies with it — more when the pooled and
-direct URLs differ), and eight more against the
-running app when `BASE_URL` is set. Each corresponds to something that has gone
-wrong or would go wrong silently: the two connection strings the right way round and the
-pooled one carrying `pgbouncer=true`; `NEXTAUTH_SECRET` not a placeholder;
-storage having something that can actually serve it; both extensions; every
-migration applied and none failed; `work_mem` at least 32 MB;
-`pg_trgm.similarity_threshold`; the catalog non-empty; all four search indexes;
-the `search_vector` trigger; statistics gathered; both probes; the CSP carrying
-your CDN origin and not `localhost`; and search answering in under a second.
+It prints its own totals, so no count is restated here — the four documents
+that used to restate one had all drifted, and none matched the script. Each
+check corresponds to something that has gone wrong or would go wrong silently:
+the two connection strings the right way round and the pooled one carrying
+`pgbouncer=true`; `NEXTAUTH_SECRET` set, long enough, and not a placeholder;
+`NEXTAUTH_URL` https and not localhost; storage having something that can
+actually serve it; a client being identifiable for rate limiting, with an
+explicit hop count and the limiter's single-replica assumption recorded; no
+foreign key from `app` into `catalog`; both extensions; every migration applied
+and none failed; `work_mem` at least 32 MB; `pg_trgm.similarity_threshold`; the
+catalog non-empty; all four search indexes; the `search_vector` trigger; and
+statistics gathered.
+
+**`BASE_URL` is what turns on the rest**, and it is worth being blunt about
+because it was not set anywhere. With it: both probes; the CSP present, carrying
+your CDN origin and not `localhost`; HSTS; and one timed query per search arm,
+each of which also has to come back with results — a search arm that times out
+returns nothing *faster*, so timing alone read a broken search as an
+improvement.
+
+Without `BASE_URL` those are skipped, and the skip used to be recorded as a
+PASS. It is now a warning, and a failure when a deployment target is configured.
+Neither `ci.yml` nor `deploy.yml` sets it, so none of them has ever run in
+automation — adding it to the `Release` step of `deploy.yml` is the outstanding
+half.
 
 Warnings (a shared `DATABASE_URL`/`DIRECT_URL`, a missing HSTS header) do not
 fail the run — they are legitimate in some topologies.

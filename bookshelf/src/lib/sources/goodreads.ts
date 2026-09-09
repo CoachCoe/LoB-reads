@@ -1,4 +1,9 @@
 import { cleanIsbn } from "@/lib/sources/isbn";
+import {
+  SHELF_NAME_BY_GOODREADS_SHELF,
+  type DefaultShelfName,
+  type GoodreadsShelf,
+} from "@/lib/shelves";
 export interface GoodreadsBook {
   title: string;
   author: string;
@@ -76,18 +81,15 @@ function mapExclusiveShelf(
   }
 }
 
-// Map our shelf identifier to display name
-export function getShelfDisplayName(
-  shelf: "read" | "currently-reading" | "to-read"
-): string {
-  switch (shelf) {
-    case "read":
-      return "Read";
-    case "currently-reading":
-      return "Currently Reading";
-    case "to-read":
-      return "Want to Read";
-  }
+/**
+ * A Goodreads shelf identifier to the shelf name on this account.
+ *
+ * The return type is DefaultShelfName, not string: `applyRow` uses this value
+ * to LOOK THE SHELF UP, so a name that does not match one the account was
+ * created with fails the row silently. See DEAD-2 in src/lib/shelves.ts.
+ */
+export function getShelfDisplayName(shelf: GoodreadsShelf): DefaultShelfName {
+  return SHELF_NAME_BY_GOODREADS_SHELF[shelf];
 }
 
 /**

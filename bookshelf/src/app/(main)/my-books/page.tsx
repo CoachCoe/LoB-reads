@@ -1,6 +1,5 @@
-import { redirect } from "next/navigation";
 import Link from "next/link";
-import { getCurrentUser } from "@/lib/auth/session";
+import { requireUser } from "@/lib/auth/session";
 import { getUserShelves } from "@/server/shelves";
 import { getReadingStats } from "@/server/progress";
 import ShelfSection from "./ShelfSection";
@@ -9,11 +8,7 @@ import Card, { CardContent } from "@/components/ui/Card";
 import { BookOpen, BookMarked, Trophy } from "lucide-react";
 
 export default async function MyBooksPage() {
-  const user = await getCurrentUser();
-
-  if (!user) {
-    redirect("/login?callbackUrl=/my-books");
-  }
+  const user = await requireUser("/my-books");
 
   const [shelves, stats] = await Promise.all([
     getUserShelves(user.id),

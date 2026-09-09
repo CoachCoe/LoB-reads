@@ -218,11 +218,97 @@ export async function finishReading(
         },
       })
     : // Finishing something never started is a legitimate action: a reader
-      // logging a book they read before joining.
-      await startAndFinish(userId, workKey, when);
+      // logging a book they read before joining. Doing it twice in one day is
+      // not — see finishedSessionOnDay.
+      await finishWithoutOpenSession(userId, workKey, when);
 
   await moveToExclusiveShelf(userId, workKey, "Read");
   return finished;
+}
+
+/**
+ * An already-finished session for this work on the same day, if there is one.
+ *
+ * This is the idempotency `finishReading` lacked. With no OPEN session it went
+ * straight to `startAndFinish`, and nothing constrains finished sessions:
+ * `reading_sessions_one_open_per_work` is partial, `WHERE finished_at IS NULL`.
+ * So five POSTs of `{"action":"finish"}` produced five finished sessions, each
+ * with `started_at == finished_at`, and `getWrappedStats` counts sessions
+ * rather than distinct works (`wrapped.ts`) — which rendered "5 Books Read,
+ * 880 Pages Read" for one 176-page book read once. Re-uploading a Goodreads
+ * export did the same thing once per row, which is what the settings page
+ * invites when it says "upload it again to continue where this left off".
+ *
+ * The window is a calendar day rather than an exact timestamp because the two
+ * callers need different things: the importer passes the same parsed
+ * `Date Read` on every re-upload, while a double-clicked Finish passes two
+ * `new Date()`s milliseconds apart. A day covers both.
+ *
+ * UTC rather than local, deliberately. This is a deduplication window, not a
+ * reading-year boundary — the year boundary in `wrapped.ts` is local on purpose
+ * and stays that way. The cost is that a double-click straddling UTC midnight
+ * still records twice, which is a far smaller hole than the one it replaces.
+ * Deduplicating against *any* finished session would be tighter still and is
+ * the wrong trade: it would silently drop a genuine re-read, and
+ * `getLatestSessionForWork`'s docstring is explicit that "Re-reading a book is
+ * legitimate, so the server still allows a new session."
+ */
+/**
+ * Finish a work with no open session, at most once per day.
+ *
+ * The lookup alone is not enough, and that is the whole point: a read followed
+ * by a create is not atomic, and a double-click — the case this exists for — is
+ * concurrent. Measured before the index existed: two simultaneous finishes
+ * produced two sessions, so the first version of this fix closed the sequential
+ * case and left the actual one open.
+ *
+ * `reading_sessions_one_finish_per_day` is what decides it now. The lookup is
+ * kept because it is the common path and returns the row without a failed
+ * insert; the P2002 branch is what makes the rule hold. Same shape as the
+ * exclusive-shelf rule, which ARCHITECTURE.md describes as "kept honest by a
+ * partial unique index and a trigger rather than by application code".
+ */
+async function finishWithoutOpenSession(
+  userId: string,
+  workKey: string,
+  when: Date
+) {
+  const existing = await finishedSessionOnDay(userId, workKey, when);
+  if (existing) return existing;
+
+  try {
+    return await startAndFinish(userId, workKey, when);
+  } catch (error) {
+    if (!isUniqueViolation(error)) throw error;
+
+    // Another request inserted between the lookup and the insert. Its row is
+    // the same finish, so return it rather than reporting a conflict the
+    // reader did not cause.
+    const raced = await finishedSessionOnDay(userId, workKey, when);
+    if (raced) return raced;
+    throw error;
+  }
+}
+
+/** Postgres 23505 via Prisma: a unique constraint rejected the insert. */
+function isUniqueViolation(error: unknown): boolean {
+  return (error as { code?: string } | null)?.code === "P2002";
+}
+
+async function finishedSessionOnDay(
+  userId: string,
+  workKey: string,
+  when: Date
+) {
+  const dayStart = new Date(
+    Date.UTC(when.getUTCFullYear(), when.getUTCMonth(), when.getUTCDate())
+  );
+  const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+
+  return prisma.readingSession.findFirst({
+    where: { userId, workKey, finishedAt: { gte: dayStart, lt: dayEnd } },
+    orderBy: { finishedAt: "desc" },
+  });
 }
 
 async function startAndFinish(userId: string, workKey: string, when: Date) {
@@ -270,14 +356,58 @@ async function moveToExclusiveShelf(
     select: { id: true },
   });
 
-  await prisma.$transaction([
-    prisma.shelfItem.deleteMany({
-      where: { workKey, shelfId: { in: exclusive.map((s) => s.id) } },
-    }),
-    prisma.shelfItem.create({
-      data: { shelfId: target.id, workKey, userId },
-    }),
-  ]);
+  // Delete from the OTHER exclusive shelves and upsert the target, rather than
+  // deleting from all of them and creating. Two properties, both of which this
+  // copy was missing and its sibling in shelves.ts has:
+  //
+  // - Excluding the target means a work already on it keeps its `addedAt` and
+  //   its row id, instead of being silently re-shelved (RUN-5).
+  // - The upsert makes the move idempotent under concurrency. It was a delete
+  //   followed by a create, so two simultaneous finishes both deleted and both
+  //   inserted, and one got a P2002 from `shelf_items_one_exclusive_per_work`.
+  //   Measured: a third of three racing finishReading calls rejected, after the
+  //   session half of that race had already been fixed.
+  //
+  // Order matters inside the transaction: the delete has to precede the upsert,
+  // because the partial unique index allows only one exclusive shelf per work.
+  const others = exclusive
+    .map((shelf) => shelf.id)
+    .filter((id) => id !== target.id);
+
+  try {
+    await prisma.$transaction([
+      prisma.shelfItem.deleteMany({ where: { workKey, shelfId: { in: others } } }),
+      prisma.shelfItem.upsert({
+        where: { shelfId_workKey: { shelfId: target.id, workKey } },
+        create: { shelfId: target.id, workKey, userId },
+        update: {},
+      }),
+    ]);
+  } catch (error) {
+    // A unique violation here means another writer put the work on an
+    // exclusive shelf while this transaction was running. The upsert cannot
+    // absorb it, because the index that rejects is the PARTIAL one — one
+    // exclusive shelf per work — and not the (shelfId, workKey) key the
+    // ON CONFLICT targets.
+    //
+    // So the end state is checked rather than assumed. If the work is on the
+    // shelf this call wanted, the other writer did this call's work and there
+    // is nothing to report; the reading session is the record of truth and it
+    // is already correct. If it is somewhere else, that is a real failure and
+    // it is rethrown.
+    //
+    // This is the docstring above finally being true: "this path must not fail
+    // the reading action if the shelf is missing" (JR-10). It was catching a
+    // missing shelf and letting everything else escape, so a racing
+    // double-click answered 500 for a book that was already finished.
+    if (!isUniqueViolation(error)) throw error;
+
+    const onTarget = await prisma.shelfItem.findUnique({
+      where: { shelfId_workKey: { shelfId: target.id, workKey } },
+      select: { id: true },
+    });
+    if (!onTarget) throw error;
+  }
 }
 
 export async function getReadingStats(userId: string) {
@@ -286,15 +416,28 @@ export async function getReadingStats(userId: string) {
       where: { userId, finishedAt: { not: null } },
     }),
     prisma.readingSession.count({ where: { userId, finishedAt: null } }),
-    prisma.readingSession.aggregate({
-      where: { userId, finishedAt: { not: null } },
-      _sum: { pageCount: true },
-    }),
+    // Raw, because Prisma's aggregate cannot COALESCE and summing page_count
+    // alone counted 0 for a finished session on an edition that states no
+    // length — even though finishReading sets currentPage from whatever the
+    // reader logged. /wrapped had the same defect and is fixed alongside.
+    //
+    // Two things to note if this is ever edited, both of them recorded lessons
+    // in this repo. The identifiers here are mixed case:
+    // app.reading_sessions has "userId" and "currentPage" camel-cased and
+    // page_count and finished_at snake-cased, so the quotes are load-bearing
+    // and an unquoted "userId" is a runtime 500 that tsc cannot see. And SUM()
+    // returns bigint, which JSON.stringify refuses, so the ::int cast is not
+    // decoration.
+    prisma.$queryRaw<{ pages: number }[]>`
+      SELECT COALESCE(SUM(COALESCE(page_count, "currentPage")), 0)::int AS pages
+      FROM app.reading_sessions
+      WHERE "userId" = ${userId} AND finished_at IS NOT NULL
+    `,
   ]);
 
   return {
     booksRead,
     currentlyReading,
-    pagesRead: pages._sum.pageCount ?? 0,
+    pagesRead: pages[0]?.pages ?? 0,
   };
 }
