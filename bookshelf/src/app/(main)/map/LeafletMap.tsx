@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import L from "leaflet";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import type { MappedWorkLocation, MappedAuthorLocation } from "@/server/map";
+import CoverImage from "@/components/catalog/CoverImage";
 import "leaflet/dist/leaflet.css";
 
 // Fix for default marker icons in Leaflet with webpack
@@ -95,11 +96,30 @@ export default function LeafletMap({
                   {location.type.replace("_", " ")}
                 </p>
                 {location.workTitle ? (
+                  // The cover was already being read for every pin and never
+                  // rendered — the popup named the book without showing it.
                   <a
                     href={`/work/${location.workKey}`}
-                    className="mt-2 block text-sm text-blue-600 hover:underline"
+                    className="mt-2 flex gap-2.5 no-underline group"
                   >
-                    {location.workTitle}
+                    <CoverImage
+                      title={location.workTitle}
+                      coverId={location.coverId}
+                      olKey={location.workKey}
+                      size="sm"
+                      sizes="40px"
+                      className="h-[60px] w-10 shrink-0 rounded"
+                    />
+                    <span className="min-w-0">
+                      <span className="block text-sm text-blue-600 group-hover:underline">
+                        {location.workTitle}
+                      </span>
+                      {location.workAuthor && (
+                        <span className="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                          {location.workAuthor}
+                        </span>
+                      )}
+                    </span>
                   </a>
                 ) : (
                   // Not a link: the work page 404s on a key the current ingest
@@ -108,9 +128,6 @@ export default function LeafletMap({
                   <span className="mt-2 block text-sm italic text-gray-500 dark:text-gray-400">
                     a book no longer in the catalog
                   </span>
-                )}
-                {location.workAuthor && (
-                  <p className="text-xs text-gray-500 dark:text-gray-400">{location.workAuthor}</p>
                 )}
                 {location.addedBy && (
                   <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">

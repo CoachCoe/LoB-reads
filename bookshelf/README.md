@@ -124,7 +124,37 @@ A modern reading tracker for book lovers. Track your library, discover new stori
    [DEPLOYMENT.md](./DEPLOYMENT.md#do-not-run-the-ingest-against-azure) before
    starting it.
 
-6. **Start the development server**
+6. **Put books on the map** — optional, and only after a real ingest
+
+   `npm run db:seed` leaves the map nearly empty: locations are contributed by
+   readers, and a fresh database has almost none. This resolves a curated list
+   of well-known books to real catalog works and pins them where they are set,
+   so `/map` is worth clicking through:
+
+   ```bash
+   npm run demo:map -- --dry-run   # resolve and report, write nothing
+   npm run demo:map                # replace the demo pins
+   ```
+
+   It needs a populated catalog and prints its own totals. Pins are attributed
+   to the demo accounts, and re-running replaces only those — a contribution
+   from any other account is left alone.
+
+   It also fills in the fictional worlds: their invented places, which are
+   pinned to a world rather than a coordinate, and — if you supply one — a world
+   map image.
+
+   Those images are gitignored, because the ones that suit these worlds are
+   published artwork. Drop a file where a world expects it and that world gets
+   its map; leave it absent and the world is seeded without one. Middle-earth
+   looks for `public/fictional-worlds/middle-earth.webp`.
+
+   An image there is a static asset rather than an upload, so it renders with no
+   object storage configured. The real contribution path is
+   `POST /api/fictional-worlds/[worldId]/upload`, and `npm run storage:smoke` is
+   what exercises it.
+
+7. **Start the development server**
 
    ```bash
    npm run dev
