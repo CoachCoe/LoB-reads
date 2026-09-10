@@ -16,22 +16,6 @@ The application lives in [`bookshelf/`](bookshelf/). Start there:
 | [`.claude/skills/bookshelf-testing/SKILL.md`](.claude/skills/bookshelf-testing/SKILL.md) | How the tests actually work here — read before writing one |
 | [`infra/main.bicep`](infra/main.bicep) | The Azure topology as a template. Never deployed; see DEPLOYMENT.md |
 
-## `docs/`
-
-Audit and design records, kept because the reasoning is usually more useful than
-the conclusion:
-
-- [`docs/audit/`](docs/audit/) — dated findings and the work done against them.
-  Each `*-findings.md` is written before any source changes and is not edited
-  afterwards; each `*-work-completed.md` records what was fixed, what was
-  deferred and why. A third kind exists: a dated topic record, written after the
-  change, continuing a deferred list from an earlier `*-work-completed.md` —
-  `2026-09-02-remaining-test-gaps.md`, `2026-09-02-wrapped-tests.md` and
-  `2026-09-03-route-guards-and-clamps.md` are those. The convention is widened
-  here to describe what happened rather than renaming three files to fit a
-  convention they never followed.
-- [`docs/design/`](docs/design/) — the UI/UX review brief and its outcome.
-
 ## Which document owns which fact
 
 The 2026-09-08 audit found twelve blocks of material restated across

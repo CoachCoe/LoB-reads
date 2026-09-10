@@ -79,8 +79,6 @@ async function checkDatabase(url: string, label: string) {
 }
 
 async function main() {
-  // --- configuration -------------------------------------------------------
-
   const direct = process.env.DIRECT_URL;
   const pooled = process.env.DATABASE_URL;
   const baseUrl = process.env.BASE_URL?.replace(/\/$/, "");
@@ -181,8 +179,6 @@ async function main() {
       hint: "set CDN_URL — a private container with no CDN accepts uploads and then returns 403 for every image",
     }
   );
-
-  // --- database ------------------------------------------------------------
 
   const client = await checkDatabase(direct, "direct connection");
   if (!client) return;
@@ -393,8 +389,6 @@ async function main() {
   );
 
   await client.end();
-
-  // --- the running app -----------------------------------------------------
 
   if (!baseUrl) {
     // A warning, not a pass. This was `ok: true`, so the fourteen checks below
