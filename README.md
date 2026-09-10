@@ -9,33 +9,16 @@ The application lives in [`bookshelf/`](bookshelf/). Start there:
 | --- | --- |
 | [`bookshelf/README.md`](bookshelf/README.md) | Getting it running, the commands, the API surface |
 | [`bookshelf/PRD.md`](bookshelf/PRD.md) | What it is meant to do, as numbered requirements |
-| [`bookshelf/ARCHITECTURE.md`](bookshelf/ARCHITECTURE.md) | The invariants and why they exist |
-| [`bookshelf/STATUS.md`](bookshelf/STATUS.md) | What is measured, and what is known to be missing |
+| [`bookshelf/ARCHITECTURE.md`](bookshelf/ARCHITECTURE.md) | The invariants, why they exist, and what is measured |
 | [`bookshelf/DEPLOYMENT.md`](bookshelf/DEPLOYMENT.md) | Getting it into Azure |
 | [`bookshelf/AGENTS.md`](bookshelf/AGENTS.md) | The project invariants, in the file an agent reads first |
 | [`.claude/skills/bookshelf-testing/SKILL.md`](.claude/skills/bookshelf-testing/SKILL.md) | How the tests actually work here — read before writing one |
 | [`infra/main.bicep`](infra/main.bicep) | The Azure topology as a template. Never deployed; see DEPLOYMENT.md |
 
-## `docs/`
-
-Audit and design records, kept because the reasoning is usually more useful than
-the conclusion:
-
-- [`docs/audit/`](docs/audit/) — dated findings and the work done against them.
-  Each `*-findings.md` is written before any source changes and is not edited
-  afterwards; each `*-work-completed.md` records what was fixed, what was
-  deferred and why. A third kind exists: a dated topic record, written after the
-  change, continuing a deferred list from an earlier `*-work-completed.md` —
-  `2026-09-02-remaining-test-gaps.md`, `2026-09-02-wrapped-tests.md` and
-  `2026-09-03-route-guards-and-clamps.md` are those. The convention is widened
-  here to describe what happened rather than renaming three files to fit a
-  convention they never followed.
-- [`docs/design/`](docs/design/) — the UI/UX review brief and its outcome.
-
 ## Which document owns which fact
 
 The 2026-09-08 audit found twelve blocks of material restated across
-`README`/`PRD`/`ARCHITECTURE`/`STATUS`/`DEPLOYMENT`, five of them already
+`README`/`PRD`/`ARCHITECTURE`/`DEPLOYMENT`, five of them already
 drifted — including a search latency figure that was an order of magnitude out
 in one copy, an ingest timing that was a baseline in one file and the current
 result in two others, and a test count that two files gave differently. Every
@@ -45,8 +28,8 @@ So, one owner per fact, and links rather than restatements:
 
 | fact | owner |
 | --- | --- |
-| Measured numbers — latency, ingest timings, row counts, test counts | `bookshelf/STATUS.md` |
-| Mechanism — why the schema, the search arms and the indexes are shaped as they are | `bookshelf/ARCHITECTURE.md` |
+| Mechanism, and the measurements behind it — why the schema, the search arms and the indexes are shaped as they are, and what they cost | `bookshelf/ARCHITECTURE.md` |
+| Test counts | the suite itself — it prints them, and no document should restate them |
 | Azure procedure and topology | `bookshelf/DEPLOYMENT.md` |
 | What to build next, and why | `bookshelf/PRD.md` |
 | The invariants, and their guards | `bookshelf/AGENTS.md` |

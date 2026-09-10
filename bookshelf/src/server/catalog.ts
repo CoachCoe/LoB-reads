@@ -102,7 +102,7 @@ const W_POPULARITY = 0.5; // edition count, as a tiebreak only
  * Every subquery was fast in isolation (7-335ms). Only the combination was slow,
  * and only at real scale: at 3,000 fixture rows walking the whole table is
  * instant, so no fixture-based test could see it. That is the same lesson
- * STATUS.md already records, learned again the hard way.
+ * ARCHITECTURE.md already records, learned again the hard way.
  *
  * ---
  *

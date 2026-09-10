@@ -6,9 +6,9 @@ import { readFileSync } from "node:fs";
 /**
  * Colour contrast, computed from the tokens rather than trusted.
  *
- * STATUS.md recorded that nothing visual had ever been checked — "the dark-mode
- * sweep was verified by grep and a build, not by looking" — and a design review
- * then found three live WCAG failures in the token set:
+ * Nothing visual had ever been checked — the dark-mode sweep was verified by
+ * grep and a build, not by looking — and a design review then found three
+ * live WCAG failures in the token set:
  *
  *   --foreground-secondary #86868b on #fafafa   3.47:1  (needs 4.5)
  *   --color-primary #D4A017 used as text        2.28:1  (needs 4.5)

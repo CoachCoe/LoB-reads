@@ -231,8 +231,8 @@ describe("M2 acceptance: known-title ranking", () => {
 /**
  * Reported, not asserted as an acceptance gate.
  *
- * STATUS.md is explicit that this test kept passing through every performance
- * bug found at 6.9M works, because a few thousand fixture rows are fast to scan
+ * This test kept passing through every performance bug found at 6.9M works,
+ * because a few thousand fixture rows are fast to scan
  * badly — and both of the mutations that read-path-plans.test.ts exists to catch
  * leave it green. Calling it "M2 acceptance" oversold it, and a 100ms wall-clock
  * bound on a loaded CI runner is a flake waiting to happen.
@@ -268,8 +268,8 @@ describe("search latency (reporting, not a gate)", () => {
     );
 
     // Deliberately no timing assertion. At this fixture size the number is not
-    // discriminating — STATUS.md records this test passing through every real
-    // performance bug — and any threshold picked here would be arbitrary. The
+    // discriminating — this test passed through every real performance bug —
+    // and any threshold picked here would be arbitrary. The
     // query-plan assertions in read-path-plans.test.ts are the gate; this logs
     // the distribution so a human reading CI output can see it move.
     expect(timings).toHaveLength(queries.length);
@@ -504,7 +504,7 @@ describe("DEAD-5: accent folding is case-independent", () => {
  * plausible results, just slowly or incompletely.
  *
  * What is NOT tested here is the latency, deliberately. A few thousand fixture
- * rows are fast to scan badly — STATUS.md says so, and the reverted R1 attempt
+ * rows are fast to scan badly: the reverted R1 attempt
  * proved it by passing every plan assertion in this repo. `npm run bench:search`
  * is the latency gate and it needs the real catalog.
  */

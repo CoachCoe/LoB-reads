@@ -4,8 +4,8 @@ import { prisma } from "./setup";
  * The invariants ARCHITECTURE.md names, asserted against the live schema.
  *
  * SPEC-1. ARCHITECTURE.md:40-42 states: "**Nothing in `app` may hold a foreign
- * key into `catalog`.** A bad ingest would cascade into user data." STATUS.md
- * calls it "the single most load-bearing decision in the schema".
+ * key into `catalog`.** A bad ingest would cascade into user data." It is the
+ * single most load-bearing decision in the schema.
  *
  * It holds today. Nothing checked it. Every *other* named invariant in that
  * document has a named mechanical guard — exclusive shelves have

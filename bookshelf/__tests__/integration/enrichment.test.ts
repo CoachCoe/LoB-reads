@@ -141,7 +141,7 @@ describe("the queue", () => {
     // `30 * (0.5 + Math.random())`, and `0.5 + random()` spans [0.5, 1.5) — so
     // the first backoff is 15 to 45 seconds, not 15 to 30. An earlier version of
     // this test asserted 30 and failed at 40.7s, which is the range doing its
-    // job. STATUS.md only ever stated the lower bound.
+    // job.
     expect(row?.nextAttemptAt).toBeInstanceOf(Date);
     const delayMs = (row?.nextAttemptAt as Date).getTime() - before;
     expect(delayMs).toBeGreaterThanOrEqual(15_000 - 1_000);
