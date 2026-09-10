@@ -5,7 +5,7 @@ Next.js app, Postgres via Prisma, uploads in Azure Blob Storage behind a CDN.
 Every number in this document was measured on the real system — a 6.9M-work
 catalog, not an estimate. Where something has *not* been verified it says so.
 
-Companion documents: `ARCHITECTURE.md` for how it works, `STATUS.md` for where
+Companion documents: `ARCHITECTURE.md` for how it works and where
 the project stands, `PRD.md` for what to build next.
 
 ## Provisioning
@@ -198,7 +198,7 @@ like bounding the candidate set.
 Ranking all ~10,061 full-text matches for "Fiction" takes 57 ms. The cost was
 the other arm of the `WHERE`: a trigram predicate whose candidate set the GIN
 index cannot narrow for a common word. R1 is closed by splitting the arms and
-choosing between them, not by bounding anything — see PRD R1 and `STATUS.md`,
+choosing between them, not by bounding anything — see PRD R1 and `ARCHITECTURE.md`,
 which own that story.
 
 Measured in production mode against the full catalog:
@@ -214,7 +214,7 @@ Measured in production mode against the full catalog:
 
 The struck figure is what this document reported for four milestones, and it is
 kept struck rather than deleted because the reasoning above was built on it.
-`STATUS.md` owns the current numbers; this table should be read as a record of
+`ARCHITECTURE.md` owns the current numbers; this table should be read as a record of
 the tier, not of the query.
 
 **One thing to re-measure here rather than assume.** The two fallback search

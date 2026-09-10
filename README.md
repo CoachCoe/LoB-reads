@@ -9,8 +9,7 @@ The application lives in [`bookshelf/`](bookshelf/). Start there:
 | --- | --- |
 | [`bookshelf/README.md`](bookshelf/README.md) | Getting it running, the commands, the API surface |
 | [`bookshelf/PRD.md`](bookshelf/PRD.md) | What it is meant to do, as numbered requirements |
-| [`bookshelf/ARCHITECTURE.md`](bookshelf/ARCHITECTURE.md) | The invariants and why they exist |
-| [`bookshelf/STATUS.md`](bookshelf/STATUS.md) | What is measured, and what is known to be missing |
+| [`bookshelf/ARCHITECTURE.md`](bookshelf/ARCHITECTURE.md) | The invariants, why they exist, and what is measured |
 | [`bookshelf/DEPLOYMENT.md`](bookshelf/DEPLOYMENT.md) | Getting it into Azure |
 | [`bookshelf/AGENTS.md`](bookshelf/AGENTS.md) | The project invariants, in the file an agent reads first |
 | [`.claude/skills/bookshelf-testing/SKILL.md`](.claude/skills/bookshelf-testing/SKILL.md) | How the tests actually work here — read before writing one |
@@ -19,7 +18,7 @@ The application lives in [`bookshelf/`](bookshelf/). Start there:
 ## Which document owns which fact
 
 The 2026-09-08 audit found twelve blocks of material restated across
-`README`/`PRD`/`ARCHITECTURE`/`STATUS`/`DEPLOYMENT`, five of them already
+`README`/`PRD`/`ARCHITECTURE`/`DEPLOYMENT`, five of them already
 drifted — including a search latency figure that was an order of magnitude out
 in one copy, an ingest timing that was a baseline in one file and the current
 result in two others, and a test count that two files gave differently. Every
@@ -29,8 +28,8 @@ So, one owner per fact, and links rather than restatements:
 
 | fact | owner |
 | --- | --- |
-| Measured numbers — latency, ingest timings, row counts, test counts | `bookshelf/STATUS.md` |
-| Mechanism — why the schema, the search arms and the indexes are shaped as they are | `bookshelf/ARCHITECTURE.md` |
+| Mechanism, and the measurements behind it — why the schema, the search arms and the indexes are shaped as they are, and what they cost | `bookshelf/ARCHITECTURE.md` |
+| Test counts | the suite itself — it prints them, and no document should restate them |
 | Azure procedure and topology | `bookshelf/DEPLOYMENT.md` |
 | What to build next, and why | `bookshelf/PRD.md` |
 | The invariants, and their guards | `bookshelf/AGENTS.md` |

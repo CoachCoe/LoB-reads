@@ -413,7 +413,7 @@ describe("a work page must read one work", () => {
  *   before   Parallel Seq Scan   1053 ms
  *   after    Bitmap Index Scan      0.13 ms
  *
- * A plan assertion rather than a timing one, for the reason STATUS.md gives:
+ * A plan assertion rather than a timing one, for the reason ARCHITECTURE.md gives:
  * "the same answer at 3,000 rows as at 7 million".
  */
 describe("the author name lookup is indexed", () => {

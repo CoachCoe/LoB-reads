@@ -400,7 +400,7 @@ async function main() {
     // per-arm timing here, and PRD R5 says this gate "exits non-zero, so it
     // gates a release rather than being a checklist someone reads."
     //
-    // STATUS.md records the lesson: "A check that passes because there is no
+    // ARCHITECTURE.md records the lesson: "A check that passes because there is no
     // data is not a pass."
     //
     // Fatal when a deployment target is configured, because then there is an

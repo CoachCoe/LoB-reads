@@ -306,8 +306,7 @@ name.
 It does **not** remove the bloat — deleting from `works_new` leaves the dead
 tuples in `works_new`, and renaming a table does not compact it, so the dead
 space simply arrives under the new name. That is tracked as R2b in `PRD.md`, a
-requirement that did not exist until the 2026-09-08 audit added it; see
-`STATUS.md` for the measurements.
+requirement that did not exist until the 2026-09-08 audit added it.
 
 ## Ingest performance, and what the first full run cost
 
@@ -332,15 +331,38 @@ turn:
    `catalog.authors` estimated at 1,269 rows when it held 15,380,614. The
    `work_authors` insert ran over four hours; with `ANALYZE` after each bulk
    insert it took 38 minutes. **38 minutes is the intermediate figure, not the
-   current one** — `STATUS.md` records the per-statement table, and it has
-   `work_authors` at ~3 minutes after the later changes. This paragraph and
+   current one** — see the per-statement table below. This paragraph and
    `DEPLOYMENT.md` both presented 38 minutes as the result, an order of
    magnitude out, with no way for a reader to tell which was current.
-   `STATUS.md` owns those figures.
 4. **Building rows only to delete them.** The slice keeps 10.1% of editions, so
    inserting all 56.6 million and letting `04-slice.sql` remove 51 million
    meant writing ten rows for every one kept. The edition predicates now run
    in normalize as well; 9.05M editions are built instead of 56.6M.
+
+### Where it stands
+
+A full rebuild of the 2026-07 dumps runs normalize in **161m26s**, against
+roughly nine hours before. Per statement, baseline then now:
+
+| statement | before | after |
+|---|---|---|
+| works insert | 13m28s | ~8 min |
+| work_authors | 38 min | ~3 min |
+| editions | 64 min | ~33 min |
+| author_names | 6h20m | ~60 min |
+
+The last of the four changes above was found by that run: an earlier ordering
+rebuilt the secondary indexes too early and `cover_edition_key` doubled to
+thirty minutes as a result.
+
+The rebuild is idempotent — it produces a catalog identical to the one it
+replaces, and `prisma migrate diff` returns an empty migration afterwards. It
+also corrects stale `external_ids` rows, which accumulate because that table
+is otherwise only ever inserted into.
+
+It still costs a `VACUUM FULL`: afterwards `catalog.works` holds 6,870,623
+live tuples against 22,362,429 dead in a 13GB table, of which 3GB is real
+data. Deleting 34M rows creates that bloat wherever it happens. See R2b.
 
 Slice leaves the catalog badly bloated, and nothing reclaims it. Building
 41.5M works to keep 6.9M means `catalog.works` ends the run at 39GB holding
@@ -419,7 +441,7 @@ This diagnosis was wrong and is kept only because it was acted on: the
 paragraph here used to blame `shared_buffers` at 128MB for a 4.2s `Fiction`
 query and conclude that the fix "belongs with the deployment settings rather
 than in a migration". The real cause was a lossy bitmap at the 4MB `work_mem`
-default — see STATUS.md's "what the numbers actually showed" — the page is
+default — see Search, above — the page is
 1.23s after raising it, `shared_buffers` at 3GB leaves it at 1.2s, and the
 setting *does* travel in a migration
 (`20260821120000_work_mem_for_bitmap_scans`), asserted by `deploy:verify`.
@@ -493,6 +515,16 @@ identifier that has been through a spreadsheet is not the identifier.
   `@db.Timestamptz(6)` on new DateTime fields.
 - **Postgres 14 locally, 16 in CI and in the container topology.** Nothing currently depends on
   15+ features, but the versions should be aligned.
+- **Recommendations reach 8,663 works of 6.9M.** The graph is good where it
+  exists — Dune's neighbours are Ender's Game, Hitchhiker's Guide, Foundation,
+  Dune Messiah — but goodbooks-10k only covers ~8.7K books, and everything else
+  shows no rating and no neighbours. A larger corpus is the only fix.
+- **`catalog.enrichment` is empty, so covers are 100% hotlinked today.**
+  Enriching 6.9M works through a rate-limited API is not realistic; the
+  intended shape is enriching popular works and accepting hotlinks for the
+  tail. A scope decision, not a job to run. See PRD R4.
+- **`shared_buffers` is 128 MB.** Worth raising, though measurement showed it
+  is not the search bottleneck it was assumed to be — see Search.
 
 ## Import
 
@@ -509,6 +541,48 @@ books.
 The reported match rate deliberately counts only automatic matches. Folding in
 confirmations would measure the reader's patience rather than the catalog's
 coverage, and would reach 100% for any import someone finished.
+
+## Lessons the code now encodes
+
+Written down because each cost hours and each is invisible in a diff.
+
+1. **Anything the schema can declare, declare there.** Three GIN indexes were
+   hand-written into a migration; the next `prisma migrate diff` generated a
+   `DROP` for them and search ran unindexed for three milestones without a
+   single failure.
+2. **A function of a column cannot use that column's index.** Search compared
+   `unaccent(lower(title))` against a trigram index on `title`. Correct
+   results, sequential scan, no error. `unaccent` is `STABLE`, so an expression
+   index is illegal too — hence the trigger-maintained `*_norm` columns.
+3. **An identifier that has been through a spreadsheet is not the identifier.**
+   goodbooks-10k's `isbn13` is scientific notation, rounded in the twelfth
+   digit; rebuilt values disagreed with `isbn10` on 1,199 of 2,680 rows. Its
+   `isbn10` lost leading zeros. Taking both at face value cost 6,481 of 9,300
+   books.
+4. **Statistics do not update inside a transaction.** Every statement after a
+   bulk insert plans against the table as it was before.
+5. **A check that passes because there is no data is not a pass.** The
+   pre-flight reported all-clear on editions while `stage_editions` was empty.
+6. **Length is not integrity.** A resumed download finished at exactly the
+   advertised byte count and was corrupt.
+7. **A green build is not a working container.** Prisma picks its query engine
+   by probing the host, so the same image that builds and starts cleanly can
+   fail on every query. Anything resolved at runtime by detection has to be
+   exercised at runtime, on the target platform.
+8. **A test script that cannot pass is not a test script.** `test:all` ran the
+   integration project in parallel, and those tests share one database and
+   truncate between tests. It could never have gone green, and nothing noticed
+   because the two suites were always run separately.
+9. **A lossy bitmap is invisible unless you read the plan.** The common-word
+   search was diagnosed twice from timings and buffer counts, and both times the
+   conclusion was "too little cache". `EXPLAIN (ANALYZE, BUFFERS)` named it in
+   one line: `Heap Blocks: lossy=55531`. Latency tells you something is slow;
+   only the plan tells you what.
+10. **"Configured" has to mean "will actually work."** Storage with credentials
+   but no CDN in front of a private container accepted every upload and served
+   403 for every image. `isStorageConfigured()` now requires something that can
+   serve the bytes, so a missing setting disables uploads instead of silently
+   producing broken pictures.
 
 ## Milestones
 
