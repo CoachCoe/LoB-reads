@@ -396,6 +396,63 @@ describe("TEST-7 and TEST-8: the page ceiling and the last page", () => {
     expect(session.currentPage).toBe(900);
     expect(session.finishedAt).toBeNull();
   });
+
+  it("does not treat a zero page count as a page count", async () => {
+    // 985 editions in the slice carry number_of_pages = 0. Snapshotting that
+    // verbatim finished the book on the first update: `pageCount != null` is
+    // true at 0, so `currentPage >= 0` was immediately satisfied.
+    const zeroPaged = await makeWork({ pages: 0 });
+    const session = await startReading(userId, zeroPaged.olKey);
+    expect(session.pageCount).toBeNull();
+
+    expect(
+      (await progressPost(json({ workKey: zeroPaged.olKey, currentPage: 0 }))).status
+    ).toBe(200);
+
+    const after = await prisma.readingSession.findFirstOrThrow({
+      where: { userId, workKey: zeroPaged.olKey },
+    });
+    expect(after.finishedAt).toBeNull();
+    // The shelf move is downstream of the same comparison, so assert it too:
+    // finishing at page zero also moved the book to Read.
+    expect(await shelvesFor(zeroPaged.olKey)).toEqual(["Currently Reading"]);
+  });
+
+  it("does not treat an implausible page count as a page count", async () => {
+    // One edition in the slice is at exactly 2147483647 and 1,139 are above
+    // 20,000. A progress bar against INT_MAX is not a progress bar, and the
+    // upper-bound guard would reject every page a reader could actually reach.
+    const absurd = await makeWork({ pages: 2_147_483_647 });
+    const session = await startReading(userId, absurd.olKey);
+    expect(session.pageCount).toBeNull();
+
+    expect(
+      (await progressPost(json({ workKey: absurd.olKey, currentPage: 412 }))).status
+    ).toBe(200);
+
+    const after = await prisma.readingSession.findFirstOrThrow({
+      where: { userId, workKey: absurd.olKey },
+    });
+    expect(after.currentPage).toBe(412);
+    expect(after.finishedAt).toBeNull();
+  });
+
+  it("still finishes a book whose page count is real", async () => {
+    // The guard above must not have turned the finish path off entirely.
+    const real = await makeWork({ pages: 250 });
+    const session = await startReading(userId, real.olKey);
+    expect(session.pageCount).toBe(250);
+
+    expect(
+      (await progressPost(json({ workKey: real.olKey, currentPage: 250 }))).status
+    ).toBe(200);
+
+    const after = await prisma.readingSession.findFirstOrThrow({
+      where: { userId, workKey: real.olKey },
+    });
+    expect(after.finishedAt).not.toBeNull();
+    expect(await shelvesFor(real.olKey)).toEqual(["Read"]);
+  });
 });
 
 /**

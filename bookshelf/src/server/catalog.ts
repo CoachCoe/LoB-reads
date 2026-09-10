@@ -504,14 +504,14 @@ async function tsqueryIsEmpty(query: string): Promise<boolean> {
  * cancellation and Prisma surfaces that as a thrown error, so without it a slow
  * fuzzy search is a 500 on /search rather than an empty result.
  */
-export async function runSearchArmWithinBudget(
+export async function runSearchArmWithinBudget<T = WorkSearchResult>(
   sql: Prisma.Sql,
   budgetMs: number = FUZZY_TIMEOUT_MS
-): Promise<WorkSearchResult[]> {
+): Promise<T[]> {
   try {
     return await prisma.$transaction(async (tx) => {
       await tx.$executeRawUnsafe(`SET LOCAL statement_timeout = ${budgetMs}`);
-      return tx.$queryRaw<WorkSearchResult[]>(sql);
+      return tx.$queryRaw<T[]>(sql);
     });
   } catch (error) {
     if (isStatementTimeout(error)) return [];
