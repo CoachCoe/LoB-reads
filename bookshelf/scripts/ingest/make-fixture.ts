@@ -182,9 +182,7 @@ const editions: string[] = [
   }),
 ];
 
-// ---------------------------------------------------------------------------
 // Scaled fixture: the twenty known titles, their distractors, and filler
-// ---------------------------------------------------------------------------
 
 const scaleIndex = process.argv.indexOf("--scale");
 const scale = scaleIndex !== -1 ? Number(process.argv[scaleIndex + 1]) : 0;

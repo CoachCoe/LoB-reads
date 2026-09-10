@@ -79,8 +79,6 @@ async function checkDatabase(url: string, label: string) {
 }
 
 async function main() {
-  // --- configuration -------------------------------------------------------
-
   const direct = process.env.DIRECT_URL;
   const pooled = process.env.DATABASE_URL;
   const baseUrl = process.env.BASE_URL?.replace(/\/$/, "");
@@ -181,8 +179,6 @@ async function main() {
       hint: "set CDN_URL — a private container with no CDN accepts uploads and then returns 403 for every image",
     }
   );
-
-  // --- database ------------------------------------------------------------
 
   const client = await checkDatabase(direct, "direct connection");
   if (!client) return;
@@ -394,8 +390,6 @@ async function main() {
 
   await client.end();
 
-  // --- the running app -----------------------------------------------------
-
   if (!baseUrl) {
     // A warning, not a pass. This was `ok: true`, so the fourteen checks below
     // — both probes, the three CSP assertions, HSTS, and one timed query per
@@ -406,7 +400,7 @@ async function main() {
     // per-arm timing here, and PRD R5 says this gate "exits non-zero, so it
     // gates a release rather than being a checklist someone reads."
     //
-    // STATUS.md records the lesson: "A check that passes because there is no
+    // ARCHITECTURE.md records the lesson: "A check that passes because there is no
     // data is not a pass."
     //
     // Fatal when a deployment target is configured, because then there is an

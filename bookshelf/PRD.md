@@ -1,6 +1,6 @@
 # PRD — Life on Books
 
-What to build next, and why. Deliberately short. `STATUS.md` has the evidence
+What to build next, and why. Deliberately short. `ARCHITECTURE.md` has the evidence
 for every claim of fact here.
 
 > **Open input needed.** Bhavia's requirements are not recorded anywhere in this
@@ -38,12 +38,12 @@ is table stakes that has to be good enough not to get in the way.
 Six milestones are built: ingest, search, shelves on `work_key`, an enrichment
 worker, the social layer, and Goodreads import with a review queue. A 6.9
 million-work catalog is loaded, 11 GB, with 5.5M ratings behind
-recommendations. The test count lives in `STATUS.md`, which is where the
-evidence for every claim of fact here is meant to live — this line carried its
-own number and drifted to 627 while STATUS said 665 and the suite ran 710.
+recommendations. The test count is deliberately absent: it belongs to the
+suite, which prints it. This line used to carry its own copy, and that copy
+drifted to 627 while a second document said 665 and the suite actually ran 710.
 
 The gaps are not features that were forgotten; they are the consequences of
-running at real scale for the first time. See `STATUS.md`.
+running at real scale for the first time. See `ARCHITECTURE.md`.
 
 ---
 
@@ -169,7 +169,7 @@ are acceptable — and the fallback ordering is how that was spent.*
 ### P1 — the product works but under-delivers
 
 **R2b. Never insert the works the slice discards.**
-Cited by `ARCHITECTURE.md`, `STATUS.md` and `DEPLOYMENT.md` as "tracked as R2b
+Cited by `ARCHITECTURE.md` and `DEPLOYMENT.md` as "tracked as R2b
 in PRD.md", and until the 2026-09-08 audit it was tracked nowhere — this file
 has no R2 and had no R2b, so three documents deferred the item to a requirement
 that did not exist.
@@ -177,7 +177,7 @@ that did not exist.
 The ingest stages every work and then deletes the ones outside the slice, so the
 table carries the dead rows until a `VACUUM FULL` reclaims them. The measured
 figures differ by run and by pipeline stage, which is itself part of the problem:
-`STATUS.md` records 6,870,623 live against 22,362,429 dead in 13 GB,
+`ARCHITECTURE.md` records 6,870,623 live against 22,362,429 dead in 13 GB,
 `ARCHITECTURE.md` records 7.1M live against 37.8M dead in 39 GB, and
 `DEPLOYMENT.md` uses 134 GB before a `VACUUM FULL` to size storage. None says
 which run it describes.
