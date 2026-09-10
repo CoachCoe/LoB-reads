@@ -6,6 +6,8 @@ import {
   findWorkKeysByIsbns,
   findWorkKeyByTitleAuthor,
   workExists,
+  runSearchArmWithinBudget,
+  MIN_FUZZY_LENGTH,
 } from "@/server/catalog";
 import { getUserShelfSummaries, addWorkToShelf } from "@/server/shelves";
 import { createOrUpdateReview } from "@/server/reviews";
@@ -34,6 +36,36 @@ import { canonicalIsbn13 } from "@/lib/sources/isbn";
 
 /** Fuzzy candidates offered per unmatched row. More is a wall, not a choice. */
 const CANDIDATES_PER_ROW = 5;
+
+/**
+ * Ceiling on the time one import may spend finding candidates, across every
+ * row. `FUZZY_TIMEOUT_MS` bounds a single query; this bounds their sum, which
+ * is what the caller actually waits on.
+ *
+ * Overridable by IMPORT_CANDIDATE_BUDGET_MS for the same reason
+ * `SEARCH_FUZZY_TIMEOUT_MS` is: at fixture scale the queries finish in
+ * microseconds, so exhausting a 60-second budget honestly is not something a
+ * test can arrange. Read once at module scope — a per-call read would let a
+ * mid-import change split one file across two budgets.
+ */
+const TOTAL_CANDIDATE_BUDGET_MS = candidateBudgetFromEnv();
+
+function candidateBudgetFromEnv(): number {
+  const DEFAULT_MS = 60_000;
+  const raw = process.env.IMPORT_CANDIDATE_BUDGET_MS;
+  if (raw === undefined) return DEFAULT_MS;
+  const parsed = Number(raw);
+  // Warn and carry on rather than throw: this module is imported by the upload
+  // route, and a throw at module scope there is a 500 on every import with no
+  // clue why. Same call as `fuzzyTimeoutFromEnv` makes, for the same reason.
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    console.warn(
+      `IMPORT_CANDIDATE_BUDGET_MS must be a positive number of milliseconds, got ${JSON.stringify(raw)} — using ${DEFAULT_MS}`
+    );
+    return DEFAULT_MS;
+  }
+  return parsed;
+}
 
 /**
  * Below this trigram score a suggestion is noise. `pg_trgm` defaults to 0.3;
@@ -147,6 +179,8 @@ export async function matchSession(
     (await getUserShelfSummaries(userId)).map((s) => [s.name, s.id])
   );
 
+  const startedAt = Date.now();
+
   for (const row of rows) {
     const isbnMatch = row.isbn13 ? byIsbn.get(row.isbn13) : undefined;
     const workKey =
@@ -174,7 +208,16 @@ export async function matchSession(
     }
 
     // No exact match. Offer suggestions and wait — never guess.
-    const candidates = await findCandidates(row.title, row.author);
+    //
+    // One budget for the whole file, not just per query. At 900 ms each and
+    // MAX_ROWS at 2,000, per-query bounds alone still permit a half-hour
+    // request. Past the budget a row is still queued for review, just without
+    // suggestions — the reader can search for it by hand, which is strictly
+    // better than the upload timing out.
+    const candidates =
+      Date.now() - startedAt < TOTAL_CANDIDATE_BUDGET_MS
+        ? await findCandidates(row.title, row.author)
+        : [];
     await prisma.importRow.update({
       where: { id: row.id },
       data: {
@@ -196,15 +239,25 @@ export async function matchSession(
  * Compares against `title_norm` / `author_names_norm` rather than
  * `lower(unaccent(title))`. The two are equivalent in meaning, but only the
  * former can use the trigram index — see the note in `catalog.ts`.
+ *
+ * Budgeted, and it has to be. This is the same `title_norm % q` predicate
+ * `/search` bounds at 900 ms, whose cost is a function of trigram frequency
+ * and cannot be known before running; here it ran unbounded, once per
+ * unmatched row, synchronously inside the upload request. `MAX_ROWS` bounds
+ * the loop, not the cost.
+ *
+ * Short titles are skipped for the same reason `/search` skips them: below
+ * `MIN_FUZZY_LENGTH` the trigram set is too common to be selective, so the
+ * query is at its most expensive exactly where its answers are worth least.
  */
 export async function findCandidates(
   title: string,
   author: string
 ): Promise<MatchCandidate[]> {
   const cleanTitle = title.trim();
-  if (cleanTitle.length === 0) return [];
+  if (cleanTitle.length < MIN_FUZZY_LENGTH) return [];
 
-  return prisma.$queryRaw<MatchCandidate[]>`
+  const sql = Prisma.sql`
     WITH q AS (
       SELECT lower(unaccent(${cleanTitle})) AS title_q,
              lower(unaccent(${author.trim()})) AS author_q
@@ -221,7 +274,10 @@ export async function findCandidates(
     WHERE w.title_norm % q.title_q
     ORDER BY score DESC, w.edition_count DESC, w.ol_key
     LIMIT ${CANDIDATES_PER_ROW}
-  `.then((rows) => rows.filter((r) => r.score >= MIN_CANDIDATE_SCORE));
+  `;
+
+  const rows = await runSearchArmWithinBudget<MatchCandidate>(sql);
+  return rows.filter((r) => r.score >= MIN_CANDIDATE_SCORE);
 }
 
 /**
