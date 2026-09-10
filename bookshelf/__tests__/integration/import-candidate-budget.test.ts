@@ -75,11 +75,14 @@ describe("the budget for a whole import", () => {
   });
 
   it("stops looking for candidates once the import's budget is spent", async () => {
-    // 1ms is spent before the first unmatched row is reached, so no lookup
-    // happens at all — which is the behaviour under test. The row must still
-    // be queued for review: a reader can search for it by hand, and that is
-    // strictly better than the upload timing out.
-    process.env.IMPORT_CANDIDATE_BUDGET_MS = "1";
+    // Zero, not 1. A 1ms budget is not deterministic: `Date.now() - startedAt`
+    // is still 0 when the first row is reached on a fast runner, so `0 < 1`
+    // holds and the lookup fires. That version passed locally and failed in
+    // CI. Zero means the comparison can never hold, whatever the machine.
+    //
+    // The row must still be queued for review: a reader can search for it by
+    // hand, and that is strictly better than the upload timing out.
+    process.env.IMPORT_CANDIDATE_BUDGET_MS = "0";
     jest.resetModules();
     const { createImportSession, matchSession, getRowsForReview } =
       await import("@/server/imports");

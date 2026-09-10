@@ -58,9 +58,13 @@ function candidateBudgetFromEnv(): number {
   // Warn and carry on rather than throw: this module is imported by the upload
   // route, and a throw at module scope there is a 500 on every import with no
   // clue why. Same call as `fuzzyTimeoutFromEnv` makes, for the same reason.
-  if (!Number.isFinite(parsed) || parsed <= 0) {
+  // Zero is allowed and means "suggest nothing": every unmatched row is queued
+  // for review without candidates. A test needs it, and it is the only value
+  // that makes the bound deterministic — a 1ms budget is reached inside the
+  // same millisecond on a fast runner, so the first lookup still fires.
+  if (!Number.isFinite(parsed) || parsed < 0) {
     console.warn(
-      `IMPORT_CANDIDATE_BUDGET_MS must be a positive number of milliseconds, got ${JSON.stringify(raw)} — using ${DEFAULT_MS}`
+      `IMPORT_CANDIDATE_BUDGET_MS must be a non-negative number of milliseconds, got ${JSON.stringify(raw)} — using ${DEFAULT_MS}`
     );
     return DEFAULT_MS;
   }
