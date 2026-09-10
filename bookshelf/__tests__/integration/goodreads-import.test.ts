@@ -367,6 +367,30 @@ describe("candidate scoring", () => {
 });
 
 /**
+ * JI-2. This is the same `title_norm % q` predicate `/search` bounds at 900ms
+ * because its cost is a function of trigram frequency and cannot be known
+ * before running. Here it ran unbounded, once per unmatched row, inside the
+ * upload request — `MAX_ROWS` bounds the loop, not the cost.
+ */
+describe("JI-2: candidate lookup is bounded", () => {
+  it("skips a title too short for the trigram index to be selective", async () => {
+    // "Dune" is four characters, one below MIN_FUZZY_LENGTH — and it is a
+    // seeded work with an exact title and the right author, so if the query
+    // ran at all it would return OLIMP001W first. Empty is therefore proof
+    // the lookup was skipped, not proof that nothing matched.
+    expect(await findCandidates(WORKS.dune.title, WORKS.dune.author)).toEqual([]);
+  });
+
+  it("still searches a title long enough to be selective", async () => {
+    // The positive control. Without it, returning [] unconditionally would
+    // satisfy the test above.
+    const candidates = await findCandidates(WORKS.hobbit.title, WORKS.hobbit.author);
+    expect(candidates[0]?.workKey).toBe(WORKS.hobbit.key);
+  });
+
+});
+
+/**
  * A row is only "matched" if something was actually applied.
  *
  * applyRow used to swallow all three of its steps and the caller wrote

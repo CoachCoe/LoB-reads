@@ -104,6 +104,7 @@ Practical consequences:
 
 ## Where the record lives
 
-`docs/audit/*.md` records what each round found, fixed and deferred, including
-the mutations that survived. `bookshelf/AGENTS.md` holds the project
+Audit rounds record what they found, fixed and deferred — including the
+mutations that survived — in the pull request that carried the work, and
+anything still open as a GitHub issue. `bookshelf/AGENTS.md` holds the project
 invariants, each of which has a test and each of which was broken once first.
