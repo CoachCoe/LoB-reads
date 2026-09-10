@@ -126,6 +126,14 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           NEXTAUTH_URL: ${{ secrets.NEXTAUTH_URL }}
           NEXTAUTH_SECRET: ${{ secrets.NEXTAUTH_SECRET }}
+          # Without this, deploy:verify skips its fourteen app-side checks —
+          # both probes, the three CSP assertions, HSTS, and one timed query
+          # per search arm. They have never run in automation. Same value as
+          # NEXTAUTH_URL because both name the app's public origin; if the
+          # container's FQDN is not reachable from the runner before Front
+          # Door exists, the checks belong in a manual post-deploy step and
+          # this line should come back out.
+          BASE_URL: ${{ secrets.NEXTAUTH_URL }}
           CDN_URL: ${{ secrets.CDN_URL }}
           TRUSTED_CLIENT_IP_HEADER: x-azure-clientip
           MAX_REPLICAS: "1"
