@@ -21,6 +21,33 @@ import { DEFAULT_SHELF_NAMES } from "./shelves";
  * from the slice — reading history should not develop holes when that happens.
  */
 
+/**
+ * Largest page count treated as real. Open Library takes `number_of_pages`
+ * from uncurated edition records and the slice carries the consequences: one
+ * edition at exactly `2147483647`, five negative, and 1,139 above this bound.
+ * A ceiling this generous still admits every real book — the longest printed
+ * novels run to a few thousand pages.
+ */
+const MAX_PLAUSIBLE_PAGE_COUNT = 20_000;
+
+/**
+ * A page count the rest of this module can trust, or null.
+ *
+ * Zero is the case that mattered: 985 editions in the slice carry
+ * `number_of_pages = 0`, and a session snapshotted from one finished itself
+ * immediately. `pageCount &&` is falsy at 0 so the upper-bound check was
+ * skipped, while `pageCount != null` is true at 0 so `currentPage >= 0` made
+ * the book Read at page zero, on the first update, before the reader had
+ * read anything. Normalising at the snapshot keeps the two conditions from
+ * having to agree about what 0 means.
+ */
+function plausiblePageCount(pages: number | null | undefined): number | null {
+  if (pages == null) return null;
+  if (!Number.isInteger(pages)) return null;
+  if (pages <= 0 || pages > MAX_PLAUSIBLE_PAGE_COUNT) return null;
+  return pages;
+}
+
 export interface SessionWithWork {
   id: string;
   workKey: string;
@@ -145,7 +172,7 @@ export async function startReading(
       userId,
       workKey,
       editionKey: edition?.olKey ?? null,
-      pageCount: edition?.numberOfPages ?? null,
+      pageCount: plausiblePageCount(edition?.numberOfPages),
       currentPage: 0,
     },
   });
@@ -168,14 +195,14 @@ export async function updateProgress(
     throw new ValidationError("Page number must be zero or greater");
   }
 
-  if (session.pageCount && currentPage > session.pageCount) {
-    throw new ValidationError(
-      `That edition has ${session.pageCount} pages`
-    );
+  const pageCount = plausiblePageCount(session.pageCount);
+
+  if (pageCount != null && currentPage > pageCount) {
+    throw new ValidationError(`That edition has ${pageCount} pages`);
   }
 
   // Reaching the last page finishes the book, which is what a reader means.
-  const done = session.pageCount != null && currentPage >= session.pageCount;
+  const done = pageCount != null && currentPage >= pageCount;
 
   const updated = await prisma.readingSession.update({
     where: { id: session.id },
@@ -322,8 +349,8 @@ async function startAndFinish(userId: string, workKey: string, when: Date) {
       userId,
       workKey,
       editionKey: edition?.olKey ?? null,
-      pageCount: edition?.numberOfPages ?? null,
-      currentPage: edition?.numberOfPages ?? 0,
+      pageCount: plausiblePageCount(edition?.numberOfPages),
+      currentPage: plausiblePageCount(edition?.numberOfPages) ?? 0,
       // startedAt takes the same date rather than now: getLatestSessionForWork
       // orders on it, so a 2014 book imported today must not sort ahead of one
       // finished last week.
