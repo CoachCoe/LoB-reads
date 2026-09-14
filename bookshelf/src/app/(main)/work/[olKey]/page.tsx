@@ -20,6 +20,7 @@ import WorkReviewSection from "@/components/reviews/WorkReviewSection";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getUserReviewForWork } from "@/server/reviews";
 import { enqueue } from "@/server/enrichment";
+import { firstPlausiblePageCount } from "@/server/progress";
 
 interface Props {
   params: Promise<{ olKey: string }>;
@@ -92,12 +93,18 @@ export default async function WorkPage({ params }: Props) {
     : null;
 
   // Progress needs a denominator. Editions disagree about page counts, so take
-  // the first that states one from the editions already loaded rather than
-  // spending a query on it. Null is fine — the component then tracks a page
-  // number without a percentage, which is better than refusing to track.
-  const pageCount =
-    work.editions.find((edition) => edition.numberOfPages)?.numberOfPages ??
-    null;
+  // the first that states a plausible one from the editions already loaded
+  // rather than spending a query on it. Null is fine — the component then
+  // tracks a page number without a percentage, which is better than refusing
+  // to track.
+  //
+  // SC-11: filtered through the same guard the server uses. `find` on a truthy
+  // value skips 0 and accepts -5 and 2147483647, and the slice holds one
+  // edition at exactly 2147483647, five negative and 1,139 above the bound.
+  // This value is only reached when the session snapshot is null — precisely
+  // when plausiblePageCount already rejected the same edition — and it lands
+  // in <ProgressBar max> and <Input max>, so the reader saw the denominator.
+  const pageCount = firstPlausiblePageCount(work.editions);
 
   const coverEdition = work.editions.find(
     (e) => e.olKey === work.coverEditionKey

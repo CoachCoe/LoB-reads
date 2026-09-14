@@ -61,10 +61,15 @@ export default function ShelfSection({ shelf }: ShelfSectionProps) {
           <h2 className="text-xl font-bold text-[var(--foreground)]">{shelf.name}</h2>
           <span className="text-sm text-[var(--foreground-secondary)]">({bookCount})</span>
         </div>
-        {/* Was `bookCount > 6`, so a shelf of two books had no route to its
-            own page. FLOW-15: the public shelf page was reachable from almost
-            nowhere. */}
-        {bookCount > displayBooks.length && (
+        {/* SC-1. This was `bookCount > 6`, and the replacement was the same
+            condition written differently: `items` is capped at
+            SHELF_PREVIEW_SIZE and `displayBooks` is its first six, so
+            `displayBooks.length` IS `min(bookCount, 6)` and the comparison
+            reduced to `bookCount > 6` again. A shelf of two books still had no
+            route to its own page -- the exact defect FLOW-15 recorded as
+            fixed. The link is unconditional now, which is the only form that
+            cannot regress into an arithmetic identity. */}
+        {bookCount > 0 && (
           <Link
             href={`/shelf/${shelf.id}`}
             className="text-sm text-[var(--color-primary-text)] hover:underline flex items-center gap-1"
