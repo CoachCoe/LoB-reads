@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -13,6 +14,16 @@ interface Props {
 }
 
 const PAGE_SIZE = 100;
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { shelfId } = await params;
+  const shelf = await getShelfById(shelfId, { limit: 1, offset: 0 });
+  if (!shelf) return { title: "Shelf" };
+  return {
+    title: `${shelf.name} · ${shelf.user.name ?? "a reader"}`,
+    description: `Books on ${shelf.user.name ?? "a reader"}'s ${shelf.name} shelf.`,
+  };
+}
 
 // Shelves are public, so this page renders for signed-out visitors too.
 export default async function ShelfPage({ params, searchParams }: Props) {

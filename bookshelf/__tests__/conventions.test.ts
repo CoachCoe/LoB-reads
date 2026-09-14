@@ -322,6 +322,12 @@ describe("client calls resolve to routes that exist", () => {
     expect(clientCalls().length).toBeGreaterThan(10);
   });
 
+  const METADATA_ROUTES = [
+    "src/app/robots.ts",
+    "src/app/sitemap.ts",
+    "src/app/manifest.ts",
+  ];
+
   /**
    * Every `/api/...` literal in the app, not only those written inline in a
    * fetch call — a component may build its URLs in a lookup table, and those
@@ -332,6 +338,11 @@ describe("client calls resolve to routes that exist", () => {
 
     for (const file of walk("src", (f) => /\.tsx?$/.test(f))) {
       if (file.startsWith(API_DIR)) continue; // the routes themselves
+      // Next's metadata route conventions. These run on the server and emit
+      // text; an "/api/" in robots.ts is a crawl-disallow PREFIX, not a URL
+      // anything fetches, so requiring it to resolve to a route handler is a
+      // category error. Named explicitly so adding one is a visible choice.
+      if (METADATA_ROUTES.some((name) => file.endsWith(name))) continue;
       for (const match of withoutComments(read(file)).matchAll(
         /[`"'](\/api\/[^`"'\s]*)[`"']/g
       )) {
@@ -806,19 +817,20 @@ describe("SQL compares against normalised columns", () => {
     const found: string[] = [];
     for (const match of sql.matchAll(NORMALISING)) {
       const open = match.index! + match[0].length - 1;
-      let inner = argumentAt(sql, open);
-      if (inner === null) continue;
+      const outer = argumentAt(sql, open);
+      if (outer === null) continue;
 
       // Peel nested normalising calls: unaccent(lower(title)) -> title.
+      let inner: string = outer;
       for (let depth = 0; depth < 5; depth++) {
-        const nested = inner!
+        const nested: RegExpMatchArray | null = inner
           .trim()
           .match(/^(?:lower|upper|unaccent|btrim|trim)\s*\(([\s\S]*)\)$/i);
         if (!nested) break;
         inner = nested[1];
       }
 
-      const argument = inner!.trim();
+      const argument = inner.trim();
       // A template placeholder is the correct shape: normalise the INPUT.
       if (argument.includes("${") || argument.includes("$")) continue;
       if (BARE_COLUMN.test(argument)) found.push(`${match[0]}${argument})`);

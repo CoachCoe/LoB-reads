@@ -10,6 +10,13 @@ import {
 import { lastPageFor, resolvePage } from "@/lib/pagination";
 import WorkCard from "@/components/catalog/WorkCard";
 import SearchForm from "./SearchForm";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Discover books",
+  description: "Search 6.9 million works from the Open Library catalog.",
+};
+
 
 interface Props {
   searchParams: Promise<{ q?: string; subject?: string; page?: string }>;

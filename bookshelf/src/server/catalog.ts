@@ -1189,3 +1189,24 @@ export async function getSimilarWorks(
     LIMIT ${limit}
   `;
 }
+
+/**
+ * Work keys for the sitemap, most-published first.
+ *
+ * Deliberately not `getPopularWorks`: that builds a whole `WorkSearchResult`
+ * with a join to `catalog.editions` for the cover, and a sitemap needs one
+ * column. Ordered by `edition_count` because that is the index the catalog
+ * already carries (`works_edition_count_ol_key_idx`), so this is an ordered
+ * index walk rather than a sort of 6.9M rows.
+ *
+ * Bounded, and the bound is the point — see `src/app/sitemap.ts`.
+ */
+export async function getSitemapWorkKeys(limit: number): Promise<string[]> {
+  const rows = await prisma.$queryRaw<{ olKey: string }[]>`
+    SELECT w.ol_key AS "olKey"
+    FROM catalog.works w
+    ORDER BY w.edition_count DESC, w.ol_key
+    LIMIT ${limit}
+  `;
+  return rows.map((row) => row.olKey);
+}

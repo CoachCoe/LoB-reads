@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { getUserProfile, isFollowing } from "@/server/users";
 import { getUserReviews } from "@/server/reviews";
@@ -13,6 +14,16 @@ import { BookOpen, Users, Star } from "lucide-react";
 
 interface Props {
   params: Promise<{ userId: string }>;
+}
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { userId } = await params;
+  const profile = await getUserProfile(userId);
+  if (!profile) return { title: "Reader" };
+  return {
+    title: profile.name ?? "A reader",
+    description: `${profile.name ?? "A reader"}'s shelves, ratings and reviews on Life on Books.`,
+  };
 }
 
 export default async function UserProfilePage({ params }: Props) {

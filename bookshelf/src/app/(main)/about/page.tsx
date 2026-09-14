@@ -15,6 +15,12 @@ import {
   Rss,
   BookMarked,
 } from "lucide-react";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "About",
+  description: "What Life on Books is, and why it is built around place.",
+};
 
 const features = [
   {

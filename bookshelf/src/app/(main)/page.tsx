@@ -6,7 +6,6 @@ import { getRecentReviews } from "@/server/reviews";
 import WorkCard from "@/components/catalog/WorkCard";
 import CurrentlyReadingCard from "@/components/catalog/CurrentlyReadingCard";
 import ReviewCard from "@/components/reviews/ReviewCard";
-
 export default async function HomePage() {
   const user = await getCurrentUser();
 

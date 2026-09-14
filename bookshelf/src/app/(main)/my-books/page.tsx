@@ -6,6 +6,13 @@ import ShelfSection from "./ShelfSection";
 import CustomShelves from "./CustomShelves";
 import Card, { CardContent } from "@/components/ui/Card";
 import { BookOpen, BookMarked, Trophy } from "lucide-react";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "My books",
+  robots: { index: false, follow: false },
+};
+
 
 export default async function MyBooksPage() {
   const user = await requireUser("/my-books");

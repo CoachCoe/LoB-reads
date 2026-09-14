@@ -11,10 +11,46 @@ const roboto = Roboto({
   variable: "--font-roboto",
 });
 
+/**
+ * The app's own public origin, for absolute URLs in metadata.
+ *
+ * `metadataBase` is what turns a relative openGraph image into the absolute URL
+ * a link unfurler needs; without it Next warns and emits a localhost URL, which
+ * is why every link shared from this product rendered as a bare URL. Reusing
+ * NEXTAUTH_URL rather than adding a variable: both name the same thing, and
+ * deploy:verify already treats them as one (BASE_URL: ${{ secrets.NEXTAUTH_URL }}).
+ */
+export const SITE_ORIGIN = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+
 export const metadata: Metadata = {
-  title: "Life on Books - Track Your Reading Journey",
+  metadataBase: new URL(SITE_ORIGIN),
+  title: {
+    // Per-page titles say what the page is; the suffix says where you are.
+    // Twelve of fifteen pages used to inherit one string, so eight open tabs
+    // were indistinguishable.
+    default: "Life on Books — every book you've read, and everywhere it took you",
+    template: "%s · Life on Books",
+  },
   description:
-    "A community for book lovers to track reading, write reviews, and discover new books.",
+    "A reading tracker built around place. Bring your Goodreads library, then watch your reading fill in the map.",
+  applicationName: "Life on Books",
+  openGraph: {
+    type: "website",
+    siteName: "Life on Books",
+    title: "Life on Books",
+    description:
+      "A reading tracker built around place. Bring your Goodreads library, then watch your reading fill in the map.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Life on Books",
+    description:
+      "A reading tracker built around place. Bring your Goodreads library, then watch your reading fill in the map.",
+  },
+  // The catalog is Open Library's and rebuilt monthly; the reader's own pages
+  // are theirs. Neither is a claim worth making in a meta tag, but the crawl
+  // policy in robots.ts is, and this is the pair it works with.
+  robots: { index: true, follow: true },
 };
 
 /**
