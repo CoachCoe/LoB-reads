@@ -569,8 +569,6 @@ describe("gold is never a text colour", () => {
     "src/components/catalog/WorkLocationsSection.tsx",
     "src/components/locations/LocationsPanel.tsx",
     "src/components/import/ImportReviewList.tsx",
-    // The filled star itself. `text-` sets the SVG stroke beside `fill-`.
-    "src/components/ui/StarRating.tsx",
   ];
 
   it("finds the stylesheet tokens it depends on", () => {
