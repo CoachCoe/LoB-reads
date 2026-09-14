@@ -69,10 +69,12 @@ const QUERIES: BenchQuery[] = [
   // Empty tsquery: every word a stopword. Was 19,189ms.
   //
   // No floor, and that is a finding rather than a decision: both of these
-  // currently cost the fuzzy budget and return NOTHING, because the exact-title
-  // arm needs 1.7-2.3s on the real catalog and is cancelled at 700ms. Six works
-  // are titled exactly "the". Whether that is acceptable is OQ-2 in
-  // docs/audit/2026-09-08-findings.md; asserting a floor here would decide it.
+  // currently cost the exact-title budget and return NOTHING, because that arm
+  // needs 1.7-2.3s on the real catalog and is cancelled at
+  // EXACT_TITLE_TIMEOUT_MS, which is 300ms. (This said 700ms, which was the old
+  // shared fuzzy budget and was never the exact-title one.) Six works are
+  // titled exactly "the". Whether that is acceptable is an open product
+  // question tracked as an issue; asserting a floor here would decide it.
   { q: "the", minRows: 0 },
   { q: "of the", minRows: 0 },
   // No match anywhere; the floor.

@@ -355,8 +355,9 @@ export function searchWorksExactTitleSql(
  * The real fix is to stop fetching 76,457 heap rows — a partial GIN index over
  * popular works (considered and declined below), more `shared_buffers`, or a
  * different match strategy. All three are cost decisions rather than an
- * audit's call, and they are recorded with these numbers in
- * docs/audit/2026-09-08-findings.md.
+ * audit's call, and they are recorded with these numbers as an issue on this
+ * repository. (The docs/audit tree they used to point at was removed under the
+ * working-documents rule; the numbers above are the whole of what it said.)
  *
  * What did change is that the gap is now visible: bench:search gates on a
  * minimum row count per query as well as the clock, so this query failing to
@@ -457,8 +458,8 @@ function fuzzyTimeoutFromEnv(): number {
  * The root-cause fix for the stopword case is a btree on `title_norm`, which
  * would make it an index lookup and return the six works actually titled "the".
  * That is a migration and an index over 6.9M rows rebuilt monthly, so it is a
- * cost decision rather than an audit's call — recorded as OQ-2 with
- * measurements in docs/audit/2026-09-08-findings.md.
+ * cost decision rather than an audit's call — recorded as an open question on
+ * this repository's issues, with these measurements.
  */
 export const EXACT_TITLE_TIMEOUT_MS = 300;
 

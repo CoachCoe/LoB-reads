@@ -93,7 +93,7 @@ const features = [
     icon: Globe,
     title: "Fictional Worlds",
     description:
-      "Explore fantasy and sci-fi universes with dedicated fictional world pages. Upload custom maps for worlds like Middle-earth, Westeros, or the Cosmere.",
+      "Explore fantasy and sci-fi universes from a panel on the map. Upload custom maps for worlds like Middle-earth, Westeros, or the Cosmere.",
   },
   {
     icon: FileUp,

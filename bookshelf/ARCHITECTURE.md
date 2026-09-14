@@ -230,8 +230,8 @@ than hotlinked — and **not wired up**. Every cover is hotlinked today: all
 8,885,863 editions carry a `cover_id`, `catalog.enrichment` is empty, and
 `coverUrl`'s `storedUrl` argument has no caller, so `enrich:covers` stores
 objects nothing reads. The milestone table at the end of this file says as much;
-this section said the opposite, in a heading, which is the one thing STATUS and
-ARCHITECTURE are not for. See PRD R4.
+this section said the opposite, in a heading, which is the one thing the
+milestone table at the end of this file is not for. See PRD R4.
 
 The two traps below are real and were verified live; they apply to the
 hotlinked path as it stands:
@@ -405,8 +405,22 @@ moment the catalog held 6.9 million works. All measured, all on the search page.
 | `countWorkMatches` ("Fiction") | 5,481 ms | 49 ms (ceiling) |
 | search page, "dune" | 3.6 s | 0.17 s |
 | search page, "Fiction" | 110 s | 6.7 s |
-| query, "Fiction" (R1) | 1,065 ms | 31 ms (arms split) |
-| query, "the" (R1) | 19,189 ms | 1 ms (arms split) |
+| query, "Fiction" (R1) | 1,065 ms | 43 ms (arms split) |
+| query, "the" (R1) | 19,189 ms | ~380 ms, **and 0 results** |
+
+Two rows in that table were wrong until the 2026-09-13 audit, and both were
+this file disagreeing with PRD R1 about a figure this file owns.
+
+`"the"` was published as **1 ms**. That is the full-text arm measured in
+isolation, and a stopword-only query never reaches it: the tsquery is empty, so
+the *exact-title* arm answers, and on the real catalog that arm needs 1.8-2.1 s
+and is abandoned at `EXACT_TITLE_TIMEOUT_MS` (300 ms). The honest figure is the
+page's ~380 ms returning nothing. PRD R1 corrected its own copy on 2026-09-08
+and this one was missed, which is the drift the owner table exists to stop.
+
+`"Fiction"` read 31 ms here and 43 ms in PRD R1, from one measurement. 43 ms is
+the query; 31 ms appears to have come from `DEPLOYMENT.md`'s page timing, which
+is a different quantity. This file owns the query figure, so it carries 43 ms.
 
 Two of them were the same mistake in different clothes: a query that aggregates
 or sorts the whole table to produce a handful of rows. `getCatalogSubjects`
