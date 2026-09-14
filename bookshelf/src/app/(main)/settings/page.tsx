@@ -2,6 +2,13 @@ import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth/session";
 import { getOwnProfile } from "@/server/users";
 import SettingsForm from "./SettingsForm";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Settings",
+  robots: { index: false, follow: false },
+};
+
 
 export default async function SettingsPage() {
   const sessionUser = await requireUser("/settings");

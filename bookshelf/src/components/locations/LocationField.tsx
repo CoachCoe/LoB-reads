@@ -34,4 +34,4 @@ export default function LocationField({
 
 /** The shared input styling, so a new field cannot drift from the others. */
 export const locationInputClass =
-  "w-full rounded-lg border border-[var(--input-border)] bg-[var(--input-bg)] px-3 py-2 text-[var(--foreground)] focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[#D4A017]";
+  "w-full rounded-lg border border-[var(--input-border)] bg-[var(--input-bg)] px-3 py-2 text-[var(--foreground)] focus:border-transparent focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]";

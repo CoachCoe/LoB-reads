@@ -3,6 +3,13 @@ import Link from "next/link";
 import Image from "next/image";
 import Card, { CardContent, CardHeader } from "@/components/ui/Card";
 import LoginForm from "./LoginForm";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Sign in",
+  robots: { index: false, follow: false },
+};
+
 
 export default function LoginPage() {
   return (

@@ -32,11 +32,6 @@ const nextConfig: NextConfig = {
       },
       {
         protocol: "https",
-        hostname: "archive.org",
-        pathname: "/**",
-      },
-      {
-        protocol: "https",
         hostname: "api.dicebear.com",
         pathname: "/**",
       },
@@ -99,7 +94,7 @@ const nextConfig: NextConfig = {
                 process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""
               }`,
               "style-src 'self' 'unsafe-inline'",
-              `img-src 'self' data: blob: https://covers.openlibrary.org https://archive.org https://api.dicebear.com https://*.tile.openstreetmap.org${cdnOrigin ? ` ${cdnOrigin}` : ""}`,
+              `img-src 'self' data: blob: https://covers.openlibrary.org https://api.dicebear.com https://*.tile.openstreetmap.org${cdnOrigin ? ` ${cdnOrigin}` : ""}`,
               "font-src 'self'",
               `connect-src 'self' https://openlibrary.org${cdnOrigin ? ` ${cdnOrigin}` : ""}`,
               "object-src 'none'",

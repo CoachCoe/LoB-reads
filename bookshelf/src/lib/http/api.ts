@@ -196,3 +196,26 @@ export function payloadTooLarge(message: string): NextResponse {
 export function unauthorized(): NextResponse {
   return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 }
+
+/**
+ * The 429, in the module that calls itself the single place where a thrown
+ * error becomes a response.
+ *
+ * It was hand-built at eleven call sites, nine of them the same object literal
+ * and two spelled differently — which is exactly the drift `unauthorized()`
+ * exists to prevent one status code up. The `Retry-After` header is the part
+ * worth centralising: it is the only thing telling a client when to come back,
+ * and a route that forgets it is indistinguishable from one that sets it.
+ */
+export function tooManyRequests(
+  result: { retryAfterSeconds: number },
+  message: string
+): NextResponse {
+  return NextResponse.json(
+    { error: message },
+    {
+      status: 429,
+      headers: { "Retry-After": String(result.retryAfterSeconds) },
+    }
+  );
+}

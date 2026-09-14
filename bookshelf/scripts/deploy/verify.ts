@@ -391,12 +391,19 @@ async function main() {
   await client.end();
 
   if (!baseUrl) {
-    // A warning, not a pass. This was `ok: true`, so the fourteen checks below
-    // — both probes, the three CSP assertions, HSTS, and one timed query per
-    // search arm — were skipped AND counted toward the "N/N passed" line. That
-    // is how a run with fourteen inert checks printed as fully green, and it is
-    // the state every automated invocation is in: neither ci.yml nor
-    // deploy.yml sets BASE_URL. PRD R1 closes its "Done when" by citing the
+    // A warning, not a pass. This was `ok: true`, so the seventeen checks below
+    // — both probes, the three CSP assertions, HSTS, and up to three per search
+    // query — were skipped AND counted toward the "N/N passed" line. That is
+    // how a run with seventeen inert checks printed as fully green.
+    //
+    // `deploy.yml` DOES set BASE_URL now (it was added in 09fce36), so the
+    // claim that neither workflow does is no longer true. They still have never
+    // run in automation, for a different reason: the whole Release step is
+    // gated on `steps.config.outputs.configured == 'true'` and no Azure
+    // subscription exists yet. Measured locally against a running app, the gate
+    // goes from 28 checks to 44 when BASE_URL is set.
+    //
+    // PRD R1 closes its "Done when" by citing the
     // per-arm timing here, and PRD R5 says this gate "exits non-zero, so it
     // gates a release rather than being a checklist someone reads."
     //
@@ -411,8 +418,8 @@ async function main() {
     check("the running app was checked", false, "skipped — BASE_URL is unset", {
       fatal: deploying,
       hint: deploying
-        ? "a deployment target is configured, so there is an app to check: set BASE_URL to its public URL. Fourteen checks are inert without it, including both probes and the per-arm search timings."
-        : "set BASE_URL to check a running app; fourteen checks are inert without it.",
+        ? "a deployment target is configured, so there is an app to check: set BASE_URL to its public URL. Seventeen checks are inert without it, including both probes and the per-arm search timings."
+        : "set BASE_URL to check a running app; seventeen checks are inert without it.",
     });
   } else {
     const get = async (p: string) => {
@@ -490,10 +497,12 @@ async function main() {
     // passed.
     //
     // "the" is deliberately not required to answer: on the real catalog the
-    // exact-title arm needs 1.7-2.3s and is cancelled at 700ms, so it returns
-    // nothing today. Whether that is acceptable is an open product question
-    // (OQ-2 in docs/audit/2026-09-08-findings.md) and this gate must not
-    // decide it. It is still timed, because the cost is real either way.
+    // exact-title arm needs 1.7-2.3s and is cancelled at EXACT_TITLE_TIMEOUT_MS,
+    // which is 300ms, so it returns nothing today. (This comment said 700ms,
+    // which was the old SHARED fuzzy budget and was never the exact-title one.)
+    // Whether that is acceptable is an open product question, tracked as an
+    // issue on this repository, and this gate must not decide it. It is still
+    // timed, because the cost is real either way.
     const searchChecks = [
       { q: "dune", mustAnswer: true },
       { q: "fiction", mustAnswer: true },

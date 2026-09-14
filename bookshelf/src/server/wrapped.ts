@@ -48,6 +48,46 @@ export interface WrappedStats {
   favoriteAuthor: string | null;
 }
 
+/**
+ * Pages credited for a set of finished sessions.
+ *
+ * COALESCE, not pageCount alone: a finished session on an edition that states
+ * no page count contributes 0 otherwise, even though finishReading sets
+ * currentPage from whatever the reader logged. progress.ts states the same rule
+ * in SQL — `SUM(COALESCE(page_count, "currentPage"))` — and its comment says
+ * "/wrapped had the same defect and is fixed alongside".
+ *
+ * It was fixed in getWrappedStats and not in getWrappedProjections, which used
+ * `pageCount || 0`. So the two pages reported DIFFERENT totals for the same
+ * reader, and the projections copy fed pagesPerDay and projectedPagesEndOfYear,
+ * compounding it. One function now, so a third caller cannot disagree either.
+ * DC-18.
+ */
+function pagesFrom(
+  sessions: { pageCount: number | null; currentPage: number | null }[]
+): number {
+  return sessions.reduce(
+    (sum, session) => sum + (session.pageCount ?? session.currentPage ?? 0),
+    0
+  );
+}
+
+/**
+ * Finished-book counts per calendar month, always twelve entries.
+ *
+ * Both wrapped surfaces render this and both built it with the same fourteen
+ * lines, character for character. DC-19.
+ */
+function readingByMonthFrom(
+  sessions: { finishedAt: Date | null }[]
+): { month: number; count: number }[] {
+  const counts = Array.from({ length: 12 }, () => 0);
+  for (const session of sessions) {
+    if (session.finishedAt) counts[session.finishedAt.getMonth()]++;
+  }
+  return counts.map((count, month) => ({ month, count }));
+}
+
 export async function getWrappedStats(userId: string, year: number = new Date().getFullYear()): Promise<WrappedStats> {
   // Half-open, and it has to be. The bound used to be built as
   // `new Date(year, 11, 31, 23, 59, 59)` — millisecond .000 — and compared
@@ -85,14 +125,7 @@ export async function getWrappedStats(userId: string, year: number = new Date().
 
   // Calculate basic stats
   const booksRead = finishedBooks.length;
-  // COALESCE, not pageCount alone: a finished session on an edition that
-  // states no page count contributed 0, even though finishReading sets
-  // currentPage from whatever the reader logged. Both this and /my-books read
-  // low for anyone whose editions lack a stated length.
-  const pagesRead = finishedBooks.reduce(
-    (sum, p) => sum + (p.pageCount ?? p.currentPage ?? 0),
-    0
-  );
+  const pagesRead = pagesFrom(finishedBooks);
   const reviewsWritten = reviews.length;
   const averageRating = reviews.length > 0
     ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
@@ -167,21 +200,7 @@ export async function getWrappedStats(userId: string, year: number = new Date().
       }
     : null;
 
-  // Reading by month
-  const monthCounts: Record<number, number> = {};
-  for (let i = 0; i < 12; i++) {
-    monthCounts[i] = 0;
-  }
-  finishedBooks.forEach((p) => {
-    if (p.finishedAt) {
-      const month = p.finishedAt.getMonth();
-      monthCounts[month]++;
-    }
-  });
-  const readingByMonth = Object.entries(monthCounts).map(([month, count]) => ({
-    month: parseInt(month),
-    count,
-  }));
+  const readingByMonth = readingByMonthFrom(finishedBooks);
 
   // Top rated books (user's own ratings)
   const topRatedBooks = reviews
@@ -316,7 +335,7 @@ export async function getWrappedProjections(userId: string): Promise<WrappedProj
 
   // Calculate YTD stats
   const booksReadYTD = finishedBooks.length;
-  const pagesReadYTD = finishedBooks.reduce((sum, p) => sum + (p.pageCount || 0), 0);
+  const pagesReadYTD = pagesFrom(finishedBooks);
   const reviewsWrittenYTD = reviews.length;
 
   // Current pace calculations
@@ -335,21 +354,7 @@ export async function getWrappedProjections(userId: string): Promise<WrappedProj
   const booksNeededPerMonthFor50 = monthsRemaining > 0 ? booksNeededFor50 / monthsRemaining : 0;
   const booksNeededPerMonthFor100 = monthsRemaining > 0 ? booksNeededFor100 / monthsRemaining : 0;
 
-  // Reading by month
-  const monthCounts: Record<number, number> = {};
-  for (let i = 0; i < 12; i++) {
-    monthCounts[i] = 0;
-  }
-  finishedBooks.forEach((p) => {
-    if (p.finishedAt) {
-      const month = p.finishedAt.getMonth();
-      monthCounts[month]++;
-    }
-  });
-  const readingByMonth = Object.entries(monthCounts).map(([month, count]) => ({
-    month: parseInt(month),
-    count,
-  }));
+  const readingByMonth = readingByMonthFrom(finishedBooks);
 
   // Previous year comparison (at same point in year)
   const sameDateLastYear = new Date(year - 1, now.getMonth(), now.getDate());

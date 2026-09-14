@@ -191,7 +191,7 @@ export default function SettingsForm({ user }: SettingsFormProps) {
                 />
                 <div className="space-y-2">
                   {/* Upload Button */}
-                  <label className="flex items-center gap-2 px-4 py-2 bg-[#D4A017] text-[var(--color-primary-contrast)] rounded-full hover:bg-[#B8860B] transition-colors cursor-pointer text-sm font-medium">
+                  <label className="flex items-center gap-2 px-4 py-2 bg-[var(--color-primary)] text-[var(--color-primary-contrast)] rounded-full hover:bg-[var(--color-primary-dark)] transition-colors cursor-pointer text-sm font-medium">
                     <Upload className="h-4 w-4" />
                     {isUploadingAvatar ? "Uploading..." : "Upload Photo"}
                     <input
@@ -247,7 +247,7 @@ export default function SettingsForm({ user }: SettingsFormProps) {
                 Email
               </label>
               <p className="text-gray-500 dark:text-gray-400">{user.email}</p>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+              <p className="text-xs text-[var(--foreground-secondary)] mt-1">
                 Email cannot be changed
               </p>
             </div>
@@ -281,8 +281,8 @@ export default function SettingsForm({ user }: SettingsFormProps) {
           </p>
 
           <div className="space-y-2">
-            <label className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:border-[#D4A017] transition-colors cursor-pointer">
-              <FileUp className="h-5 w-5 text-gray-400 dark:text-gray-500" />
+            <label className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:border-[var(--color-primary)] transition-colors cursor-pointer">
+              <FileUp className="h-5 w-5 text-[var(--foreground-secondary)]" />
               <span className="text-sm text-gray-600 dark:text-gray-400">
                 {isImporting ? "Importing..." : "Choose CSV file"}
               </span>
@@ -300,7 +300,7 @@ export default function SettingsForm({ user }: SettingsFormProps) {
               />
             </label>
 
-            <p className="text-xs text-gray-400 dark:text-gray-500">
+            <p className="text-xs text-[var(--foreground-secondary)]">
               To export from Goodreads: My Books → Import and Export → Export
               Library
             </p>
@@ -330,7 +330,7 @@ export default function SettingsForm({ user }: SettingsFormProps) {
                   </p>
                   <Link
                     href={`/import/${importResult.sessionId}`}
-                    className="inline-block rounded-lg bg-[#D4A017] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[#B8860B]"
+                    className="inline-block rounded-lg bg-[var(--color-primary)] px-4 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-dark)]"
                   >
                     Review {importResult.needsReview}{" "}
                     {importResult.needsReview === 1 ? "book" : "books"}

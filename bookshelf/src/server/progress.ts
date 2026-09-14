@@ -41,11 +41,35 @@ const MAX_PLAUSIBLE_PAGE_COUNT = 20_000;
  * read anything. Normalising at the snapshot keeps the two conditions from
  * having to agree about what 0 means.
  */
-function plausiblePageCount(pages: number | null | undefined): number | null {
+export function plausiblePageCount(
+  pages: number | null | undefined
+): number | null {
   if (pages == null) return null;
   if (!Number.isInteger(pages)) return null;
   if (pages <= 0 || pages > MAX_PLAUSIBLE_PAGE_COUNT) return null;
   return pages;
+}
+
+/**
+ * The first plausible page count among a work's editions, or null.
+ *
+ * Editions disagree, so the work page takes the first that states a length
+ * rather than spending a query. It used to do that with
+ * `editions.find((e) => e.numberOfPages)?.numberOfPages`, which skips 0 and
+ * accepts -5 and 2147483647 — and the slice holds one edition at exactly
+ * 2147483647, five negative, and 1,139 above the bound. That value is only
+ * reached when the session snapshot is null, which is precisely when
+ * plausiblePageCount already rejected the same edition, and it lands in
+ * `<ProgressBar max>` and `<Input max>`. SC-11.
+ */
+export function firstPlausiblePageCount(
+  editions: { numberOfPages?: number | null }[]
+): number | null {
+  for (const edition of editions) {
+    const pages = plausiblePageCount(edition.numberOfPages);
+    if (pages !== null) return pages;
+  }
+  return null;
 }
 
 export interface SessionWithWork {

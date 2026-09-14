@@ -28,14 +28,39 @@ describe("Button component", () => {
     expect(screen.getByRole("button")).toBeDisabled();
   });
 
-  it("applies variant styles correctly", () => {
-    const { rerender } = render(<Button variant="primary">Primary</Button>);
-    let button = screen.getByRole("button");
-    expect(button).toHaveClass("bg-[#D4A017]");
+  /**
+   * TQ-23. This asserted the gold hex as a literal class while contrast.test.ts
+   * pinned the ratio of `--color-primary` — so the test was actively holding
+   * the two apart, and a change to the token could not reach the button. It
+   * asserts the token now, which is what the component uses.
+   *
+   * Three variants also had no test at all, and `success` is byte-identical to
+   * `primary`; both are recorded here rather than left implied.
+   */
+  it("paints the primary variant from the brand token, not a literal", () => {
+    render(<Button variant="primary">Primary</Button>);
+    expect(screen.getByRole("button")).toHaveClass("bg-[var(--color-primary)]");
+  });
 
-    rerender(<Button variant="danger">Danger</Button>);
-    button = screen.getByRole("button");
-    expect(button).toHaveClass("bg-red-600");
+  it("gives a gold fill a dark label, never white", () => {
+    // 2.38:1. A gold button whose own label could not be read — the defect
+    // --color-primary-contrast exists for.
+    render(<Button variant="primary">Primary</Button>);
+    const button = screen.getByRole("button");
+    expect(button).toHaveClass("text-[var(--color-primary-contrast)]");
+    expect(button).not.toHaveClass("text-white");
+  });
+
+  it.each([
+    ["primary", "bg-[var(--color-primary)]"],
+    ["success", "bg-[var(--color-primary)]"],
+    ["outline", "border-[var(--color-primary)]"],
+    ["danger", "bg-red-600"],
+    ["secondary", "bg-gray-100"],
+    ["ghost", "bg-transparent"],
+  ] as const)("applies the %s variant", (variant, expected) => {
+    render(<Button variant={variant}>Label</Button>);
+    expect(screen.getByRole("button")).toHaveClass(expected);
   });
 
   it("applies size styles correctly", () => {

@@ -1,7 +1,15 @@
 /**
  * @jest-environment node
  */
-import { checkLimit, getClientIp, clientIpFromHeaders, __resetRateLimits, refundHit, clientRateLimitKey, clientIdentificationConfigured } from "@/lib/rate-limit";
+import { checkLimit, getClientIp, clientIpFromHeaders, __resetRateLimits, __bucketCount, __MAX_BUCKETS, refundHit, clientRateLimitKey, clientIdentificationConfigured } from "@/lib/rate-limit";
+
+// TQ-9: describes below used to inherit both leaked buckets and frozen time from
+// whichever test ran last. Jest 30 fake timers fake Date, so a stopwatch
+// assertion in an inheriting describe measured 0ms and could not fail.
+afterEach(() => {
+  jest.useRealTimers();
+  __resetRateLimits();
+});
 
 describe("checkLimit", () => {
   beforeEach(() => {
@@ -118,6 +126,11 @@ describe("checkLimit", () => {
 describe("checkLimit bucket accounting", () => {
   const opts = { limit: 5, windowMs: 60_000 };
 
+  beforeEach(() => {
+    __resetRateLimits();
+    jest.useRealTimers();
+  });
+
   it("keeps a client that is still calling blocked through a flood of other keys", () => {
     for (let i = 0; i < opts.limit; i++) {
       expect(checkLimit("victim", opts).allowed).toBe(true);
@@ -136,20 +149,31 @@ describe("checkLimit bucket accounting", () => {
     expect(checkLimit("victim", opts).allowed).toBe(false);
   });
 
-  it("stays cheap per call as the key count grows", () => {
-    const time = (from: number, to: number) => {
-      const started = Date.now();
-      for (let i = from; i < to; i++) checkLimit(`k:${i}`, opts);
-      return Date.now() - started;
-    };
+  it("bounds the tracked key count rather than growing without limit", () => {
+    // The property, not the clock. The old implementation could only delete a
+    // bucket once every one of its timestamps had aged out, so with a one-hour
+    // window nothing was evictable and the map grew monotonically while each
+    // call scanned all of it. Asserting the bound directly gives the same
+    // answer on a loaded runner, which a stopwatch does not.
+    for (let i = 0; i < 40_000; i++) checkLimit(`k:${i}`, opts);
 
-    const early = time(0, 10_000);
-    const late = time(60_000, 70_000);
+    expect(__bucketCount()).toBeLessThanOrEqual(__MAX_BUCKETS);
+  });
 
-    // The old implementation grew from ~10ms to seconds for the same batch
-    // size. Allow generous slack for a loaded machine; the point is that it is
-    // not super-linear.
-    expect(late).toBeLessThan(Math.max(250, early * 8 + 100));
+  it("keeps a key that is still being touched, while evicting idle ones", () => {
+    // The eviction order is least-recently-touched, so the bound above must not
+    // be satisfiable by flushing an actively-limited client. Asserted together
+    // because either alone is passed by a wrong implementation: deleting the
+    // eviction loop satisfies this one, and evicting indiscriminately satisfies
+    // the one above.
+    for (let i = 0; i < __MAX_BUCKETS * 4; i++) {
+      checkLimit(`flood:${i}`, opts);
+      if (i % 500 === 0) checkLimit("stayer", opts);
+    }
+
+    expect(__bucketCount()).toBeLessThanOrEqual(__MAX_BUCKETS);
+    // Still present: its hits are recorded, so it is at the limit, not fresh.
+    expect(checkLimit("stayer", opts).remaining).toBeLessThan(opts.limit - 1);
   });
 });
 
@@ -161,20 +185,39 @@ describe("getClientIp", () => {
    * assertion encoded the bug, so both IP-keyed limits were bypassable by
    * incrementing a header. It now asserts the trusted hop.
    */
+  // Both of these state TRUSTED_PROXY_HOPS explicitly. They used to inherit it
+  // from a default of 1, which SEC-2 changed to 0 — and a test whose premise is
+  // a default silently changes meaning when the default does. The property
+  // under test is unchanged: count from the RIGHT, never the left.
+  const withOneHop = <T,>(run: () => T): T => {
+    const previous = process.env.TRUSTED_PROXY_HOPS;
+    process.env.TRUSTED_PROXY_HOPS = "1";
+    try {
+      return run();
+    } finally {
+      if (previous === undefined) delete process.env.TRUSTED_PROXY_HOPS;
+      else process.env.TRUSTED_PROXY_HOPS = previous;
+    }
+  };
+
   it("takes the address the trusted proxy appended, not the one the client sent", () => {
-    const request = new Request("https://example.com", {
-      headers: { "x-forwarded-for": "203.0.113.5, 70.41.3.18" },
+    withOneHop(() => {
+      const request = new Request("https://example.com", {
+        headers: { "x-forwarded-for": "203.0.113.5, 70.41.3.18" },
+      });
+      expect(getClientIp(request)).toBe("70.41.3.18");
     });
-    expect(getClientIp(request)).toBe("70.41.3.18");
   });
 
   it("cannot be moved by prepending more spoofed hops", () => {
-    const spoofed = new Request("https://example.com", {
-      headers: {
-        "x-forwarded-for": "1.1.1.1, 2.2.2.2, 3.3.3.3, 70.41.3.18",
-      },
+    withOneHop(() => {
+      const spoofed = new Request("https://example.com", {
+        headers: {
+          "x-forwarded-for": "1.1.1.1, 2.2.2.2, 3.3.3.3, 70.41.3.18",
+        },
+      });
+      expect(getClientIp(spoofed)).toBe("70.41.3.18");
     });
-    expect(getClientIp(spoofed)).toBe("70.41.3.18");
   });
 
   it("falls back to x-real-ip", () => {
@@ -245,9 +288,24 @@ describe("clientIpFromHeaders trusted-hop configuration", () => {
     });
   });
 
-  it("falls back to one hop for a nonsense setting", () => {
+  it("falls back to trusting nothing for a nonsense setting", () => {
+    // SEC-2: the fallback used to be one hop, which trusts a header nobody
+    // verified. Failing closed makes a typo a missing limit rather than a
+    // forgeable one.
     withHops("banana", () => {
-      expect(clientIpFromHeaders("203.0.113.5, 70.41.3.18")).toBe("70.41.3.18");
+      expect(clientIpFromHeaders("203.0.113.5, 70.41.3.18")).toBeNull();
+    });
+  });
+
+  it("ignores a forged X-Forwarded-For when nothing is configured", () => {
+    // SEC-2, the default state. Measured against the old default of 1: an
+    // anonymous caller incrementing this header got a fresh bucket per request
+    // and 50 of 50 registrations were admitted against a limit of 5.
+    withHops(undefined, () => {
+      expect(clientIpFromHeaders("ATTACKER")).toBeNull();
+      expect(clientIpFromHeaders("10.0.0.1, 10.0.0.2")).toBeNull();
+      // x-real-ip still works: it is set by the platform, not the caller.
+      expect(clientIpFromHeaders("ATTACKER", "198.51.100.4")).toBe("198.51.100.4");
     });
   });
 });

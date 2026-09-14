@@ -68,7 +68,7 @@ export default function ProjectionsView({ projections, userName }: ProjectionsVi
             <div className="flex items-center justify-between mb-2">
               <span className="text-sm text-[var(--foreground-secondary)]">Year Progress</span>
               <span className="text-sm font-medium text-[var(--foreground)]">
-                Day {projections.daysElapsed} of 365
+                Day {projections.daysElapsed} of {daysInYear}
               </span>
             </div>
             <div className="h-3 bg-[var(--border)] rounded-full overflow-hidden">

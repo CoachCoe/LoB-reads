@@ -95,7 +95,7 @@ export default function Navbar() {
                       href={link.href}
                       className={
                         "accent" in link && link.accent
-                          ? "flex items-center gap-1.5 px-4 py-2 text-[var(--color-primary-text)] hover:bg-[#D4A017]/10 rounded-full transition-all text-sm font-medium"
+                          ? "flex items-center gap-1.5 px-4 py-2 text-[var(--color-primary-text)] hover:bg-[var(--color-primary)]/10 rounded-full transition-all text-sm font-medium"
                           : "flex items-center gap-1.5 px-4 py-2 text-[var(--foreground-secondary)] hover:text-[var(--foreground)] rounded-full hover:bg-[var(--border-light)] transition-all text-sm font-medium"
                       }
                     >
@@ -117,7 +117,7 @@ export default function Navbar() {
                   type="search"
                   name="q"
                   placeholder="Search books, authors..."
-                  className="w-full pl-10 pr-4 py-2 bg-[var(--input-bg)] border border-[var(--input-border)] rounded-full text-[var(--foreground)] placeholder-[var(--foreground-secondary)] focus:outline-none focus:ring-2 focus:ring-[#D4A017] focus:border-transparent transition-all text-sm"
+                  className="w-full pl-10 pr-4 py-2 bg-[var(--input-bg)] border border-[var(--input-border)] rounded-full text-[var(--foreground)] placeholder-[var(--foreground-secondary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)] focus:border-transparent transition-all text-sm"
                 />
               </div>
             </form>
@@ -146,7 +146,7 @@ export default function Navbar() {
                 <div className="relative">
                   <button
                     onClick={() => setIsProfileOpen(!isProfileOpen)}
-                    className="flex items-center gap-2 p-1 rounded-full hover:ring-2 hover:ring-[#D4A017]/20 transition-all"
+                    className="flex items-center gap-2 p-1 rounded-full hover:ring-2 hover:ring-[var(--color-primary)]/20 transition-all"
                   >
                     <Avatar
                       src={session.user.image}
@@ -189,7 +189,7 @@ export default function Navbar() {
                           </Link>
                           <Link
                             href="/wrapped"
-                            className="flex items-center gap-3 px-4 py-2.5 text-[var(--color-primary-text)] hover:bg-[#D4A017]/5 transition-colors"
+                            className="flex items-center gap-3 px-4 py-2.5 text-[var(--color-primary-text)] hover:bg-[var(--color-primary)]/5 transition-colors"
                             onClick={() => setIsProfileOpen(false)}
                           >
                             <Sparkles className="h-4 w-4" />
@@ -259,7 +259,7 @@ export default function Navbar() {
                   type="search"
                   name="q"
                   placeholder="Search books..."
-                  className="w-full pl-10 pr-4 py-2.5 bg-[var(--input-bg)] border border-[var(--input-border)] rounded-full text-[var(--foreground)] placeholder-[var(--foreground-secondary)] focus:outline-none focus:ring-2 focus:ring-[#D4A017]"
+                  className="w-full pl-10 pr-4 py-2.5 bg-[var(--input-bg)] border border-[var(--input-border)] rounded-full text-[var(--foreground)] placeholder-[var(--foreground-secondary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]"
                 />
               </div>
             </form>
@@ -273,7 +273,7 @@ export default function Navbar() {
                       href={link.href}
                       className={
                         "accent" in link && link.accent
-                          ? "flex items-center gap-3 px-4 py-3 text-[var(--color-primary-text)] hover:bg-[#D4A017]/5 rounded-xl transition-all"
+                          ? "flex items-center gap-3 px-4 py-3 text-[var(--color-primary-text)] hover:bg-[var(--color-primary)]/5 rounded-xl transition-all"
                           : "flex items-center gap-3 px-4 py-3 text-[var(--foreground)] hover:bg-[var(--border-light)] rounded-xl transition-all"
                       }
                       onClick={() => setIsMenuOpen(false)}

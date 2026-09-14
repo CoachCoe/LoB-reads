@@ -6,6 +6,13 @@ import ShelfSection from "./ShelfSection";
 import CustomShelves from "./CustomShelves";
 import Card, { CardContent } from "@/components/ui/Card";
 import { BookOpen, BookMarked, Trophy } from "lucide-react";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "My books",
+  robots: { index: false, follow: false },
+};
+
 
 export default async function MyBooksPage() {
   const user = await requireUser("/my-books");
@@ -27,8 +34,8 @@ export default async function MyBooksPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
         <Card>
           <CardContent className="flex items-center gap-4">
-            <div className="p-3 bg-[#D4A017]/10 rounded-lg">
-              <BookOpen className="h-6 w-6 text-[#D4A017]" />
+            <div className="p-3 bg-[var(--color-primary)]/10 rounded-lg">
+              <BookOpen className="h-6 w-6 text-[var(--color-primary)]" />
             </div>
             <div>
               <p className="text-2xl font-bold text-[var(--foreground)]">
@@ -90,7 +97,7 @@ export default async function MyBooksPage() {
           </p>
           <Link
             href="/search"
-            className="inline-flex items-center px-4 py-2 bg-[#D4A017] text-[var(--color-primary-contrast)] rounded-lg hover:bg-[#B8860B]"
+            className="inline-flex items-center px-4 py-2 bg-[var(--color-primary)] text-[var(--color-primary-contrast)] rounded-lg hover:bg-[var(--color-primary-dark)]"
           >
             Discover Books
           </Link>

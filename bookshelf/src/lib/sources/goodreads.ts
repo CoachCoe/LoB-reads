@@ -16,17 +16,6 @@ export interface GoodreadsBook {
   bookshelves: string[];
 }
 
-export interface ImportResult {
-  imported: number;
-  skipped: number;
-  errors: string[];
-  books: {
-    title: string;
-    author: string;
-    status: "imported" | "skipped" | "error";
-    reason?: string;
-  }[];
-}
 
 /**
  * Pull an ISBN out of a Goodreads cell, which arrives as `="0123456789"`.

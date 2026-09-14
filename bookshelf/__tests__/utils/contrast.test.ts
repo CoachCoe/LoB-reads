@@ -1,7 +1,8 @@
 /**
  * @jest-environment node
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 
 /**
  * Colour contrast, computed from the tokens rather than trusted.
@@ -109,6 +110,19 @@ describe("contrast of the colour tokens", () => {
         contrast(token("focus-ring", "light"), token("background", "light"))
       ).toBeGreaterThanOrEqual(3);
     });
+
+    it("link text meets AA on the page and on a card", () => {
+      // UX-33. This colour was on every inline link in the product and was
+      // declared in no token, so it had never been measured. It turns out to
+      // be good — 7.03:1 and 7.34:1 — which is the argument for promoting it
+      // rather than replacing it. Pinned now so it stays that way.
+      expect(
+        contrast(token("color-link", "light"), token("background", "light"))
+      ).toBeGreaterThanOrEqual(AA_TEXT);
+      expect(
+        contrast(token("color-link", "light"), token("card-bg", "light"))
+      ).toBeGreaterThanOrEqual(AA_TEXT);
+    });
   });
 
   describe("dark", () => {
@@ -152,5 +166,68 @@ describe("contrast of the colour tokens", () => {
       // defect fix. What is asserted is that two cues exist and point the right
       // way.
     });
+
+    it("link text meets AA on the page and on a card", () => {
+      expect(
+        contrast(token("color-link", "dark"), token("background", "dark"))
+      ).toBeGreaterThanOrEqual(AA_TEXT);
+      expect(
+        contrast(token("color-link", "dark"), token("card-bg", "dark"))
+      ).toBeGreaterThanOrEqual(AA_TEXT);
+    });
+  });
+});
+
+/**
+ * UX-33. The tokens above are measured; nothing stopped a component ignoring
+ * them. There were 84 raw brand-hex literals across 28 files against 24 files
+ * using a token, so the design system was bypassed more often than it was used
+ * — and one of the colours in play, the teal on every inline link, was in no
+ * token and therefore in none of the assertions above.
+ *
+ * This is the half that makes the measurements bind: a component may not name a
+ * brand colour directly, so a change to a token reaches the whole product.
+ */
+describe("components use the tokens rather than the hex", () => {
+  const BRAND_HEX = /#(?:D4A017|B8860B|E6B800|0B6157|52B7A6|8a6a10|E8B93F)\b/i;
+
+  /**
+   * The OG image runs in the ImageResponse renderer, which has no stylesheet
+   * and therefore no custom properties. Its literals are correct and named as
+   * constants in the file.
+   */
+  const ALLOWED = ["src/app/opengraph-image.tsx"];
+
+  it("names no brand colour directly in a component", () => {
+    const walk = (dir: string): string[] =>
+      readdirSync(dir).flatMap((entry) => {
+        const full = join(dir, entry);
+        return statSync(full).isDirectory() ? walk(full) : [full];
+      });
+
+    const offenders = walk("src")
+      .filter((f) => /\.tsx?$/.test(f))
+      .filter((f) => !ALLOWED.includes(f))
+      .filter((f) => {
+        // Comments explain the ratios and must keep naming the values.
+        const source = readFileSync(f, "utf8")
+          .replace(/\/\*[\s\S]*?\*\//g, "")
+          .replace(/\/\/.*$/gm, "");
+        return BRAND_HEX.test(source);
+      });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("catches a literal, so the check cannot rot into matching nothing", () => {
+    // Assembled rather than written out. Tailwind scans every file in the
+    // project, test files included, and generates a utility for any complete
+    // class-looking string it finds — so spelling the forbidden class here
+    // would emit the very rule this check exists to keep out of the bundle.
+    const gold = "#D4A0" + "17";
+    const teal = "#0B61" + "57";
+    expect(BRAND_HEX.test(`className="bg-[${gold}]"`)).toBe(true);
+    expect(BRAND_HEX.test(`className="text-[${teal}]"`)).toBe(true);
+    expect(BRAND_HEX.test('className="bg-[var(--color-primary)]"')).toBe(false);
   });
 });
