@@ -10,32 +10,35 @@ const BCRYPT_ROUNDS = 10;
 
 export async function POST(request: Request) {
   try {
-    // Two bounds, because neither alone covers the configuration space.
+    // ONE bucket per request, chosen by whether the caller can be identified.
+    // Never both — that was the first version of this and it was a site-wide
+    // kill switch: the shared bucket was spent even when the per-client bound
+    // had already refused the request, so one attacker's 200 refused attempts
+    // locked out every other address for an hour. Measured. That is FLOW-2
+    // again, which is the outage this code exists to avoid.
     //
-    // The per-client one applies only when the client is identifiable:
-    // clientRateLimitKey returns null if nothing trusted appended
-    // X-Forwarded-For, and keying every request on one shared bucket meant five
-    // sign-ups an hour for the entire deployment — closing registration
-    // site-wide from five requests. See SEC-3 and FLOW-2.
+    // When a client is identifiable the per-client limit IS the bound, and a
+    // second shared one adds nothing but a common failure mode.
     //
-    // The global one has no such escape. Since SEC-2 made TRUSTED_PROXY_HOPS
-    // default to 0, "unidentifiable" is the default state rather than a
-    // misconfiguration, and without this the route would have no bound at all
-    // there: unbounded account creation, each row seeded with three default
-    // shelves in a transaction. 200/hour is far above any real signup rate for
-    // this product, so it never reaches a person; it only stops a flood.
+    // The shared bucket covers only the unidentifiable case, which SEC-2 made
+    // the default: clientRateLimitKey returns null when nothing trusted
+    // appended X-Forwarded-For, and without a bound there the route had none at
+    // all — unbounded account creation, each row seeded with three default
+    // shelves in a transaction. It is far looser than the per-client limit
+    // because an unidentified flood must not close the door at five requests
+    // the way FLOW-2 did; a correctly configured deployment has no
+    // unidentifiable callers at all, which deploy:verify asserts.
     const key = clientRateLimitKey(request, "register");
-    const bounds = key
-      ? [checkLimit(key, LIMITS.register), checkLimit("register:global", LIMITS.registerGlobal)]
-      : [checkLimit("register:global", LIMITS.registerGlobal)];
+    const limit = key
+      ? checkLimit(key, LIMITS.register)
+      : checkLimit("register:unidentified", LIMITS.registerUnidentified);
 
-    const exceeded = bounds.find((bound) => !bound.allowed);
-    if (exceeded) {
+    if (!limit.allowed) {
       return NextResponse.json(
         { error: "Too many sign-up attempts. Please try again later." },
         {
           status: 429,
-          headers: { "Retry-After": String(exceeded.retryAfterSeconds) },
+          headers: { "Retry-After": String(limit.retryAfterSeconds) },
         }
       );
     }

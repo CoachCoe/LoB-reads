@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { SITE_ORIGIN } from "./layout";
+import { SITE_ORIGIN } from "@/lib/site";
 
 /**
  * Crawl policy.

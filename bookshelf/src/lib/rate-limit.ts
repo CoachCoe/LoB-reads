@@ -275,13 +275,16 @@ export const LIMITS = {
   // the books they have read; a bound on an account inserting rows in a loop
   // into the tables the public /map reads on every request.
   contribute: { limit: 60, windowMs: 60 * 60 * 1000 },
-  // A ceiling that does not depend on identifying the client, because
-  // `register` cannot be applied when `clientRateLimitKey` returns null — and
-  // after SEC-2 that is the default state rather than a misconfiguration. One
-  // shared bucket at five an hour closes registration site-wide from five
-  // requests (FLOW-2), so this sits far above any real signup rate and exists
-  // only to bound an unidentified flood.
-  registerGlobal: { limit: 200, windowMs: 60 * 60 * 1000 },
+  // The bound for callers that cannot be identified at all, which SEC-2 made
+  // the default state: `register` cannot be keyed when `clientRateLimitKey`
+  // returns null. Applied INSTEAD OF `register`, never alongside it — sharing
+  // a bucket with identifiable callers makes it a site-wide kill switch, which
+  // is FLOW-2 and is measured in the route.
+  //
+  // Far looser than `register` because everyone unidentified shares it, and a
+  // shared bucket at five an hour closed registration site-wide from five
+  // requests. It bounds a flood; it should never reach a person.
+  registerUnidentified: { limit: 200, windowMs: 60 * 60 * 1000 },
 } as const satisfies Record<string, RateLimitOptions>;
 
 /** Test-only escape hatch; not exported through any route. */

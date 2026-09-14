@@ -136,6 +136,38 @@ describe("rate limiting", () => {
     expect(statuses.filter((s) => s === 429)).toHaveLength(2);
   });
 
+  it("does not let one address close registration for everyone", async () => {
+    // The defect /bastion found in the first version of this fix, and the
+    // reason it is a separate test: the per-address rule below already passed
+    // while this was broken.
+    //
+    // Two bounds were applied to every request -- the per-client one AND a
+    // shared ceiling -- in one array literal, so BOTH were spent before either
+    // was inspected. An attacker refused after 5 kept draining the shared
+    // bucket with the other 195, and one address locked out every other for an
+    // hour. That is FLOW-2, which the code it replaced existed to avoid.
+    const attacker = "203.0.113.9";
+    for (let i = 0; i < LIMITS.registerUnidentified.limit + 20; i++) {
+      await post({ ...valid, email: `flood${i}@example.com` }, attacker);
+    }
+
+    // A different address, which has not spent anything.
+    const response = await post(
+      { ...valid, email: "innocent@example.com" },
+      "198.51.100.77"
+    );
+
+    expect(response.status).toBe(201);
+    expect(
+      await prisma.user.findUnique({ where: { email: "innocent@example.com" } })
+    ).not.toBeNull();
+
+    // And the attacker got exactly their own budget, not the shared one.
+    expect(
+      await prisma.user.count({ where: { email: { startsWith: "flood" } } })
+    ).toBe(LIMITS.register.limit);
+  });
+
   it("still bounds sign-ups when no client can be identified", async () => {
     // SEC-4. With nothing trusted in front, clientRateLimitKey returns null and
     // the per-address rule cannot apply at all — which before this was no bound
@@ -147,15 +179,15 @@ describe("rate limiting", () => {
     // Spend the global budget directly rather than sending 200 requests: the
     // property under test is that the route consults this bucket, not the
     // arithmetic of the limiter, which rate-limit.test.ts already pins.
-    for (let i = 0; i < LIMITS.registerGlobal.limit; i++) {
-      expect(checkLimit("register:global", LIMITS.registerGlobal).allowed).toBe(true);
+    for (let i = 0; i < LIMITS.registerUnidentified.limit; i++) {
+      expect(checkLimit("register:unidentified", LIMITS.registerUnidentified).allowed).toBe(true);
     }
 
     const response = await post({ ...valid, email: "unidentified@example.com" });
 
     expect(response.status).toBe(429);
     expect(response.headers.get("Retry-After")).toBe(
-      String(checkLimit("register:global", LIMITS.registerGlobal).retryAfterSeconds)
+      String(checkLimit("register:unidentified", LIMITS.registerUnidentified).retryAfterSeconds)
     );
     // State, not just status: the account must not exist.
     expect(

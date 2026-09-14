@@ -4,23 +4,13 @@ import "./globals.css";
 import SessionProvider from "@/components/providers/SessionProvider";
 import ThemeProvider from "@/components/providers/ThemeProvider";
 import ToastProvider from "@/components/providers/ToastProvider";
+import { SITE_ORIGIN } from "@/lib/site";
 
 const roboto = Roboto({
   subsets: ["latin"],
   weight: ["300", "400", "500", "700"],
   variable: "--font-roboto",
 });
-
-/**
- * The app's own public origin, for absolute URLs in metadata.
- *
- * `metadataBase` is what turns a relative openGraph image into the absolute URL
- * a link unfurler needs; without it Next warns and emits a localhost URL, which
- * is why every link shared from this product rendered as a bare URL. Reusing
- * NEXTAUTH_URL rather than adding a variable: both name the same thing, and
- * deploy:verify already treats them as one (BASE_URL: ${{ secrets.NEXTAUTH_URL }}).
- */
-export const SITE_ORIGIN = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_ORIGIN),

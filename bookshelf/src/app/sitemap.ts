@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 import { getSitemapWorkKeys } from "@/server/catalog";
-import { SITE_ORIGIN } from "./layout";
+import { SITE_ORIGIN } from "@/lib/site";
 
 /**
  * The public surface, for crawlers.
