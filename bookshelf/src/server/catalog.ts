@@ -508,13 +508,34 @@ export async function runSearchArmWithinBudget<T = WorkSearchResult>(
   sql: Prisma.Sql,
   budgetMs: number = FUZZY_TIMEOUT_MS
 ): Promise<T[]> {
+  return (await runSearchArmReporting<T>(sql, budgetMs)).rows;
+}
+
+/**
+ * The same, but it says whether the arm finished or was abandoned.
+ *
+ * MT-2. Returning `[]` for both outcomes made "we gave up" and "no such book"
+ * the same answer, and /search rendered the second one: "Nothing matched
+ * 'the hobbitt'. Try fewer words, or check the spelling." That is the exact
+ * query the fuzzy arm exists to rescue -- it has 20 real matches -- so the one
+ * reader the feature is for was told their spelling was wrong.
+ *
+ * A separate function rather than a changed signature: five call sites and two
+ * test suites use the plain form, and only the paged search needs to tell the
+ * difference.
+ */
+export async function runSearchArmReporting<T = WorkSearchResult>(
+  sql: Prisma.Sql,
+  budgetMs: number = FUZZY_TIMEOUT_MS
+): Promise<{ rows: T[]; abandoned: boolean }> {
   try {
-    return await prisma.$transaction(async (tx) => {
+    const rows = await prisma.$transaction(async (tx) => {
       await tx.$executeRawUnsafe(`SET LOCAL statement_timeout = ${budgetMs}`);
       return tx.$queryRaw<T[]>(sql);
     });
+    return { rows, abandoned: false };
   } catch (error) {
-    if (isStatementTimeout(error)) return [];
+    if (isStatementTimeout(error)) return { rows: [], abandoned: true };
     throw error;
   }
 }
@@ -724,6 +745,14 @@ export interface SearchPage {
   atCeiling: boolean;
   page: number;
   totalPages: number;
+  /**
+   * True when a fallback arm hit its statement_timeout and was cancelled.
+   *
+   * An empty result then means "we ran out of time", not "there is no such
+   * book", and the two need different copy: the first is worth retrying and
+   * the second is not. See MT-2 and PRD R1.
+   */
+  abandoned: boolean;
 }
 
 /**
@@ -751,6 +780,7 @@ export async function searchWorksPaged(
     atCeiling: false,
     page: 1,
     totalPages: 1,
+    abandoned: false,
   };
 
   const trimmed = query.trim();
@@ -773,6 +803,7 @@ export async function searchWorksPaged(
       atCeiling: ftsCount >= COUNT_CEILING,
       page,
       totalPages,
+      abandoned: false,
     };
   }
 
@@ -784,11 +815,11 @@ export async function searchWorksPaged(
       : null;
   if (!fallbackArm) return empty;
 
-  const matches = await runSearchArmWithinBudget(
+  const { rows: matches, abandoned } = await runSearchArmReporting(
     fallbackArm,
     stopwordsOnly ? EXACT_TITLE_TIMEOUT_MS : FUZZY_TIMEOUT_MS
   );
-  if (matches.length === 0) return empty;
+  if (matches.length === 0) return { ...empty, abandoned };
 
   const totalPages = lastPageFor(matches.length, pageSize);
   const page = resolvePage(requestedPage, { lastPage: totalPages });
@@ -799,6 +830,7 @@ export async function searchWorksPaged(
     atCeiling: matches.length >= COUNT_CEILING,
     page,
     totalPages,
+    abandoned: false,
   };
 }
 

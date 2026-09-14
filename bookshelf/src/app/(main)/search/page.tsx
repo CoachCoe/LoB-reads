@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Search as SearchIcon } from "lucide-react";
+import { Search as SearchIcon, Clock } from "lucide-react";
 import {
   searchWorksPaged,
   getPopularWorks,
@@ -110,7 +110,9 @@ export default async function SearchPage({ searchParams }: Props) {
         </div>
       )}
 
-      {(browsing || searching) && (
+      {/* Suppressed when the arm was abandoned: "No matches" is a claim about
+          the catalog, and an abandoned search has not established one. */}
+      {(browsing || searching) && !searched?.abandoned && (
         <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
           {total.count === 0
             ? "No matches"
@@ -121,7 +123,10 @@ export default async function SearchPage({ searchParams }: Props) {
       )}
 
       {works.length === 0 ? (
-        <EmptyState query={browsing ? subject : query} />
+        <EmptyState
+          query={browsing ? subject : query}
+          abandoned={searched?.abandoned ?? false}
+        />
       ) : (
         <>
           {!browsing && !searching && (
@@ -149,7 +154,64 @@ export default async function SearchPage({ searchParams }: Props) {
   );
 }
 
-function EmptyState({ query }: { query: string }) {
+/**
+ * MT-2. There are three reasons this page can be empty and they are not the
+ * same thing:
+ *
+ *   - nothing was searched for yet, and the catalog is empty
+ *   - the search ran and found nothing
+ *   - the search RAN OUT OF TIME and was cancelled
+ *
+ * The third used to render as the second, so a reader searching "the hobbitt" —
+ * a real typo with 20 real matches, and the exact query the fuzzy arm exists
+ * to rescue — was told to check their spelling. It is the one case worth
+ * retrying, and the only one where the reader did nothing wrong.
+ */
+function EmptyState({
+  query,
+  abandoned,
+}: {
+  query: string;
+  abandoned: boolean;
+}) {
+  if (!query) {
+    return (
+      <div className="py-16 text-center">
+        <SearchIcon
+          className="mx-auto mb-3 h-10 w-10 text-gray-300 dark:text-gray-600"
+          aria-hidden="true"
+        />
+        <p className="text-gray-600 dark:text-gray-400">
+          No books to show yet — please check back shortly.
+        </p>
+      </div>
+    );
+  }
+
+  if (abandoned) {
+    return (
+      <div className="py-16 text-center">
+        <Clock
+          className="mx-auto mb-3 h-10 w-10 text-[var(--color-primary)]"
+          aria-hidden="true"
+        />
+        <p className="text-[var(--foreground)]">
+          That search took too long, so we stopped it.
+        </p>
+        <p className="mt-1 text-sm text-[var(--foreground-secondary)]">
+          It is us, not your spelling — near-matches over 6.9 million books are
+          slow for some words. Trying again often works.
+        </p>
+        <Link
+          href={`/search?q=${encodeURIComponent(query)}`}
+          className="mt-5 inline-block rounded-lg bg-[var(--color-primary)] px-5 py-2.5 font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-dark)]"
+        >
+          Try again
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="py-16 text-center">
       <SearchIcon
@@ -157,15 +219,11 @@ function EmptyState({ query }: { query: string }) {
         aria-hidden="true"
       />
       <p className="text-gray-600 dark:text-gray-400">
-        {query
-          ? `Nothing matched “${query}”.`
-          : "No books to show yet — please check back shortly."}
+        Nothing matched “{query}”.
       </p>
-      {query && (
-        <p className="mt-1 text-sm text-gray-500 dark:text-gray-500">
-          Try fewer words, or check the spelling.
-        </p>
-      )}
+      <p className="mt-1 text-sm text-[var(--foreground-secondary)]">
+        Try fewer words, or check the spelling.
+      </p>
     </div>
   );
 }
