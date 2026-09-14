@@ -755,27 +755,119 @@ describe("contributed read paths are bounded", () => {
  * R1 regression through.
  */
 describe("SQL compares against normalised columns", () => {
-  /** `lower(col)` or `unaccent(col)` on the left of a comparison. */
-  const WRAPPED_COLUMN =
-    /(?:lower|unaccent)\s*\(\s*(?:[a-z_]+\.)?(?:name|title|author_names)\s*\)\s*(?:=|LIKE|%)/i;
+  /**
+   * TQ-1. This was a single regex requiring a normalising call, a bare column
+   * and a comparison operator to sit adjacently in that order:
+   *
+   *   /(?:lower|unaccent)\s*\(\s*(?:[a-z_]+\.)?(?:name|title|author_names)\s*\)\s*(?:=|LIKE|%)/i
+   *
+   * It matched two forms and missed every other one, including the wording
+   * AGENTS.md uses to state the rule. Executed against real predicates:
+   *
+   *   CAUGHT  WHERE lower(a.name) = lower($1)
+   *   CAUGHT  WHERE unaccent(title) LIKE $1
+   *   MISSED  WHERE unaccent(lower(w.title)) = q.norm     <- AGENTS.md's own wording
+   *   MISSED  WHERE unaccent(lower(title)) % q.norm       <- the seq-scan predicate
+   *   MISSED  WHERE lower(unaccent(w.title)) LIKE q.norm  <- the DEAD-5 form
+   *   MISSED  WHERE LOWER(w.title) ILIKE $1
+   *   MISSED  WHERE similarity(unaccent(lower(title)), q) > 0.5
+   *
+   * The double wrap failed because `unaccent(` wanted a bare column
+   * immediately inside and `lower(` is not one. The positive control only
+   * exercised the two forms it caught, so the control was green while the
+   * guard was blind.
+   *
+   * Rewritten as a shape rather than a spelling: a normalising function whose
+   * argument bottoms out in a bare column reference, at any nesting depth and
+   * next to any operator or none. Note what that does NOT depend on — a list
+   * of column names. Every legitimate call in this codebase wraps a
+   * `${parameter}`, never an identifier, so "wraps a bare identifier" is the
+   * whole rule and a new column is covered the day it is written.
+   */
+  const NORMALISING = /\b(?:lower|upper|unaccent|btrim|trim)\s*\(/gi;
+  /** A bare column reference, optionally table-qualified. Not `${…}`, not a literal. */
+  const BARE_COLUMN = /^(?:[a-z_][a-z0-9_]*\.)?[a-z_][a-z0-9_]*$/i;
 
-  it("catches a wrapped column, and passes a direct comparison", () => {
-    // Without this the regex above could rot into something that matches
-    // nothing and the check below would pass forever.
-    expect(WRAPPED_COLUMN.test("WHERE lower(a.name) = lower($1)")).toBe(true);
-    expect(WRAPPED_COLUMN.test("WHERE unaccent(title) LIKE $1")).toBe(true);
-    expect(WRAPPED_COLUMN.test("WHERE a.name_norm = lower(unaccent($1))")).toBe(
-      false
-    );
-    expect(
-      WRAPPED_COLUMN.test("WHERE w.title_norm % q.norm")
-    ).toBe(false);
+  /** The balanced text inside the parenthesis opening at `open`. */
+  function argumentAt(sql: string, open: number): string | null {
+    let depth = 0;
+    for (let i = open; i < sql.length; i++) {
+      if (sql[i] === "(") depth++;
+      else if (sql[i] === ")") {
+        depth--;
+        if (depth === 0) return sql.slice(open + 1, i);
+      }
+    }
+    return null;
+  }
+
+  /** Every normalising call in `sql` that wraps a bare column. */
+  function wrappedColumns(sql: string): string[] {
+    const found: string[] = [];
+    for (const match of sql.matchAll(NORMALISING)) {
+      const open = match.index! + match[0].length - 1;
+      let inner = argumentAt(sql, open);
+      if (inner === null) continue;
+
+      // Peel nested normalising calls: unaccent(lower(title)) -> title.
+      for (let depth = 0; depth < 5; depth++) {
+        const nested = inner!
+          .trim()
+          .match(/^(?:lower|upper|unaccent|btrim|trim)\s*\(([\s\S]*)\)$/i);
+        if (!nested) break;
+        inner = nested[1];
+      }
+
+      const argument = inner!.trim();
+      // A template placeholder is the correct shape: normalise the INPUT.
+      if (argument.includes("${") || argument.includes("$")) continue;
+      if (BARE_COLUMN.test(argument)) found.push(`${match[0]}${argument})`);
+    }
+    return found;
+  }
+
+  it("catches every shape of wrapped column, and passes the correct ones", () => {
+    // Without this the check below could rot into something matching nothing
+    // and pass forever — which is exactly what it had done.
+    const caught = [
+      "WHERE lower(a.name) = lower($1)",
+      "WHERE unaccent(title) LIKE $1",
+      "WHERE unaccent(lower(w.title)) = q.norm",
+      "WHERE unaccent(lower(title)) % q.norm",
+      "WHERE lower(unaccent(w.title)) LIKE q.norm",
+      "WHERE LOWER(w.title) ILIKE $1",
+      "WHERE similarity(unaccent(lower(title)), q) > 0.5",
+      "ORDER BY lower(w.title)",
+    ];
+    for (const sql of caught) {
+      expect([sql, wrappedColumns(sql).length > 0]).toEqual([sql, true]);
+    }
+
+    const allowed = [
+      // Normalising the INPUT is the point; the column stays bare.
+      "WHERE a.name_norm = lower(unaccent($1))",
+      "WHERE w.title_norm % q.norm",
+      "WHERE title_norm = lower(unaccent(${title}))",
+      "SELECT websearch_to_tsquery('english', unaccent(${query}))",
+      "WITH q AS (SELECT lower(unaccent(${query})) AS norm)",
+    ];
+    for (const sql of allowed) {
+      expect([sql, wrappedColumns(sql)]).toEqual([sql, []]);
+    }
   });
 
-  it("never wraps a comparable column in src/server", () => {
-    const offenders = walk("src/server", (f) => f.endsWith(".ts")).filter((file) =>
-      WRAPPED_COLUMN.test(withoutComments(read(file)))
-    );
+  it("never wraps a column in the app's query code", () => {
+    // src/server and src/lib: everywhere the app builds a query. The ingest
+    // under scripts/ is deliberately out of scope — 03-normalize.sql BUILDS
+    // the _norm columns with exactly this expression, which is the one place
+    // it is correct.
+    const offenders = walk("src", (f) => /\.ts$/.test(f))
+      .filter((file) => !file.includes("/app/"))
+      .flatMap((file) =>
+        wrappedColumns(withoutComments(read(file))).map(
+          (hit) => `${file}: ${hit}`
+        )
+      );
 
     expect(offenders).toEqual([]);
   });
