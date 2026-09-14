@@ -27,8 +27,9 @@ A modern reading tracker for book lovers. Track your library, discover new stori
 - **Reading Projections** - Year-to-date progress with year-end projections and goal tracking (50/100 book goals)
 
 ### Discovery & Exploration
-- **Interactive Map** - Explore where books are set on a world map with crowdsourced location data
-- **Fictional Worlds** - A panel on the map for fantasy/sci-fi universes, each with multiple map uploads, a title and a description (Middle-earth, Westeros, etc.), each with title and description
+- **Interactive Map** - Explore where books are set on a world map with crowdsourced location data. Public: it is linked from the landing page and needs no account
+- **Fictional Worlds** - A panel on the map for fantasy/sci-fi universes, each with multiple map uploads and a title (Middle-earth, Westeros, etc.). A world's description can be read but not yet set from the UI
+- **Indexable** - Work and author pages are public and server-rendered, with a sitemap (bounded at 25,000 works by edition count), a robots policy, and an Open Graph card on every shared link
 
 ### Import & Settings
 - **Goodreads Import** - Import your library via CSV export
@@ -227,22 +228,36 @@ src/
 │   ├── api/               # API routes
 │   ├── login/             # Login page
 │   └── register/          # Registration page
-├── components/            # React components
-│   ├── authors/ catalog/ import/ layout/ locations/ map/ providers/
-│   ├── reviews/ social/ ui/
-│   ├── layout/           # Navbar, Footer
-│   ├── providers/        # Session, Theme, Toast
-│   └── ui/               # Reusable UI components
+├── components/            # Shared React components
+│   ├── authors/ catalog/ import/ layout/ locations/ map/
+│   ├── providers/ reviews/ social/ ui/
+│   └── (page-specific client components are colocated with their route
+│        instead — e.g. (main)/map/MapClient.tsx, (main)/search/SearchForm.tsx)
 ├── lib/                   # Grouped by concern: auth/, http/, sources/, storage/
 ├── server/               # All database access lives here, never in a route
-└── types/                # TypeScript types
+└── types/                # next-auth module augmentation
 ```
+
+`src/app` also carries Next's file conventions for metadata, which are routes
+rather than pages: `icon.svg`, `apple-icon.png`, `favicon.ico`,
+`opengraph-image.tsx`, `manifest.ts`, `robots.ts` and `sitemap.ts`. Each
+resolves to a real URL — `/robots.txt`, `/sitemap.xml`,
+`/manifest.webmanifest`, `/opengraph-image` — and `next build` lists them.
+
+`loading.tsx` sits beside the five routes that block longest on the database
+(`search`, `work/[olKey]`, `my-books`, `feed`, `map`), so the reader gets a
+shell immediately rather than the previous page followed by a blank one.
 
 ## Available Scripts
 
 - `npm run dev` - Start development server
 - `npm run build` - Build for production
 - `npm run start` - Start production server
+- `npm run test:watch` - Unit tests, re-run on change
+- `npm run db:generate` - Regenerate the Prisma client
+- `npm run db:migrate` - Create and apply a migration. **Development only** — use `db:deploy` against anything shared
+- `npm run db:status:test` - Migration status for the test database
+- `npm run db:reset` - **Destructive.** Drops and rebuilds the database from the migration chain, then seeds
 - `npm run lint` - Run ESLint
 - `npm test` - Unit tests only
 - `npm run test:integration` - Integration tests, serially against real Postgres
