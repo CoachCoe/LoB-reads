@@ -10,22 +10,34 @@ const BCRYPT_ROUNDS = 10;
 
 export async function POST(request: Request) {
   try {
-    // Only when the client is identifiable. getClientIp returns null if nothing
-    // trusted appended X-Forwarded-For, and keying every request on one shared
-    // bucket meant five sign-ups an hour for the entire deployment — closing
-    // registration site-wide from five requests. See SEC-3 and FLOW-2.
+    // Two bounds, because neither alone covers the configuration space.
+    //
+    // The per-client one applies only when the client is identifiable:
+    // clientRateLimitKey returns null if nothing trusted appended
+    // X-Forwarded-For, and keying every request on one shared bucket meant five
+    // sign-ups an hour for the entire deployment — closing registration
+    // site-wide from five requests. See SEC-3 and FLOW-2.
+    //
+    // The global one has no such escape. Since SEC-2 made TRUSTED_PROXY_HOPS
+    // default to 0, "unidentifiable" is the default state rather than a
+    // misconfiguration, and without this the route would have no bound at all
+    // there: unbounded account creation, each row seeded with three default
+    // shelves in a transaction. 200/hour is far above any real signup rate for
+    // this product, so it never reaches a person; it only stops a flood.
     const key = clientRateLimitKey(request, "register");
-    if (key) {
-      const limit = checkLimit(key, LIMITS.register);
-      if (!limit.allowed) {
-        return NextResponse.json(
-          { error: "Too many sign-up attempts. Please try again later." },
-          {
-            status: 429,
-            headers: { "Retry-After": String(limit.retryAfterSeconds) },
-          }
-        );
-      }
+    const bounds = key
+      ? [checkLimit(key, LIMITS.register), checkLimit("register:global", LIMITS.registerGlobal)]
+      : [checkLimit("register:global", LIMITS.registerGlobal)];
+
+    const exceeded = bounds.find((bound) => !bound.allowed);
+    if (exceeded) {
+      return NextResponse.json(
+        { error: "Too many sign-up attempts. Please try again later." },
+        {
+          status: 429,
+          headers: { "Retry-After": String(exceeded.retryAfterSeconds) },
+        }
+      );
     }
 
     // The schema lowercases and trims the address. Postgres string equality is

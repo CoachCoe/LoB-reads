@@ -152,18 +152,28 @@ function trustedClientIpHeader(): string | null {
  * How many proxies we sit behind and therefore trust to have appended to
  * `X-Forwarded-For`.
  *
- * One by default, which is wrong for the documented topology and is why
+ * **Zero by default: trust nothing until a deployment says otherwise.** A
+ * default of 1 means "one proxy in front appends to XFF", and when nothing is
+ * in front — a bare `next start`, a container reached on its own ingress FQDN,
+ * a platform whose edge does not append — the entire header is written by the
+ * caller, so `chain[chain.length - 1]` is whatever they chose to send.
+ * Measured against this module with the old default: 50 of 50 registrations
+ * admitted against a limit of 5, by incrementing one header. `login:ip:*`,
+ * whose whole job is to stop one host spraying across accounts, went with it.
+ *
+ * Failing closed turns a misconfiguration into a MISSING per-IP limit, which
+ * `deploy:verify` names and `LIMITS.registerGlobal` bounds, instead of a limit
+ * that reports success while admitting everything.
+ *
+ * Still wrong to leave at any guessed value in production, and that is why
  * `TRUSTED_CLIENT_IP_HEADER` exists: Front Door in front of Container Apps is
  * two appending hops, because the Container Apps ingress appends as well. A
  * count lower than the real chain returns a proxy's own address — identical for
  * every client — and a count higher than it returns nothing.
- *
- * Set to 0 to ignore the header entirely, which is the right answer when
- * nothing trusted is in front of the app.
  */
 function trustedProxyHops(): number {
-  const configured = Number(process.env.TRUSTED_PROXY_HOPS ?? 1);
-  return Number.isInteger(configured) && configured >= 0 ? configured : 1;
+  const configured = Number(process.env.TRUSTED_PROXY_HOPS ?? 0);
+  return Number.isInteger(configured) && configured >= 0 ? configured : 0;
 }
 
 /**
@@ -265,9 +275,32 @@ export const LIMITS = {
   // the books they have read; a bound on an account inserting rows in a loop
   // into the tables the public /map reads on every request.
   contribute: { limit: 60, windowMs: 60 * 60 * 1000 },
+  // A ceiling that does not depend on identifying the client, because
+  // `register` cannot be applied when `clientRateLimitKey` returns null — and
+  // after SEC-2 that is the default state rather than a misconfiguration. One
+  // shared bucket at five an hour closes registration site-wide from five
+  // requests (FLOW-2), so this sits far above any real signup rate and exists
+  // only to bound an unidentified flood.
+  registerGlobal: { limit: 200, windowMs: 60 * 60 * 1000 },
 } as const satisfies Record<string, RateLimitOptions>;
 
 /** Test-only escape hatch; not exported through any route. */
 export function __resetRateLimits() {
   buckets.clear();
 }
+
+/**
+ * Test-only. How many keys are currently tracked.
+ *
+ * Exists so the MAX_BUCKETS eviction can be asserted as a property rather than
+ * as a stopwatch. The previous assertion timed two batches and compared one
+ * against the other, which is both self-referential and — because fake timers
+ * had leaked in from an earlier describe — literally `expect(0).toBeLessThan(250)`.
+ * A size bound gives the same answer on a loaded runner. See TQ-9.
+ */
+export function __bucketCount(): number {
+  return buckets.size;
+}
+
+/** Test-only. The eviction bound, so a test need not restate the number. */
+export const __MAX_BUCKETS = MAX_BUCKETS;
