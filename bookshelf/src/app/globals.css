@@ -1,6 +1,14 @@
 @import "tailwindcss";
 
 :root {
+  /* UX-28. Without this the UA paints every native control — textarea
+     backgrounds, number spinners, the search input's clear button, scrollbars,
+     date pickers — from its LIGHT system palette regardless of the page, so a
+     dark-mode reader got white slabs. It is set per theme rather than as
+     `light dark` because this app chooses the theme itself (the class on
+     <html>) and must not let the OS preference win over an explicit choice. */
+  color-scheme: light;
+
   /* Light mode colors */
   --background: #fafafa;
   --background-secondary: #ffffff;
@@ -26,8 +34,16 @@
   /* Focus indicator. Gold at 2.28:1 against a light page is a weak ring. */
   --focus-ring: #1d1d1f;
   --color-accent: #D4A017;
-  --color-accent-light: #E6B800;
-  --color-accent-dark: #B8860B;
+
+  /* UX-33. The second colour in this product. It was already the colour of
+     every inline link — /search's focus ring, the work page's author link, the
+     feed's empty-state link — and it was declared NOWHERE: eleven raw hex
+     literals across six components, in no token and checked by no test, beside
+     a gold that had three tokens and a contrast suite. Promoted rather than
+     replaced, because the value itself is good: 7.03:1 on the light page and
+     7.34:1 on a white card. Gold stays reserved for the mark, filled stars and
+     the one primary action per screen; this carries navigation. */
+  --color-link: #0B6157;
 
   /* Card and surface colors */
   --card-bg: #ffffff;
@@ -48,6 +64,8 @@ html.dark .logo-themed {
 }
 
 .dark {
+  color-scheme: dark;
+
   --background: #0a0a0a;
   --background-secondary: #0f0f0f;
   --foreground: #ffffff;
@@ -77,6 +95,9 @@ html.dark .logo-themed {
   --color-primary-text: #E8B93F;
   --color-primary-contrast: #1d1d1f;
   --focus-ring: #E8B93F;
+
+  /* 8.19:1 on the page, 7.62:1 on the card. */
+  --color-link: #52B7A6;
 }
 
 @theme inline {
@@ -144,28 +165,6 @@ h1, h2, h3, h4, h5, h6 {
   background: var(--border);
 }
 
-/* Line clamp utilities */
-.line-clamp-1 {
-  display: -webkit-box;
-  -webkit-line-clamp: 1;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.line-clamp-2 {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.line-clamp-3 {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
 /* Animation for loading states */
 @keyframes shimmer {
   0% {
@@ -196,62 +195,6 @@ h1, h2, h3, h4, h5, h6 {
 
 .animate-fade-in {
   animation: fade-in 0.5s ease-out;
-}
-
-/* Wrapped page specific styles */
-@keyframes pulse-glow {
-  0%, 100% {
-    box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
-  }
-  50% {
-    box-shadow: 0 0 40px rgba(255, 255, 255, 0.4);
-  }
-}
-
-.animate-pulse-glow {
-  animation: pulse-glow 2s ease-in-out infinite;
-}
-
-/* Custom color utilities */
-.bg-primary {
-  background-color: var(--color-primary);
-}
-
-.bg-primary-light {
-  background-color: var(--color-primary-light);
-}
-
-.text-primary {
-  color: var(--color-primary);
-}
-
-.bg-accent {
-  background-color: var(--color-accent);
-}
-
-.text-accent {
-  color: var(--color-accent);
-}
-
-.border-primary {
-  border-color: var(--color-primary);
-}
-
-.ring-primary {
-  --tw-ring-color: var(--color-primary);
-}
-
-/* Hover states */
-.hover\:bg-primary:hover {
-  background-color: var(--color-primary);
-}
-
-.hover\:bg-primary-dark:hover {
-  background-color: var(--color-primary-dark);
-}
-
-.hover\:text-primary:hover {
-  color: var(--color-primary);
 }
 
 /* Smooth transitions for theme changes */

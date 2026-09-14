@@ -355,8 +355,9 @@ export function searchWorksExactTitleSql(
  * The real fix is to stop fetching 76,457 heap rows — a partial GIN index over
  * popular works (considered and declined below), more `shared_buffers`, or a
  * different match strategy. All three are cost decisions rather than an
- * audit's call, and they are recorded with these numbers in
- * docs/audit/2026-09-08-findings.md.
+ * audit's call, and they are recorded with these numbers as an issue on this
+ * repository. (The docs/audit tree they used to point at was removed under the
+ * working-documents rule; the numbers above are the whole of what it said.)
  *
  * What did change is that the gap is now visible: bench:search gates on a
  * minimum row count per query as well as the clock, so this query failing to
@@ -457,8 +458,8 @@ function fuzzyTimeoutFromEnv(): number {
  * The root-cause fix for the stopword case is a btree on `title_norm`, which
  * would make it an index lookup and return the six works actually titled "the".
  * That is a migration and an index over 6.9M rows rebuilt monthly, so it is a
- * cost decision rather than an audit's call — recorded as OQ-2 with
- * measurements in docs/audit/2026-09-08-findings.md.
+ * cost decision rather than an audit's call — recorded as an open question on
+ * this repository's issues, with these measurements.
  */
 export const EXACT_TITLE_TIMEOUT_MS = 300;
 
@@ -508,13 +509,34 @@ export async function runSearchArmWithinBudget<T = WorkSearchResult>(
   sql: Prisma.Sql,
   budgetMs: number = FUZZY_TIMEOUT_MS
 ): Promise<T[]> {
+  return (await runSearchArmReporting<T>(sql, budgetMs)).rows;
+}
+
+/**
+ * The same, but it says whether the arm finished or was abandoned.
+ *
+ * MT-2. Returning `[]` for both outcomes made "we gave up" and "no such book"
+ * the same answer, and /search rendered the second one: "Nothing matched
+ * 'the hobbitt'. Try fewer words, or check the spelling." That is the exact
+ * query the fuzzy arm exists to rescue -- it has 20 real matches -- so the one
+ * reader the feature is for was told their spelling was wrong.
+ *
+ * A separate function rather than a changed signature: five call sites and two
+ * test suites use the plain form, and only the paged search needs to tell the
+ * difference.
+ */
+export async function runSearchArmReporting<T = WorkSearchResult>(
+  sql: Prisma.Sql,
+  budgetMs: number = FUZZY_TIMEOUT_MS
+): Promise<{ rows: T[]; abandoned: boolean }> {
   try {
-    return await prisma.$transaction(async (tx) => {
+    const rows = await prisma.$transaction(async (tx) => {
       await tx.$executeRawUnsafe(`SET LOCAL statement_timeout = ${budgetMs}`);
       return tx.$queryRaw<T[]>(sql);
     });
+    return { rows, abandoned: false };
   } catch (error) {
-    if (isStatementTimeout(error)) return [];
+    if (isStatementTimeout(error)) return { rows: [], abandoned: true };
     throw error;
   }
 }
@@ -724,6 +746,14 @@ export interface SearchPage {
   atCeiling: boolean;
   page: number;
   totalPages: number;
+  /**
+   * True when a fallback arm hit its statement_timeout and was cancelled.
+   *
+   * An empty result then means "we ran out of time", not "there is no such
+   * book", and the two need different copy: the first is worth retrying and
+   * the second is not. See MT-2 and PRD R1.
+   */
+  abandoned: boolean;
 }
 
 /**
@@ -751,6 +781,7 @@ export async function searchWorksPaged(
     atCeiling: false,
     page: 1,
     totalPages: 1,
+    abandoned: false,
   };
 
   const trimmed = query.trim();
@@ -773,6 +804,7 @@ export async function searchWorksPaged(
       atCeiling: ftsCount >= COUNT_CEILING,
       page,
       totalPages,
+      abandoned: false,
     };
   }
 
@@ -784,11 +816,11 @@ export async function searchWorksPaged(
       : null;
   if (!fallbackArm) return empty;
 
-  const matches = await runSearchArmWithinBudget(
+  const { rows: matches, abandoned } = await runSearchArmReporting(
     fallbackArm,
     stopwordsOnly ? EXACT_TITLE_TIMEOUT_MS : FUZZY_TIMEOUT_MS
   );
-  if (matches.length === 0) return empty;
+  if (matches.length === 0) return { ...empty, abandoned };
 
   const totalPages = lastPageFor(matches.length, pageSize);
   const page = resolvePage(requestedPage, { lastPage: totalPages });
@@ -799,6 +831,7 @@ export async function searchWorksPaged(
     atCeiling: matches.length >= COUNT_CEILING,
     page,
     totalPages,
+    abandoned: false,
   };
 }
 
@@ -1188,4 +1221,25 @@ export async function getSimilarWorks(
     ORDER BY s.score DESC, s.co_raters DESC
     LIMIT ${limit}
   `;
+}
+
+/**
+ * Work keys for the sitemap, most-published first.
+ *
+ * Deliberately not `getPopularWorks`: that builds a whole `WorkSearchResult`
+ * with a join to `catalog.editions` for the cover, and a sitemap needs one
+ * column. Ordered by `edition_count` because that is the index the catalog
+ * already carries (`works_edition_count_ol_key_idx`), so this is an ordered
+ * index walk rather than a sort of 6.9M rows.
+ *
+ * Bounded, and the bound is the point — see `src/app/sitemap.ts`.
+ */
+export async function getSitemapWorkKeys(limit: number): Promise<string[]> {
+  const rows = await prisma.$queryRaw<{ olKey: string }[]>`
+    SELECT w.ol_key AS "olKey"
+    FROM catalog.works w
+    ORDER BY w.edition_count DESC, w.ol_key
+    LIMIT ${limit}
+  `;
+  return rows.map((row) => row.olKey);
 }

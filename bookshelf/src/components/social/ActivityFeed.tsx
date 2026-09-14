@@ -28,7 +28,7 @@ export default function ActivityFeed({ items }: { items: FeedItem[] }) {
         </p>
         <Link
           href="/search"
-          className="mt-4 inline-block rounded-lg bg-[#D4A017] px-5 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[#B8860B]"
+          className="mt-4 inline-block rounded-lg bg-[var(--color-primary)] px-5 py-2 text-sm font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-dark)]"
         >
           Find books
         </Link>
@@ -70,7 +70,7 @@ function FeedRow({ item }: { item: FeedItem }) {
             {item.user.name}
           </Link>{" "}
           <Icon
-            className="inline h-3.5 w-3.5 align-[-2px] text-gray-400 dark:text-gray-500"
+            className="inline h-3.5 w-3.5 align-[-2px] text-[var(--foreground-secondary)]"
             aria-hidden="true"
           />{" "}
           {item.type === "shelf_add" && (
@@ -120,7 +120,7 @@ function FeedRow({ item }: { item: FeedItem }) {
 
         <time
           dateTime={item.createdAt.toISOString()}
-          className="mt-1 block text-xs text-gray-400 dark:text-gray-500"
+          className="mt-1 block text-xs text-[var(--foreground-secondary)]"
         >
           {formatDistanceToNow(item.createdAt, { addSuffix: true })}
         </time>
@@ -170,7 +170,7 @@ function WorkLink({
   return (
     <Link
       href={`/work/${workKey}`}
-      className="font-medium text-[#0B6157] hover:underline dark:text-[#52B7A6]"
+      className="font-medium text-[var(--color-link)] hover:underline"
     >
       {title}
     </Link>

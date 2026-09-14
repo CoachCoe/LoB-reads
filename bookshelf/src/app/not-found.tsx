@@ -33,7 +33,7 @@ export default function NotFound() {
       <main className="flex-1">
         <div className="mx-auto flex max-w-xl flex-col items-center px-4 py-20 text-center">
           <Search
-            className="mb-4 h-10 w-10 text-gray-400 dark:text-gray-500"
+            className="mb-4 h-10 w-10 text-[var(--foreground-secondary)]"
             aria-hidden="true"
           />
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">

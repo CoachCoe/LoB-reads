@@ -161,10 +161,31 @@ than one spelling of one operator; and `deploy:verify` times one query per arm
 and asserts each comes back with results.
 
 The qualification: `deploy:verify`'s per-arm timings only run when `BASE_URL` is
-set, and no workflow sets it, so that half has never run in automation. The gate
-now reports the skip as a warning rather than a pass.
+set. `deploy.yml` does set it (added in `09fce36`) — but the whole Release step
+is gated on an Azure deployment target being configured, and none is, so that
+half has still never run in automation. The gate reports the skip as a warning
+rather than a pass. Measured locally against a running app, it goes from 28
+checks to 44 when `BASE_URL` is set.
 *~~Open question for you:~~ answered: approximate results for very common words
 are acceptable — and the fallback ordering is how that was spent.*
+
+**Reopened in part by the 2026-09-13 audit, and this one is arithmetic rather
+than tuning.** `bench:search` asserts a **1000ms page budget** because R1 says
+"no query exceeds 1 s". The fuzzy arm's own budget is **900ms**. A query that
+exhausts that arm pays for it *plus* the full-text arm, the tsquery-empty check
+and the count arm — about 150ms measured — so the page lands at ~1050ms. There
+is no value of the clock at which 900 + 150 < 1000.
+
+Measured, 4 of 4 runs against the real catalog: `thexx` and `andzz` at 1050,
+1059, 1060 and 975ms. Not cache-dependent, unlike `the hobbitt`, which is and
+whose 602–801ms band is confirmed accurate.
+
+When the fuzzy budget was 700ms this held (700 + 150 = 850). Raising it to
+900ms to rescue `the hobbitt` broke R1's own one-second promise for every query
+that exhausts the arm, and nothing recorded that. **Choosing between "typos
+sometimes return nothing" and "some searches take 1.05s" is a product decision,
+so the audit left it and filed it.** What it did change is the reader-facing
+half: an abandoned arm no longer renders as "check your spelling".
 
 ### P1 — the product works but under-delivers
 
@@ -212,15 +233,20 @@ probes, the CSP's CDN origin and one timed query per search arm. It exits
 non-zero, so it gates a release rather than being a checklist someone reads.
 `DEPLOYMENT.md` owns the full list and the script prints its own totals; the
 counts this paragraph used to give were wrong.
-*Outstanding:* neither workflow sets `BASE_URL`, so the running-app checks have
-never run in automation. The gate now reports that as a warning instead of a
-pass, and fails on it when a deployment target is configured.
+*Outstanding:* the running-app checks have never run in automation. Not for the
+reason this line used to give — `deploy.yml` sets `BASE_URL` — but because the
+Release step is gated on `steps.config.outputs.configured`, and no Azure
+subscription exists. The gate reports the skip as a warning instead of a pass,
+and fails on it when a deployment target is configured.
 *Needs from you:* an Azure subscription, and `GOOGLE_BOOKS_API_KEY`.
 *One thing to know:* ~~the common-word search will still be slow on a burstable
 tier, because that is R1 and not a configuration problem.~~ R1 is closed, so
 this no longer applies — but `bench:search` should be re-run against the
-deployed catalog, because the 700ms fuzzy budget was calibrated on a machine
-with `shared_buffers` at 128MB and a burstable tier may need a different one.
+deployed catalog, because the **900ms** fuzzy and **300ms** exact-title budgets
+were calibrated on a machine with `shared_buffers` at 128MB. This line said
+700ms, which was the old shared budget. The 2026-09-13 audit measured
+`shared_buffers` at 160MB on the machine that produced the current figures, so
+even the local baseline has moved; a burstable tier will need its own.
 
 ### P2 — worth doing, nothing waits on it
 
@@ -253,8 +279,11 @@ legitimately called from elsewhere — `[...nextauth]` and the two health probes
 which `deploy:verify` calls.
 
 Also still true: only the work page has a mount assertion. A component sweep
-during the 2026-09-08 audit found exactly one orphan (`ui/Badge.tsx`), so that
-half would catch one thing today, against the route half's one blocker.
+during the 2026-09-08 audit found exactly one orphan (`ui/Badge.tsx`); it has
+since been removed, and a fresh sweep of all 43 components on 2026-09-13 found
+**none**. So that half would catch nothing today, against the route half's one
+blocker — which strengthens the case for building the route half first rather
+than weakening it.
 
 **R8. Housekeeping.** Move rate limiting to a shared store before scaling past
 one replica — Container Apps scales by default, which makes the effective limit
@@ -282,8 +311,11 @@ so an edit is currently invisible and unattributable on a public page.
 handler is named by some client call — which is R7's remaining half and is what
 would have caught this mechanically.
 
-See `../docs/audit/2026-08-31-work-completed.md` for what was deferred and why,
-and `../docs/audit/2026-09-08-findings.md` for the round that found the above. `.env.local`
+Both of those rounds' records now live in this repository's issues rather than
+in a `docs/audit/` tree, which came out under the working-documents rule:
+issue #36 carries the 2026-08-31 and 2026-09-08 deferrals, #37 the open
+questions, #34 and #35 the items needing a person. The findings themselves are
+the opening comment on the PR that carried each round. `.env.local`
 is deleted and `npm run dev` works; `work_mem` now travels in a migration
 instead of being set by hand; the test database is built from the migration
 chain rather than `db push`; and all 26 migrations apply cleanly to Postgres 16,

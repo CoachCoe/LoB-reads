@@ -30,7 +30,7 @@ export default async function FeedPage() {
           You are not following anyone yet. Open a{" "}
           <Link
             href="/search"
-            className="text-[#0B6157] hover:underline dark:text-[#52B7A6]"
+            className="text-[var(--color-link)] hover:underline"
           >
             reader&rsquo;s profile
           </Link>{" "}

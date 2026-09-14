@@ -130,7 +130,7 @@ export default function LeafletMap({
                   </span>
                 )}
                 {location.addedBy && (
-                  <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+                  <p className="mt-2 text-xs text-[var(--foreground-secondary)]">
                     Added by {location.addedBy}
                   </p>
                 )}
@@ -171,7 +171,7 @@ export default function LeafletMap({
                   </span>
                 )}
                 {location.addedBy && (
-                  <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+                  <p className="mt-2 text-xs text-[var(--foreground-secondary)]">
                     Added by {location.addedBy}
                   </p>
                 )}

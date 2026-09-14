@@ -925,3 +925,128 @@ describe("getWrappedProjections", () => {
     });
   });
 });
+
+/**
+ * DC-18. The two wrapped surfaces computed the same quantity two ways:
+ * `pageCount ?? currentPage ?? 0` in getWrappedStats, `pageCount || 0` in
+ * getWrappedProjections. `progress.ts` states the rule in SQL and its comment
+ * claims "/wrapped had the same defect and is fixed alongside" — stats was
+ * fixed, projections was not.
+ *
+ * Asserted as agreement between the two surfaces AND as a concrete total,
+ * because agreement alone is satisfied by breaking both the same way.
+ */
+describe("pages read, across both wrapped surfaces", () => {
+  /** A finished session on an edition that states no page count. */
+  async function finishWithoutStatedPages(
+    userId: string,
+    workKey: string,
+    finishedAt: Date,
+    loggedPage: number
+  ) {
+    return prisma.readingSession.create({
+      data: {
+        userId,
+        workKey,
+        pageCount: null,
+        currentPage: loggedPage,
+        startedAt: finishedAt,
+        finishedAt,
+      },
+    });
+  }
+
+  it("credits the pages the reader logged when the edition states none", async () => {
+    const user = await makeUser();
+    freezeAt(new Date(2026, 6, 2, 12, 0, 0));
+
+    // One session with a stated length, one without. Distinct values so a
+    // total cannot be reached by the wrong combination.
+    const stated = await makeWork();
+    const unstated = await makeWork();
+    await finish(user.id, stated.olKey, new Date(2026, 2, 3, 12, 0, 0), 317);
+    await finishWithoutStatedPages(
+      user.id,
+      unstated.olKey,
+      new Date(2026, 3, 4, 12, 0, 0),
+      204
+    );
+
+    const stats = await getWrappedStats(user.id, 2026);
+    const projections = await getWrappedProjections(user.id);
+
+    expect(stats.pagesRead).toBe(317 + 204);
+    expect(projections.pagesReadYTD).toBe(317 + 204);
+    // The defect was a disagreement, so pin that directly too.
+    expect(projections.pagesReadYTD).toBe(stats.pagesRead);
+  });
+});
+
+/**
+ * TQ-6. Every test in the projections block above creates exactly one user, and
+ * setup.ts truncates every app table per test — so the database holds one
+ * reader's rows and dropping any of the five `where: { userId }` clauses in
+ * getWrappedProjections changes nothing observable. getWrappedStats has the
+ * matching test ("does not count another reader's books"); projections did not.
+ */
+describe("getWrappedProjections tenancy", () => {
+  it("counts only the reader's own sessions and reviews", async () => {
+    const reader = await makeUser();
+    const stranger = await makeUser();
+    freezeAt(new Date(2026, 6, 2, 12, 0, 0));
+
+    // Deliberately unequal, and not a multiple of each other, so a total that
+    // includes the stranger cannot coincide with the right answer.
+    await finishDistinctWorks(reader.id, 3, new Date(2026, 1, 5, 12, 0, 0), 100);
+    await finishDistinctWorks(stranger.id, 7, new Date(2026, 1, 5, 12, 0, 0), 100);
+
+    // Previous-year rows too: `previousYearBooks` is its own query.
+    await finishDistinctWorks(reader.id, 2, new Date(2025, 1, 5, 12, 0, 0), 100);
+    await finishDistinctWorks(stranger.id, 9, new Date(2025, 1, 5, 12, 0, 0), 100);
+
+    // And an open session each, for currentlyReading.
+    const readerOpen = await makeWork();
+    const strangerOpen = await makeWork();
+    await prisma.readingSession.create({
+      data: {
+        userId: reader.id,
+        workKey: readerOpen.olKey,
+        pageCount: 400,
+        currentPage: 40,
+        startedAt: new Date(2026, 5, 1),
+        finishedAt: null,
+      },
+    });
+    await prisma.readingSession.create({
+      data: {
+        userId: stranger.id,
+        workKey: strangerOpen.olKey,
+        pageCount: 400,
+        currentPage: 300,
+        startedAt: new Date(2026, 5, 1),
+        finishedAt: null,
+      },
+    });
+
+    // Reviews too: reviewsWrittenYTD is its own query with its own filter.
+    const readerReviewed = await makeWork();
+    const strangerReviewed = await makeWork();
+    await review(reader.id, readerReviewed.olKey, 4, new Date(2026, 2, 8, 12, 0, 0));
+    for (let i = 0; i < 6; i++) {
+      const work = await makeWork();
+      await review(stranger.id, work.olKey, 5, new Date(2026, 2, 8, 12, 0, 0));
+    }
+    await review(stranger.id, strangerReviewed.olKey, 3, new Date(2026, 2, 9, 12, 0, 0));
+
+    const p = await getWrappedProjections(reader.id);
+
+    expect(p.booksReadYTD).toBe(3);
+    expect(p.pagesReadYTD).toBe(300);
+    expect(p.previousYearBooks).toBe(2);
+    expect(p.reviewsWrittenYTD).toBe(1);
+    expect(p.currentlyReading).toHaveLength(1);
+    // 40 of 400, not the stranger's 300 of 400. Distinct percentages so the
+    // right length cannot be reached with the wrong row.
+    expect(p.currentlyReading[0].progress).toBe(10);
+  });
+});

@@ -20,6 +20,7 @@ import WorkReviewSection from "@/components/reviews/WorkReviewSection";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getUserReviewForWork } from "@/server/reviews";
 import { enqueue } from "@/server/enrichment";
+import { firstPlausiblePageCount } from "@/server/progress";
 
 interface Props {
   params: Promise<{ olKey: string }>;
@@ -92,12 +93,18 @@ export default async function WorkPage({ params }: Props) {
     : null;
 
   // Progress needs a denominator. Editions disagree about page counts, so take
-  // the first that states one from the editions already loaded rather than
-  // spending a query on it. Null is fine — the component then tracks a page
-  // number without a percentage, which is better than refusing to track.
-  const pageCount =
-    work.editions.find((edition) => edition.numberOfPages)?.numberOfPages ??
-    null;
+  // the first that states a plausible one from the editions already loaded
+  // rather than spending a query on it. Null is fine — the component then
+  // tracks a page number without a percentage, which is better than refusing
+  // to track.
+  //
+  // SC-11: filtered through the same guard the server uses. `find` on a truthy
+  // value skips 0 and accepts -5 and 2147483647, and the slice holds one
+  // edition at exactly 2147483647, five negative and 1,139 above the bound.
+  // This value is only reached when the session snapshot is null — precisely
+  // when plausiblePageCount already rejected the same edition — and it lands
+  // in <ProgressBar max> and <Input max>, so the reader saw the denominator.
+  const pageCount = firstPlausiblePageCount(work.editions);
 
   const coverEdition = work.editions.find(
     (e) => e.olKey === work.coverEditionKey
@@ -139,7 +146,7 @@ export default async function WorkPage({ params }: Props) {
                   {i > 0 && ", "}
                   <Link
                     href={`/author/${encodeURIComponent(author.name)}`}
-                    className="text-[#0B6157] hover:underline dark:text-[#52B7A6]"
+                    className="text-[var(--color-link)] hover:underline"
                   >
                     {author.name}
                   </Link>
@@ -164,11 +171,38 @@ export default async function WorkPage({ params }: Props) {
             </div>
           )}
 
-          {user?.id && (
-            <div className="mt-4">
+          {/* UX-23. PRD section 2 says the browser persona "must never hit a
+              login wall to look at a book". It never did — but it was also
+              offered nothing: both controls below return null when signed out
+              and the whole "Your reading" block is gated, so a visitor arriving
+              from a search result or a shared link saw the book and not one
+              prompt. No wall, and no door either.
+
+              The callbackUrl brings them back to THIS book rather than the home
+              page, which is the difference between a prompt and a detour. */}
+          <div className="mt-4">
+            {user?.id ? (
               <AddToShelfButton workKey={work.olKey} />
-            </div>
-          )}
+            ) : (
+              <div className="flex flex-wrap items-center gap-3">
+                <Link
+                  href={`/register?callbackUrl=${encodeURIComponent(`/work/${olKey}`)}`}
+                  className="rounded-lg bg-[var(--color-primary)] px-5 py-2.5 font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-dark)]"
+                >
+                  Want to read
+                </Link>
+                <span className="text-sm text-[var(--foreground-secondary)]">
+                  <Link
+                    href={`/login?callbackUrl=${encodeURIComponent(`/work/${olKey}`)}`}
+                    className="text-[var(--color-link)] hover:underline"
+                  >
+                    Sign in
+                  </Link>{" "}
+                  to shelve, rate and track it.
+                </span>
+              </div>
+            )}
+          </div>
 
           <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-500 dark:text-gray-400">
             {work.firstPublishYear && (
@@ -195,7 +229,7 @@ export default async function WorkPage({ params }: Props) {
               {/* Cached third-party content is attributed, never presented as
                   ours. That is a licence condition, not a courtesy. */}
               {work.descriptionSource === "google_books" && (
-                <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+                <p className="mt-2 text-xs text-[var(--foreground-secondary)]">
                   Description via Google Books
                 </p>
               )}

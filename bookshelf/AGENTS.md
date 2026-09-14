@@ -36,4 +36,16 @@ that fails if it is broken, and each was broken at least once first.
   Guarded by `__tests__/conventions.test.ts`.
 - **Comparisons go against the `_norm` columns**, never `unaccent(lower(col))`.
   Wrapping the column turned the fuzzy search path into a sequential scan over
-  6.9M rows once already.
+  6.9M rows once already. Guarded by `__tests__/conventions.test.ts`, which
+  checks the SHAPE — a normalising call whose argument bottoms out in a bare
+  column, at any nesting depth. The previous guard matched one spelling and
+  missed the wording this bullet uses, so the invariant had no working check.
+- **A component never names a brand colour directly.** Use the tokens in
+  `globals.css` — `--color-primary`, `--color-primary-text`,
+  `--color-primary-contrast`, `--color-link` — because `contrast.test.ts`
+  asserts their WCAG ratios and a literal escapes that entirely. There were 84
+  literals against 24 files using a token, and one colour in live use
+  (`--color-link`, every inline link) was declared nowhere and had therefore
+  never been measured. Guarded by `__tests__/utils/contrast.test.ts`. The one
+  exception is `opengraph-image.tsx`, which renders outside the stylesheet and
+  has no custom properties available.

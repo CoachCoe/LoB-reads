@@ -281,7 +281,7 @@ export default function WorkLocationsSection({
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-lg bg-[#D4A017] py-2 text-[var(--color-primary-contrast)] hover:bg-[#B8860B] disabled:opacity-50"
+            className="w-full rounded-lg bg-[var(--color-primary)] py-2 text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-dark)] disabled:opacity-50"
           >
             {submitting ? "Adding…" : "Add Location"}
           </button>
@@ -298,7 +298,7 @@ export default function WorkLocationsSection({
             location.isFictional ? (
               <Sparkles className="h-4 w-4 text-purple-500" aria-hidden="true" />
             ) : (
-              <MapPin className="h-4 w-4 text-[#D4A017]" aria-hidden="true" />
+              <MapPin className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" />
             )
           }
           description={location.description}

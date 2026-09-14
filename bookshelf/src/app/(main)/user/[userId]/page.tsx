@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { getUserProfile, isFollowing } from "@/server/users";
 import { getUserReviews } from "@/server/reviews";
@@ -13,6 +14,16 @@ import { BookOpen, Users, Star } from "lucide-react";
 
 interface Props {
   params: Promise<{ userId: string }>;
+}
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const { userId } = await params;
+  const profile = await getUserProfile(userId);
+  if (!profile) return { title: "Reader" };
+  return {
+    title: profile.name ?? "A reader",
+    description: `${profile.name ?? "A reader"}'s shelves, ratings and reviews on Life on Books.`,
+  };
 }
 
 export default async function UserProfilePage({ params }: Props) {
@@ -56,17 +67,17 @@ export default async function UserProfilePage({ params }: Props) {
           {/* Stats */}
           <div className="flex items-center justify-center sm:justify-start gap-6 mt-4 text-sm">
             <div className="flex items-center gap-1">
-              <BookOpen className="h-4 w-4 text-gray-400 dark:text-gray-500" />
+              <BookOpen className="h-4 w-4 text-[var(--foreground-secondary)]" />
               <span className="font-medium">{booksRead}</span>
               <span className="text-gray-500 dark:text-gray-400">books read</span>
             </div>
             <div className="flex items-center gap-1">
-              <Star className="h-4 w-4 text-gray-400 dark:text-gray-500" />
+              <Star className="h-4 w-4 text-[var(--foreground-secondary)]" />
               <span className="font-medium">{user._count?.reviews || 0}</span>
               <span className="text-gray-500 dark:text-gray-400">reviews</span>
             </div>
             <div className="flex items-center gap-1">
-              <Users className="h-4 w-4 text-gray-400 dark:text-gray-500" />
+              <Users className="h-4 w-4 text-[var(--foreground-secondary)]" />
               <span className="font-medium">{user._count?.followers || 0}</span>
               <span className="text-gray-500 dark:text-gray-400">followers</span>
             </div>
@@ -101,7 +112,7 @@ export default async function UserProfilePage({ params }: Props) {
           */}
           {user.shelves.map((shelf) => (
             <Link key={shelf.id} href={`/shelf/${shelf.id}`} className="block">
-              <Card className="h-full transition-colors hover:border-[#D4A017]">
+              <Card className="h-full transition-colors hover:border-[var(--color-primary)]">
               <CardContent>
                 <h3 className="font-medium text-gray-900 dark:text-gray-100">{shelf.name}</h3>
                 <p className="text-sm text-gray-500 dark:text-gray-400">

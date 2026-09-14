@@ -5,6 +5,13 @@ import {
 } from "@/server/map";
 import { getAllFictionalWorlds } from "@/server/fictional-worlds";
 import MapClient from "./MapClient";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Map",
+  description: "Where the stories happen: reader-contributed places from the books they have read.",
+};
+
 
 /**
  * Public. The map shows only community-contributed locations, and MapClient

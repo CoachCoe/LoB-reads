@@ -1,6 +1,6 @@
 import { prisma } from "./setup";
 import { POST as register } from "@/app/api/auth/register/route";
-import { __resetRateLimits } from "@/lib/rate-limit";
+import { __resetRateLimits, checkLimit, LIMITS } from "@/lib/rate-limit";
 
 /**
  * Registration and sign-in identity rules, all fixed in response to the first
@@ -106,6 +106,20 @@ describe("input rules", () => {
 });
 
 describe("rate limiting", () => {
+  // SEC-2 changed TRUSTED_PROXY_HOPS to default to 0, so an X-Forwarded-For
+  // that nothing verified no longer identifies a client. The per-address rule
+  // below is still the rule; these tests just have to say which topology they
+  // are describing instead of inheriting it from a default.
+  let previousHops: string | undefined;
+  beforeEach(() => {
+    previousHops = process.env.TRUSTED_PROXY_HOPS;
+    process.env.TRUSTED_PROXY_HOPS = "1";
+  });
+  afterEach(() => {
+    if (previousHops === undefined) delete process.env.TRUSTED_PROXY_HOPS;
+    else process.env.TRUSTED_PROXY_HOPS = previousHops;
+  });
+
   it("blocks repeated sign-ups from one address with 429", async () => {
     const ip = "198.51.100.42";
     const statuses: number[] = [];
@@ -120,6 +134,65 @@ describe("rate limiting", () => {
 
     expect(statuses.filter((s) => s === 201)).toHaveLength(5);
     expect(statuses.filter((s) => s === 429)).toHaveLength(2);
+  });
+
+  it("does not let one address close registration for everyone", async () => {
+    // The defect /bastion found in the first version of this fix, and the
+    // reason it is a separate test: the per-address rule below already passed
+    // while this was broken.
+    //
+    // Two bounds were applied to every request -- the per-client one AND a
+    // shared ceiling -- in one array literal, so BOTH were spent before either
+    // was inspected. An attacker refused after 5 kept draining the shared
+    // bucket with the other 195, and one address locked out every other for an
+    // hour. That is FLOW-2, which the code it replaced existed to avoid.
+    const attacker = "203.0.113.9";
+    for (let i = 0; i < LIMITS.registerUnidentified.limit + 20; i++) {
+      await post({ ...valid, email: `flood${i}@example.com` }, attacker);
+    }
+
+    // A different address, which has not spent anything.
+    const response = await post(
+      { ...valid, email: "innocent@example.com" },
+      "198.51.100.77"
+    );
+
+    expect(response.status).toBe(201);
+    expect(
+      await prisma.user.findUnique({ where: { email: "innocent@example.com" } })
+    ).not.toBeNull();
+
+    // And the attacker got exactly their own budget, not the shared one.
+    expect(
+      await prisma.user.count({ where: { email: { startsWith: "flood" } } })
+    ).toBe(LIMITS.register.limit);
+  });
+
+  it("still bounds sign-ups when no client can be identified", async () => {
+    // SEC-4. With nothing trusted in front, clientRateLimitKey returns null and
+    // the per-address rule cannot apply at all — which before this was no bound
+    // whatever: unbounded account creation, each row seeded with three default
+    // shelves in a transaction. The global ceiling is the one that has no
+    // escape, so it is the one asserted here.
+    delete process.env.TRUSTED_PROXY_HOPS;
+
+    // Spend the global budget directly rather than sending 200 requests: the
+    // property under test is that the route consults this bucket, not the
+    // arithmetic of the limiter, which rate-limit.test.ts already pins.
+    for (let i = 0; i < LIMITS.registerUnidentified.limit; i++) {
+      expect(checkLimit("register:unidentified", LIMITS.registerUnidentified).allowed).toBe(true);
+    }
+
+    const response = await post({ ...valid, email: "unidentified@example.com" });
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("Retry-After")).toBe(
+      String(checkLimit("register:unidentified", LIMITS.registerUnidentified).retryAfterSeconds)
+    );
+    // State, not just status: the account must not exist.
+    expect(
+      await prisma.user.findUnique({ where: { email: "unidentified@example.com" } })
+    ).toBeNull();
   });
 
   it("limits per address, so one abuser does not block everyone", async () => {

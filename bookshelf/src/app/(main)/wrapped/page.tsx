@@ -2,6 +2,13 @@ import { requireUser } from "@/lib/auth/session";
 import { getWrappedStats } from "@/server/wrapped";
 import { resolveWrappedYear } from "@/lib/wrapped-year";
 import WrappedExperience from "./WrappedExperience";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Your year in books",
+  robots: { index: false, follow: false },
+};
+
 
 interface Props {
   searchParams: Promise<{ year?: string }>;

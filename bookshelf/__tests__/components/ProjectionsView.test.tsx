@@ -81,6 +81,10 @@ describe("ProjectionsView year-progress bar", () => {
       />
     );
     expect(yearBarWidth(container)).toBe(100);
+    // TQ-22: the bar was clamped and the label beside it was not. This case
+    // rendered "Day 366 of 365" on 31 December of a leap year, with this very
+    // test standing over it asserting only the width.
+    expect(screen.getByText("Day 366 of 366")).toBeInTheDocument();
   });
 
   it("still renders on 1 January, when almost nothing has elapsed", () => {
@@ -91,6 +95,8 @@ describe("ProjectionsView year-progress bar", () => {
       />
     );
     expect(yearBarWidth(container)).toBeCloseTo(0.274, 3);
-    expect(screen.getByText(/364/)).toBeInTheDocument();
+    // The exact string, not /364/: the loose form matches the days-remaining
+    // copy elsewhere on the page and so passes whatever the label says.
+    expect(screen.getByText("Day 1 of 365")).toBeInTheDocument();
   });
 });
