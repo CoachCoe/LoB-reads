@@ -171,11 +171,38 @@ export default async function WorkPage({ params }: Props) {
             </div>
           )}
 
-          {user?.id && (
-            <div className="mt-4">
+          {/* UX-23. PRD section 2 says the browser persona "must never hit a
+              login wall to look at a book". It never did — but it was also
+              offered nothing: both controls below return null when signed out
+              and the whole "Your reading" block is gated, so a visitor arriving
+              from a search result or a shared link saw the book and not one
+              prompt. No wall, and no door either.
+
+              The callbackUrl brings them back to THIS book rather than the home
+              page, which is the difference between a prompt and a detour. */}
+          <div className="mt-4">
+            {user?.id ? (
               <AddToShelfButton workKey={work.olKey} />
-            </div>
-          )}
+            ) : (
+              <div className="flex flex-wrap items-center gap-3">
+                <Link
+                  href={`/register?callbackUrl=${encodeURIComponent(`/work/${olKey}`)}`}
+                  className="rounded-lg bg-[var(--color-primary)] px-5 py-2.5 font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-dark)]"
+                >
+                  Want to read
+                </Link>
+                <span className="text-sm text-[var(--foreground-secondary)]">
+                  <Link
+                    href={`/login?callbackUrl=${encodeURIComponent(`/work/${olKey}`)}`}
+                    className="text-[var(--color-link)] hover:underline"
+                  >
+                    Sign in
+                  </Link>{" "}
+                  to shelve, rate and track it.
+                </span>
+              </div>
+            )}
+          </div>
 
           <dl className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm text-gray-500 dark:text-gray-400">
             {work.firstPublishYear && (

@@ -1,6 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Globe, Plus, X } from "lucide-react";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
@@ -53,6 +55,11 @@ export default function LocationsPanel({
   onConfirmDelete,
   onCancelDelete,
 }: Props) {
+  // Carry the reader back to the page they were reading. getSafeCallbackUrl
+  // validates it on the other side.
+  const pathname = usePathname();
+  const signInHref = `/login?callbackUrl=${encodeURIComponent(pathname ?? "/")}`;
+
   return (
     <div className="rounded-lg border border-[var(--card-border)] bg-[var(--card-bg)] p-6">
       <div className="mb-4 flex items-center justify-between">
@@ -98,13 +105,30 @@ export default function LocationsPanel({
             aria-hidden="true"
           />
           <p className="text-sm">No locations added yet</p>
-          {canContribute && !formOpen && (
-            <button
-              onClick={onOpenForm}
-              className="mt-2 text-sm font-medium text-[var(--color-primary-text)] hover:underline"
-            >
-              Be the first to add one
-            </button>
+          {/* UX-17. A signed-out reader got the flat statement and nothing
+              else — a dead end on the surface carrying the product's whole
+              differentiator. FictionalWorldsPanel already says "Sign in to add
+              one" in the same situation; this file was never brought into
+              line, and the inconsistency is the tell. */}
+          {canContribute ? (
+            !formOpen && (
+              <button
+                onClick={onOpenForm}
+                className="mt-2 text-sm font-medium text-[var(--color-primary-text)] hover:underline"
+              >
+                Be the first to add one
+              </button>
+            )
+          ) : (
+            <p className="mt-2 text-sm">
+              <Link
+                href={signInHref}
+                className="font-medium text-[var(--color-link)] hover:underline"
+              >
+                Sign in
+              </Link>{" "}
+              to add the first one.
+            </p>
           )}
         </div>
       ) : (
