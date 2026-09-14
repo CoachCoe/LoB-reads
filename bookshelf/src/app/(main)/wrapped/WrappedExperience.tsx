@@ -17,6 +17,9 @@ const MONTH_NAMES = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 ];
 
+/** Pages in the seven Harry Potter books, for the comparison slide. */
+const HARRY_POTTER_PAGES = 4224;
+
 const GRADIENTS = [
   "from-purple-600 via-pink-600 to-red-500",
   "from-blue-600 via-purple-600 to-pink-500",
@@ -79,10 +82,17 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
             {stats.pagesRead.toLocaleString()}
           </div>
           <p className="text-2xl font-medium">pages</p>
-          {stats.pagesRead > 0 && (
+          {/* UX-12: gated on the whole series, not on any pages at all. The
+              floor divides by 4,224, so every reader under that -- most of
+              them, and every new account -- was told they had read it "0
+              times" on a slide whose job is to feel good. */}
+          {stats.pagesRead >= HARRY_POTTER_PAGES && (
             <p className="text-lg text-white/70 mt-4">
               That&apos;s like reading the entire Harry Potter series{" "}
-              {Math.floor(stats.pagesRead / 4224)} times!
+              {Math.floor(stats.pagesRead / HARRY_POTTER_PAGES)}
+              {Math.floor(stats.pagesRead / HARRY_POTTER_PAGES) === 1
+                ? " time over!"
+                : " times over!"}
             </p>
           )}
         </div>
@@ -105,7 +115,7 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
                 {stats.topGenres.slice(1, 4).map((g) => (
                   <span
                     key={g.genre}
-                    className="px-3 py-1 bg-white dark:bg-gray-900/20 rounded-full text-sm"
+                    className="px-3 py-1 bg-white/20 rounded-full text-sm"
                   >
                     {g.genre}
                   </span>
@@ -138,7 +148,7 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
                 {stats.topAuthors.slice(1, 4).map((a) => (
                   <span
                     key={a.author}
-                    className="px-3 py-1 bg-white dark:bg-gray-900/20 rounded-full text-sm"
+                    className="px-3 py-1 bg-white/20 rounded-full text-sm"
                   >
                     {a.author}
                   </span>
@@ -163,7 +173,7 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
               return (
                 <div key={m.month} className="flex flex-col items-center">
                   <div
-                    className="w-6 md:w-8 bg-white dark:bg-gray-900/80 rounded-t transition-all duration-500"
+                    className="w-6 md:w-8 bg-white/80 rounded-t transition-all duration-500"
                     style={{ height: `${height}%`, minHeight: "4px" }}
                   />
                   <span className="text-xs mt-2 text-white/60">
@@ -198,7 +208,7 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
               {stats.topRatedBooks.slice(0, 3).map((book, index) => (
                 <div
                   key={book.title}
-                  className="flex items-center gap-4 bg-white dark:bg-gray-900/10 rounded-lg p-3"
+                  className="flex items-center gap-4 bg-white/10 rounded-lg p-3"
                 >
                   <span className="text-2xl font-bold opacity-60">
                     {index + 1}
@@ -232,19 +242,19 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
             {stats.year} in Review
           </h2>
           <div className="grid grid-cols-2 gap-4 max-w-sm mx-auto mb-8">
-            <div className="bg-white dark:bg-gray-900/10 rounded-lg p-4">
+            <div className="bg-white/10 rounded-lg p-4">
               <div className="text-3xl font-bold">{stats.booksRead}</div>
               <div className="text-sm text-white/70">Books</div>
             </div>
-            <div className="bg-white dark:bg-gray-900/10 rounded-lg p-4">
+            <div className="bg-white/10 rounded-lg p-4">
               <div className="text-3xl font-bold">{stats.pagesRead.toLocaleString()}</div>
               <div className="text-sm text-white/70">Pages</div>
             </div>
-            <div className="bg-white dark:bg-gray-900/10 rounded-lg p-4">
+            <div className="bg-white/10 rounded-lg p-4">
               <div className="text-3xl font-bold">{stats.reviewsWritten}</div>
               <div className="text-sm text-white/70">Reviews</div>
             </div>
-            <div className="bg-white dark:bg-gray-900/10 rounded-lg p-4">
+            <div className="bg-white/10 rounded-lg p-4">
               <div className="text-3xl font-bold">{stats.topGenres.length}</div>
               <div className="text-sm text-white/70">Genres</div>
             </div>
@@ -294,10 +304,10 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
         {slides.map((_, index) => (
           <div
             key={index}
-            className="h-1 flex-1 rounded-full bg-white dark:bg-gray-900/30 overflow-hidden"
+            className="h-1 flex-1 rounded-full bg-white/30 overflow-hidden"
           >
             <div
-              className={`h-full bg-white dark:bg-gray-900 transition-all duration-300 ${ index < currentSlide ? "w-full" : index === currentSlide ? "w-full" : "w-0" }`}
+              className={`h-full bg-white transition-all duration-300 ${ index < currentSlide ? "w-full" : index === currentSlide ? "w-full" : "w-0" }`}
             />
           </div>
         ))}
@@ -312,13 +322,17 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
         </div>
       </div>
 
-      {/* Navigation */}
-      <div className="absolute bottom-0 left-0 right-0 p-6 flex items-center justify-between">
+      {/* UX-9: z-10 puts this above the click zones below. Both were `absolute`
+          with no z-index in one stacking context, so the later sibling painted
+          on top and the centre third -- which has no handler at all -- swallowed
+          every click on Share. Prev/next survived only because the zone beneath
+          each did the same thing. */}
+      <div className="absolute bottom-0 left-0 right-0 z-10 p-6 flex items-center justify-between">
         <button
           onClick={prevSlide}
           disabled={currentSlide === 0}
           aria-label="Previous slide"
-          className="p-2 rounded-full bg-white dark:bg-gray-900/20 disabled:opacity-30 hover:bg-white/30 transition-colors"
+          className="p-2 rounded-full bg-white/20 disabled:opacity-30 hover:bg-white/30 transition-colors"
         >
           <ChevronLeft className="h-6 w-6" />
         </button>
@@ -340,14 +354,14 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
           onClick={nextSlide}
           disabled={currentSlide === slides.length - 1}
           aria-label="Next slide"
-          className="p-2 rounded-full bg-white dark:bg-gray-900/20 disabled:opacity-30 hover:bg-white/30 transition-colors"
+          className="p-2 rounded-full bg-white/20 disabled:opacity-30 hover:bg-white/30 transition-colors"
         >
           <ChevronRight className="h-6 w-6" />
         </button>
       </div>
 
-      {/* Click zones for navigation */}
-      <div className="absolute inset-0 flex">
+      {/* Click zones for navigation. Explicitly behind the controls. */}
+      <div className="absolute inset-0 z-0 flex">
         <div className="w-1/3 cursor-pointer" onClick={prevSlide} />
         <div className="w-1/3" />
         <div className="w-1/3 cursor-pointer" onClick={nextSlide} />
@@ -365,7 +379,7 @@ export default function WrappedExperience({ stats, userName }: WrappedExperience
         {/* Close button */}
         <Link
           href="/"
-          className="p-2 rounded-full bg-white dark:bg-gray-900/20 hover:bg-white/30 transition-colors"
+          className="p-2 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
         >
           <span className="sr-only">Close</span>
           <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
