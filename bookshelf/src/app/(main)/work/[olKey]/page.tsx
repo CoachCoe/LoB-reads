@@ -146,7 +146,7 @@ export default async function WorkPage({ params }: Props) {
                   {i > 0 && ", "}
                   <Link
                     href={`/author/${encodeURIComponent(author.name)}`}
-                    className="text-[#0B6157] hover:underline dark:text-[#52B7A6]"
+                    className="text-[var(--color-link)] hover:underline"
                   >
                     {author.name}
                   </Link>
@@ -202,7 +202,7 @@ export default async function WorkPage({ params }: Props) {
               {/* Cached third-party content is attributed, never presented as
                   ours. That is a licence condition, not a courtesy. */}
               {work.descriptionSource === "google_books" && (
-                <p className="mt-2 text-xs text-gray-400 dark:text-gray-500">
+                <p className="mt-2 text-xs text-[var(--foreground-secondary)]">
                   Description via Google Books
                 </p>
               )}

@@ -176,7 +176,7 @@ export default function AddToShelfButton({
                 >
                   <span>{shelf.name}</span>
                   {isLoadingThis ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-gray-400 dark:text-gray-500" />
+                    <Loader2 className="h-4 w-4 animate-spin text-[var(--foreground-secondary)]" />
                   ) : isOnShelf ? (
                     <Check className="h-4 w-4 text-green-500" />
                   ) : null}

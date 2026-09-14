@@ -33,7 +33,7 @@ export default async function HomePage() {
           <div className="mt-6 flex justify-center gap-3">
             <Link
               href="/register"
-              className="rounded-lg bg-[#D4A017] px-6 py-2.5 font-medium text-[var(--color-primary-contrast)] hover:bg-[#B8860B]"
+              className="rounded-lg bg-[var(--color-primary)] px-6 py-2.5 font-medium text-[var(--color-primary-contrast)] hover:bg-[var(--color-primary-dark)]"
             >
               Get started
             </Link>
@@ -67,7 +67,7 @@ export default async function HomePage() {
           </h2>
           <Link
             href="/search"
-            className="text-sm text-[#0B6157] hover:underline dark:text-[#52B7A6]"
+            className="text-sm text-[var(--color-link)] hover:underline"
           >
             Browse all
           </Link>

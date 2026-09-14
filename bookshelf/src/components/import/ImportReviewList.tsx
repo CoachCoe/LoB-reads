@@ -114,7 +114,7 @@ export default function ImportReviewList({ rows }: { rows: ReviewRow[] }) {
               {row.myRating !== null && row.myRating > 0 && (
                 <span className="flex items-center gap-1">
                   <Star
-                    className="h-3.5 w-3.5 fill-current text-[#D4A017]"
+                    className="h-3.5 w-3.5 fill-current text-[var(--color-primary)]"
                     aria-hidden="true"
                   />
                   {row.myRating}
@@ -133,7 +133,7 @@ export default function ImportReviewList({ rows }: { rows: ReviewRow[] }) {
                     onClick={() =>
                       act(row.id, "confirm", { workKey: candidate.workKey })
                     }
-                    className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 px-3 py-2 text-left text-sm hover:border-[#0B6157] hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800"
+                    className="flex w-full items-center justify-between gap-3 rounded-lg border border-gray-200 px-3 py-2 text-left text-sm hover:border-[var(--color-link)] hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800"
                   >
                     <span className="min-w-0">
                       <span className="block truncate text-gray-900 dark:text-gray-100">

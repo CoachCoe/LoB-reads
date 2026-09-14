@@ -57,7 +57,7 @@ export default function LocationsPanel({
     <div className="rounded-lg border border-[var(--card-border)] bg-[var(--card-bg)] p-6">
       <div className="mb-4 flex items-center justify-between">
         <h3 className="flex items-center gap-2 text-lg font-semibold text-[var(--foreground)]">
-          <Globe className="h-5 w-5 text-[#D4A017]" aria-hidden="true" />
+          <Globe className="h-5 w-5 text-[var(--color-primary)]" aria-hidden="true" />
           {title}
         </h3>
         {canContribute && !formOpen && (

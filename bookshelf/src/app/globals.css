@@ -37,6 +37,16 @@
   --color-accent-light: #E6B800;
   --color-accent-dark: #B8860B;
 
+  /* UX-33. The second colour in this product. It was already the colour of
+     every inline link — /search's focus ring, the work page's author link, the
+     feed's empty-state link — and it was declared NOWHERE: eleven raw hex
+     literals across six components, in no token and checked by no test, beside
+     a gold that had three tokens and a contrast suite. Promoted rather than
+     replaced, because the value itself is good: 7.03:1 on the light page and
+     7.34:1 on a white card. Gold stays reserved for the mark, filled stars and
+     the one primary action per screen; this carries navigation. */
+  --color-link: #0B6157;
+
   /* Card and surface colors */
   --card-bg: #ffffff;
   --card-border: #e5e5e7;
@@ -87,6 +97,9 @@ html.dark .logo-themed {
   --color-primary-text: #E8B93F;
   --color-primary-contrast: #1d1d1f;
   --focus-ring: #E8B93F;
+
+  /* 8.19:1 on the page, 7.62:1 on the card. */
+  --color-link: #52B7A6;
 }
 
 @theme inline {
