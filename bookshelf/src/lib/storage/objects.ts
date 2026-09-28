@@ -1,5 +1,6 @@
 import { BlobServiceClient, ContainerClient } from "@azure/storage-blob";
 import { DefaultAzureCredential } from "@azure/identity";
+import { canonicalKey, deleteObject, writeObject } from "./local-disk";
 
 /**
  * Object storage for user uploads (avatars, fictional-world maps).
@@ -8,19 +9,22 @@ import { DefaultAzureCredential } from "@azure/identity";
  * a change to this file alone — which is exactly what happened when this moved
  * from S3 to Azure Blob Storage. The four exports below are the whole contract.
  *
- * The container is private and served through Front Door; it is never public.
+ * Two backends: Azure Blob Storage, whose container is private and served
+ * through Front Door, and a directory on local disk (UPLOADS_DIR) served by the
+ * reverse proxy on a single VM. UPLOADS_DIR wins when both are set.
  */
 
 const CONTAINER = process.env.AZURE_STORAGE_CONTAINER ?? "uploads";
 const CONNECTION_STRING = process.env.AZURE_STORAGE_CONNECTION_STRING;
 const ACCOUNT = process.env.AZURE_STORAGE_ACCOUNT;
+const UPLOADS_DIR = process.env.UPLOADS_DIR?.trim() || undefined;
 
 /**
- * Storage is configured by either a connection string (local development
+ * Storage is configured by a directory, a connection string (local development
  * against Azurite, where there is no managed identity to borrow) or an account
  * name used with the ambient credential.
  */
-const CONFIGURED = Boolean(CONNECTION_STRING || ACCOUNT);
+const CONFIGURED = Boolean(UPLOADS_DIR || CONNECTION_STRING || ACCOUNT);
 
 /**
  * Public base URL uploads are served from — the Front Door endpoint, or the
@@ -45,8 +49,11 @@ function blobEndpoint(): string | undefined {
     : undefined;
 }
 
+// A directory has no endpoint of its own to fall back to: whatever serves it is
+// named only by CDN_URL.
 const PUBLIC_BASE_URL =
-  process.env.CDN_URL?.replace(/\/$/, "") ?? blobEndpoint();
+  process.env.CDN_URL?.replace(/\/$/, "") ??
+  (UPLOADS_DIR ? undefined : blobEndpoint());
 
 /**
  * Whether the container allows anonymous blob reads, so the blob endpoint can
@@ -87,7 +94,7 @@ function getContainer(): ContainerClient {
 export class StorageNotConfiguredError extends Error {
   constructor() {
     super(
-      "Object storage is not configured (set AZURE_STORAGE_CONNECTION_STRING or AZURE_STORAGE_ACCOUNT)"
+      "Object storage is not configured (set UPLOADS_DIR, AZURE_STORAGE_CONNECTION_STRING or AZURE_STORAGE_ACCOUNT)"
     );
     this.name = "StorageNotConfiguredError";
   }
@@ -118,6 +125,14 @@ export async function putObject(
   key: string,
   file: File
 ): Promise<{ url: string; key: string }> {
+  if (UPLOADS_DIR) {
+    // Callers must use the returned key and URL: the extension may differ from
+    // the one they asked for.
+    const stored = canonicalKey(key, file.type);
+    await writeObject(UPLOADS_DIR, stored, new Uint8Array(await file.arrayBuffer()));
+    return { url: `${PUBLIC_BASE_URL}/${stored}`, key: stored };
+  }
+
   const blob = getContainer().getBlockBlobClient(key);
 
   await blob.uploadData(Buffer.from(await file.arrayBuffer()), {
@@ -142,6 +157,8 @@ export async function putObject(
 export async function deleteObjectByUrl(url: string): Promise<boolean> {
   const key = keyFromUrl(url);
   if (!key) return false;
+
+  if (UPLOADS_DIR) return deleteObject(UPLOADS_DIR, key);
 
   await getContainer().getBlockBlobClient(key).deleteIfExists();
   return true;

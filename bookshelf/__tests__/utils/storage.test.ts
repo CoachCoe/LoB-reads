@@ -169,3 +169,127 @@ describe("keyFromUrl", () => {
     expect(keyFromUrl(`${CDN}/avatars/u1/a.jpg`)).toBeNull();
   });
 });
+
+describe("local disk backend", () => {
+  const SITE = "https://reads.example.org/uploads";
+  const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+  let root: string;
+
+  beforeEach(async () => {
+    const { mkdtemp } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    root = await mkdtemp(`${tmpdir()}/lob-uploads-`);
+  });
+
+  afterEach(async () => {
+    const { rm } = await import("node:fs/promises");
+    await rm(root, { recursive: true, force: true });
+  });
+
+  const load = async (env: Record<string, string | undefined> = {}) => {
+    jest.resetModules();
+    const previous = { ...process.env };
+    for (const key of ["AZURE_STORAGE_ACCOUNT", "AZURE_STORAGE_CONNECTION_STRING"]) {
+      delete process.env[key];
+    }
+    Object.assign(process.env, { UPLOADS_DIR: root, CDN_URL: SITE });
+    for (const [key, value] of Object.entries(env)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    const mod = await import("@/lib/storage/objects");
+    process.env = previous;
+    return mod;
+  };
+
+  const exists = async (p: string) => {
+    const { stat } = await import("node:fs/promises");
+    return stat(p).then(() => true, () => false);
+  };
+
+  it("writes the bytes under UPLOADS_DIR and returns a URL under CDN_URL", async () => {
+    const { putObject, isStorageConfigured } = await load();
+    expect(isStorageConfigured()).toBe(true);
+
+    const file = new File([PNG], "pic.png", { type: "image/png" });
+    const { url, key } = await putObject("avatars/u1/1700000000-pic.png", file);
+
+    expect(key).toBe("avatars/u1/1700000000-pic.png");
+    expect(url).toBe(`${SITE}/avatars/u1/1700000000-pic.png`);
+    const { readFile } = await import("node:fs/promises");
+    expect(new Uint8Array(await readFile(`${root}/${key}`))).toEqual(PNG);
+  });
+
+  it("stores under the extension of the validated type, not the uploader's", async () => {
+    // A valid PNG named .html would be served as text/html by a file server,
+    // on the app's own origin.
+    const { putObject } = await load();
+    const file = new File([PNG], "x.html", { type: "image/png" });
+    const { url, key } = await putObject("avatars/u1/1700000000-x.html", file);
+
+    expect(key).toBe("avatars/u1/1700000000-x.png");
+    expect(url).toBe(`${SITE}/avatars/u1/1700000000-x.png`);
+    expect(await exists(`${root}/avatars/u1/1700000000-x.html`)).toBe(false);
+    expect(await exists(`${root}/avatars/u1/1700000000-x.png`)).toBe(true);
+  });
+
+  it("appends an extension to a key that has none", async () => {
+    const { putObject } = await load();
+    const file = new File([PNG], "noext", { type: "image/png" });
+    expect((await putObject("avatars/u1/1700000000-noext", file)).key).toBe(
+      "avatars/u1/1700000000-noext.png"
+    );
+  });
+
+  it("refuses a type it could not serve safely", async () => {
+    const { putObject } = await load();
+    const file = new File(["<svg/>"], "a.svg", { type: "image/svg+xml" });
+    await expect(putObject("avatars/u1/a.svg", file)).rejects.toThrow(
+      /Refusing to store image\/svg\+xml/
+    );
+    expect(await exists(`${root}/avatars`)).toBe(false);
+  });
+
+  it("deletes an object it issued", async () => {
+    const { putObject, deleteObjectByUrl } = await load();
+    const file = new File([PNG], "pic.png", { type: "image/png" });
+    const { url, key } = await putObject("avatars/u1/1-pic.png", file);
+
+    await expect(deleteObjectByUrl(url)).resolves.toBe(true);
+    expect(await exists(`${root}/${key}`)).toBe(false);
+  });
+
+  it("will not delete outside UPLOADS_DIR through an encoded traversal", async () => {
+    // keyFromUrl percent-decodes, and the avatar route's own-prefix check
+    // passes this key: it starts `avatars/u1/`.
+    const { writeFile } = await import("node:fs/promises");
+    const outside = `${root}-victim`;
+    await writeFile(outside, "keep me");
+
+    const { deleteObjectByUrl, keyFromUrl } = await load();
+    const name = outside.split("/").pop();
+    const url = `${SITE}/avatars/u1/..%2F..%2F..%2F${name}`;
+    expect(keyFromUrl(url)).toBe(`avatars/u1/../../../${name}`);
+
+    await expect(deleteObjectByUrl(url)).resolves.toBe(false);
+    expect(await exists(outside)).toBe(true);
+    const { rm } = await import("node:fs/promises");
+    await rm(outside);
+  });
+
+  it("reports unconfigured with no CDN_URL, since nothing names where files are served", async () => {
+    const { isStorageConfigured } = await load({ CDN_URL: undefined });
+    expect(isStorageConfigured()).toBe(false);
+  });
+
+  it("does not borrow a blob endpoint for URLs when the files are on disk", async () => {
+    // Left over from an Azure setup, these would otherwise hand out URLs on an
+    // account the files were never written to.
+    const { isStorageConfigured } = await load({
+      CDN_URL: undefined,
+      AZURE_STORAGE_ACCOUNT: "lobuploads",
+      AZURE_STORAGE_PUBLIC_CONTAINER: "true",
+    });
+    expect(isStorageConfigured()).toBe(false);
+  });
+});

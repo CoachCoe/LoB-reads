@@ -41,6 +41,10 @@ ENV NODE_ENV=production
 RUN apt-get update \
  && apt-get install -y --no-install-recommends openssl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
+# Where UPLOADS_DIR points on a single host. A named volume mounted here copies
+# this directory's ownership when first created; without it the volume is
+# root-owned and every upload fails with EACCES.
+RUN mkdir -p /data/uploads && chown node:node /data/uploads
 # Runs unprivileged. The image ships a `node` user for exactly this.
 USER node
 
