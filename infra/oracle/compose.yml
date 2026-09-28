@@ -1,0 +1,127 @@
+# Life on Books on one Oracle Cloud Ampere A1 VM (Always Free: 4 OCPU, 24 GB).
+#
+# Everything on one host: Postgres, the app, and Caddy terminating TLS and
+# serving uploads from disk. Only Caddy publishes ports; the app and the
+# database are reachable only on the compose network, which is what makes it
+# safe to trust the client-IP header Caddy sets.
+#
+# No PgBouncer. There is one app process with a bounded Prisma pool, so a
+# pooler would add a component without relieving anything. Both URLs name the
+# same server; only DATABASE_URL carries the pool bound.
+#
+# Run it through deploy.sh, which orders migrations before the app starts.
+
+name: lob-oracle
+
+x-app-env: &app-env
+  DATABASE_URL: postgresql://bookshelf:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/bookshelf?connection_limit=10
+  DIRECT_URL: postgresql://bookshelf:${POSTGRES_PASSWORD}@postgres:5432/bookshelf
+  NEXTAUTH_URL: https://${DOMAIN:?set DOMAIN in .env}
+  NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET in .env}
+  GOOGLE_BOOKS_API_KEY: ${GOOGLE_BOOKS_API_KEY:-}
+  CDN_URL: https://${DOMAIN}/uploads
+  UPLOADS_DIR: /data/uploads
+  # Caddy overwrites this header with the peer it saw, and nothing else can
+  # reach the app, so a client cannot choose its own rate-limit bucket.
+  TRUSTED_CLIENT_IP_HEADER: x-real-ip
+  # The rate limiter keeps state in process memory.
+  MAX_REPLICAS: "1"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: bookshelf
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: bookshelf
+    # Sized for 24 GB shared with the app. work_mem is the one that matters:
+    # below 32MB the common-word search builds a lossy bitmap and runs 3.5x
+    # slower (bookshelf/DEPLOYMENT.md).
+    command:
+      - postgres
+      - -c
+      - shared_buffers=4GB
+      - -c
+      - effective_cache_size=12GB
+      - -c
+      - work_mem=32MB
+      - -c
+      - maintenance_work_mem=1GB
+      - -c
+      - max_wal_size=4GB
+      - -c
+      - random_page_cost=1.1
+    shm_size: 1g
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./catalog-dump:/restore:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bookshelf -d bookshelf"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build:
+      context: ../../bookshelf
+      args:
+        CDN_URL: https://${DOMAIN}/uploads
+    image: lob-app:local
+    restart: unless-stopped
+    environment: *app-env
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - uploads:/srv/uploads:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+
+  # The build stage of the same Dockerfile: full node_modules, the Prisma CLI
+  # and the scripts, none of which the standalone runner carries. Used for
+  # migrations and deploy:verify, never left running.
+  tools:
+    build:
+      context: ../../bookshelf
+      target: builder
+      args:
+        CDN_URL: https://${DOMAIN}/uploads
+    image: lob-tools:local
+    profiles: ["tools"]
+    environment: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  uploads:
+  caddy_data:
+  caddy_config:

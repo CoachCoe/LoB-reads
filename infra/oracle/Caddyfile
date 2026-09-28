@@ -1,0 +1,25 @@
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Uploads are served straight off the shared volume. The files are validated
+	# images stored under an extension chosen from their type, but they are
+	# still user content on the app's own origin, so they are sandboxed: nothing
+	# here can run script even if a browser were persuaded to render it as a page.
+	handle_path /uploads/* {
+		root * /srv/uploads
+		header {
+			X-Content-Type-Options nosniff
+			Content-Security-Policy "default-src 'none'; sandbox"
+			Cache-Control "public, max-age=31536000, immutable"
+		}
+		file_server
+	}
+
+	handle {
+		reverse_proxy app:3000 {
+			# Replaces any X-Real-IP the client sent. The app trusts this header
+			# (TRUSTED_CLIENT_IP_HEADER) because it is reachable only through here.
+			header_up X-Real-IP {remote_host}
+		}
+	}
+}
