@@ -176,7 +176,7 @@ async function main() {
       process.env.AZURE_STORAGE_PUBLIC_CONTAINER === "true",
     "",
     {
-      hint: "set CDN_URL — a private container with no CDN accepts uploads and then returns 403 for every image",
+      hint: "set CDN_URL — a private container with no CDN accepts uploads and then returns 403 for every image, and an UPLOADS_DIR has no URL of its own",
     }
   );
 

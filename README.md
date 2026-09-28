@@ -11,6 +11,7 @@ The application lives in [`bookshelf/`](bookshelf/). Start there:
 | [`bookshelf/PRD.md`](bookshelf/PRD.md) | What it is meant to do, as numbered requirements |
 | [`bookshelf/ARCHITECTURE.md`](bookshelf/ARCHITECTURE.md) | The invariants, why they exist, and what is measured |
 | [`bookshelf/DEPLOYMENT.md`](bookshelf/DEPLOYMENT.md) | Getting it into Azure |
+| [`bookshelf/DEPLOYMENT-ORACLE.md`](bookshelf/DEPLOYMENT-ORACLE.md) | Running it on one Oracle Cloud Always Free VM, with [`infra/oracle/`](infra/oracle/) |
 | [`bookshelf/AGENTS.md`](bookshelf/AGENTS.md) | The project invariants, in the file an agent reads first |
 | [`.claude/skills/bookshelf-testing/SKILL.md`](.claude/skills/bookshelf-testing/SKILL.md) | How the tests actually work here — read before writing one |
 | [`infra/main.bicep`](infra/main.bicep) | The Azure topology as a template. Never deployed; see DEPLOYMENT.md |
@@ -31,6 +32,7 @@ So, one owner per fact, and links rather than restatements:
 | Mechanism, and the measurements behind it — why the schema, the search arms and the indexes are shaped as they are, and what they cost | `bookshelf/ARCHITECTURE.md` |
 | Test counts | the suite itself — it prints them, and no document should restate them |
 | Azure procedure and topology | `bookshelf/DEPLOYMENT.md` |
+| Oracle procedure and topology | `bookshelf/DEPLOYMENT-ORACLE.md` |
 | What to build next, and why | `bookshelf/PRD.md` |
 | The invariants, and their guards | `bookshelf/AGENTS.md` |
 | How many checks `deploy:verify` runs | `deploy:verify` itself — it prints its own totals, and no document should restate them |
